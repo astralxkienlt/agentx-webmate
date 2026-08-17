@@ -3,7 +3,7 @@ name: Sync upstream (webbrain)
 # Chiến lược:
 #   1. Luôn cập nhật nhánh `upstream-sync` = bản sao y hệt upstream/main (không bao giờ conflict).
 #   2. Thử merge upstream/main vào main trên nhánh tạm:
-#        - Sạch + build/test pass  -> merge thẳng vào main.
+#        - Sạch + brand:build pass -> merge thẳng vào main.
 #        - Conflict                -> mở/cập nhật PR để bạn tự xử lý, kèm danh sách file conflict.
 #
 # Thay đổi branding KHÔNG nằm trong src/ (xem brand/README.md), nên conflict là hiếm.
@@ -29,10 +29,23 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # MIRROR_TOKEN (PAT có scope `workflow`) chứ không phải github.token:
+      # token mặc định của Actions là token GitHub App, và App bị cấm tạo/sửa
+      # file .github/workflows/. Upstream có 6 workflow, nên mọi lần upstream
+      # đụng vào chúng thì push bằng github.token sẽ bị từ chối.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ secrets.MIRROR_TOKEN }}
+
+      - name: Kiểm tra token
+        run: |
+          if [ -z "${{ secrets.MIRROR_TOKEN }}" ]; then
+            echo "::error::Thiếu secret MIRROR_TOKEN. Tạo lại bằng:"
+            echo "::error::gh secret set MIRROR_TOKEN --repo ${{ github.repository }} --body \"\$(gh auth token)\""
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -93,7 +106,7 @@ jobs:
       - name: Mở PR khi brand:build hỏng
         if: steps.merge.outputs.status == 'clean' && steps.verify.outcome == 'failure'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
         run: |
           branch="sync/upstream-${{ github.run_id }}"
           git push origin "HEAD:refs/heads/$branch"
@@ -107,9 +120,9 @@ jobs:
       - name: Mở/cập nhật PR khi conflict
         if: steps.merge.outputs.status == 'conflict'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
         run: |
-          body=$(printf 'Upstream có %s commit mới nhưng merge vào `main` bị conflict.\n\n**File conflict:**\n```\n%s\n```\n\nXử lý tại máy:\n```bash\ngit fetch origin && git checkout main\ngit merge origin/upstream-sync\n# sửa conflict, rồi:\nnpm run brand:build && npm test && git push\n```\n' \
+          body=$(printf 'Upstream có %s commit mới nhưng merge vào `main` bị conflict.\n\n**File conflict:**\n```\n%s\n```\n\nXử lý tại máy:\n```bash\ngit fetch origin && git checkout main\ngit merge origin/upstream-sync\n# sửa conflict, rồi:\nnpm run brand:build && git push\n```\n' \
             "${{ steps.check.outputs.behind }}" "$(cat /tmp/conflicts.txt)")
           if gh pr view upstream-sync --json number >/dev/null 2>&1; then
             gh pr edit upstream-sync --body "$body"
