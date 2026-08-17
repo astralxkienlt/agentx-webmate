@@ -2080,7 +2080,7 @@ function automaticTokenField(config) {
   const isNewOfficialContract = config.type === 'openai'
     && config.category !== 'local'
     && String(config.providerName || '').toLowerCase() !== 'lmstudio'
-    && isNewOpenAIContractModel(config.model);
+    && isNewOpenAIContractModel(config.model, config);
   return isNewOfficialContract ? 'max_completion_tokens' : 'max_tokens';
 }
 
