@@ -1,0 +1,124 @@
+/* Hallmark · first-run design tokens · custom theme: warm paper + soft coral */
+
+:root {
+  --fr-paper: oklch(97% 0.018 82);
+  --fr-paper-raised: oklch(99% 0.009 82);
+  --fr-paper-soft: oklch(94% 0.026 82);
+  --fr-note: oklch(92% 0.07 92);
+  --fr-ink: oklch(21% 0.025 48);
+  --fr-ink-soft: oklch(42% 0.025 52);
+  --fr-ink-muted: oklch(52% 0.022 58);
+  --fr-rule: oklch(82% 0.025 76);
+  --fr-accent: oklch(49% 0.14 38);
+  --fr-accent-soft: oklch(91% 0.045 38);
+  --fr-success: oklch(53% 0.12 155);
+  --fr-error: oklch(52% 0.17 28);
+  --fr-focus: oklch(47% 0.16 264);
+  --fr-button: oklch(24% 0.025 48);
+  --fr-button-hover: oklch(31% 0.03 48);
+  --fr-button-ink: oklch(97% 0.018 82);
+  --fr-shadow: oklch(24% 0.025 48 / 0.1);
+  --fr-font-display: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", sans-serif;
+  --fr-font-body: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --fr-font-mono: "SFMono-Regular", "Cascadia Mono", monospace;
+  --fr-space-2xs: 0.25rem;
+  --fr-space-xs: 0.5rem;
+  --fr-space-sm: 0.75rem;
+  --fr-space-md: 1rem;
+  --fr-space-lg: 1.5rem;
+  --fr-space-xl: 2.5rem;
+  --fr-space-2xl: 4rem;
+  --fr-radius-sm: 0.5rem;
+  --fr-radius-md: 0.75rem;
+  --fr-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fr-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --fr-dur-micro: 120ms;
+  --fr-dur-short: 220ms;
+  --fr-dur-long: 420ms;
+
+  --fr-ob-paper: oklch(97% 0.018 82);
+  --fr-ob-paper-raised: oklch(99% 0.009 82);
+  --fr-ob-paper-soft: oklch(94% 0.026 82);
+  --fr-ob-note: oklch(92% 0.07 92);
+  --fr-ob-ink: oklch(21% 0.025 48);
+  --fr-ob-ink-soft: oklch(42% 0.025 52);
+  --fr-ob-ink-muted: oklch(52% 0.022 58);
+  --fr-ob-rule: oklch(82% 0.025 76);
+  --fr-ob-accent: oklch(49% 0.14 38);
+  --fr-ob-accent-soft: oklch(91% 0.045 38);
+  --fr-ob-warning: oklch(49% 0.13 68);
+  --fr-ob-warning-soft: oklch(93% 0.065 82);
+  --fr-ob-success: oklch(47% 0.12 155);
+  --fr-ob-success-soft: oklch(92% 0.04 155);
+  --fr-ob-error: oklch(52% 0.17 28);
+  --fr-ob-error-soft: oklch(93% 0.045 28);
+  --fr-ob-focus: oklch(47% 0.16 264);
+  --fr-ob-button: oklch(24% 0.025 48);
+  --fr-ob-button-hover: oklch(31% 0.03 48);
+  --fr-ob-button-ink: oklch(97% 0.018 82);
+  --fr-ob-shadow: oklch(24% 0.025 48 / 0.1);
+  --fr-ob-overlay: oklch(21% 0.025 48 / 0.24);
+  --fr-ob-font-display: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", sans-serif;
+  --fr-ob-font-body: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --fr-ob-font-mono: "SFMono-Regular", "Cascadia Mono", monospace;
+  --fr-ob-space-2xs: 0.25rem;
+  --fr-ob-space-xs: 0.5rem;
+  --fr-ob-space-sm: 0.75rem;
+  --fr-ob-space-md: 1rem;
+  --fr-ob-space-lg: 1.5rem;
+  --fr-ob-space-xl: 2.5rem;
+  --fr-ob-radius-sm: 0.5rem;
+  --fr-ob-radius-md: 0.75rem;
+  --fr-ob-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fr-ob-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --fr-ob-dur-micro: 120ms;
+  --fr-ob-dur-short: 220ms;
+  --fr-ob-dur-long: 300ms;
+  --fr-ob-z-modal: 1000;
+  --fr-ob-z-coachmark: 1100;
+}
+
+:root[data-theme="dark"] {
+  --fr-paper: oklch(17% 0.018 48);
+  --fr-paper-raised: oklch(22% 0.02 48);
+  --fr-paper-soft: oklch(26% 0.024 52);
+  --fr-note: oklch(30% 0.055 82);
+  --fr-ink: oklch(94% 0.018 82);
+  --fr-ink-soft: oklch(78% 0.02 76);
+  --fr-ink-muted: oklch(67% 0.018 68);
+  --fr-rule: oklch(37% 0.025 58);
+  --fr-accent: oklch(72% 0.12 38);
+  --fr-accent-soft: oklch(30% 0.052 38);
+  --fr-success: oklch(72% 0.11 155);
+  --fr-error: oklch(72% 0.15 28);
+  --fr-focus: oklch(74% 0.13 264);
+  --fr-button: oklch(91% 0.018 82);
+  --fr-button-hover: oklch(83% 0.022 76);
+  --fr-button-ink: oklch(20% 0.022 48);
+  --fr-shadow: oklch(8% 0.018 48 / 0.26);
+}
+
+:root:not([data-theme="light"]) {
+  --fr-ob-paper: oklch(17% 0.018 48);
+  --fr-ob-paper-raised: oklch(22% 0.02 48);
+  --fr-ob-paper-soft: oklch(26% 0.024 52);
+  --fr-ob-note: oklch(30% 0.055 82);
+  --fr-ob-ink: oklch(94% 0.018 82);
+  --fr-ob-ink-soft: oklch(78% 0.02 76);
+  --fr-ob-ink-muted: oklch(67% 0.018 68);
+  --fr-ob-rule: oklch(37% 0.025 58);
+  --fr-ob-accent: oklch(72% 0.12 38);
+  --fr-ob-accent-soft: oklch(30% 0.052 38);
+  --fr-ob-warning: oklch(75% 0.12 68);
+  --fr-ob-warning-soft: oklch(29% 0.05 68);
+  --fr-ob-success: oklch(72% 0.11 155);
+  --fr-ob-success-soft: oklch(27% 0.045 155);
+  --fr-ob-error: oklch(72% 0.15 28);
+  --fr-ob-error-soft: oklch(29% 0.055 28);
+  --fr-ob-focus: oklch(74% 0.13 264);
+  --fr-ob-button: oklch(91% 0.018 82);
+  --fr-ob-button-hover: oklch(83% 0.022 76);
+  --fr-ob-button-ink: oklch(20% 0.022 48);
+  --fr-ob-shadow: oklch(8% 0.018 48 / 0.26);
+  --fr-ob-overlay: oklch(8% 0.018 48 / 0.48);
+}

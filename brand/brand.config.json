@@ -4,16 +4,28 @@
     "shortName": "WebMate",
     "slug": "agentx-webmate",
     "description": "AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
-    "homepage": "https://example.com",
+    "homepage": "https://github.com/astralxkienlt/agentx-webmate",
     "firefoxId": "agentx-webmate@example.com"
   },
 
   "replacements": [
     {
-      "_why": "Display name in UI text. Word-boundary guards keep it out of identifiers like ensureWebBrainGroup.",
+      "_why": "Temporarily shield upstream API header names from display-name replacement.",
+      "from": "X-WebBrain-",
+      "to": "X-__AGENTX_UPSTREAM_HEADER__-",
+      "only": ["src/providers/openai.js", "src/profile-sync.js"]
+    },
+    {
+      "_why": "Display name in UI and skill text. Guards keep it out of identifiers and protocol tokens such as ensureWebBrainGroup and X-WebBrain-Help-Improve.",
       "regex": "(?<![A-Za-z0-9_$])WebBrain(?![A-Za-z0-9_$])",
       "to": "AgentX WebMate",
-      "except": ["vendor/**", "skills/**"]
+      "except": ["vendor/**"]
+    },
+    {
+      "_why": "Restore upstream API header names after display-name replacement.",
+      "from": "X-__AGENTX_UPSTREAM_HEADER__-",
+      "to": "X-WebBrain-",
+      "only": ["src/providers/openai.js", "src/profile-sync.js"]
     },
     {
       "_why": "Lowercase brand name inside translated sentences. Scoped to locale files only; the lookarounds keep it off webbrain.one, webbrain_note and webbrain-tools.",
@@ -26,6 +38,78 @@
       "from": "|| 'webbrain'",
       "to": "|| 'agentx-webmate'",
       "only": ["src/ui/sidepanel.js"]
+    },
+    {
+      "_why": "User-visible export and capture filenames.",
+      "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage)-",
+      "to": "agentx-webmate-$1-",
+      "only": [
+        "src/ui/sidepanel.js",
+        "src/ui/settings.js",
+        "src/ui/traces.js",
+        "src/ui/history.js",
+        "src/ui/staged-screenshot-store.js",
+        "src/recorder/host.js",
+        "src/agent/agent.js"
+      ]
+    },
+    {
+      "_why": "Fallback names for recordings and staged screenshots.",
+      "regex": "webbrain-(recording|screenshot\\.png)(?=['\"])",
+      "to": "agentx-webmate-$1",
+      "only": [
+        "src/ui/sidepanel.js",
+        "src/ui/staged-screenshot-store.js",
+        "src/recorder/host.js"
+      ]
+    },
+    {
+      "_why": "Branded workflow exports while continuing to import legacy WebBrain workflow files.",
+      "from": "return `${stem}.webbrain-workflow.json`;",
+      "to": "return `${stem}.agentx-webmate-workflow.json`;",
+      "only": ["src/ui/sidepanel.js"]
+    },
+    {
+      "_why": "Accept both new and legacy workflow file extensions.",
+      "from": ".json,.webbrain-workflow.json,application/json",
+      "to": ".json,.agentx-webmate-workflow.json,.webbrain-workflow.json,application/json",
+      "only": ["src/ui/sidepanel.js"]
+    },
+    {
+      "_why": "Send reviews and feedback to the AgentX WebMate repository until store listings are available.",
+      "regex": "https://(?:chromewebstore\\.google\\.com/detail/webbrain/ljhijonmfahplgbbacgcfnaihbjljhhb|addons\\.mozilla\\.org/en-US/firefox/addon/webbrain/)",
+      "to": "https://github.com/astralxkienlt/agentx-webmate",
+      "only": ["src/ui/store-review-prompt.js"]
+    },
+    {
+      "_why": "Do not show a misleading store-review prompt before AgentX WebMate has official listings.",
+      "from": "export const MIN_SUCCESSFUL_TASKS = 3;",
+      "to": "export const MIN_SUCCESSFUL_TASKS = Number.POSITIVE_INFINITY;",
+      "only": ["src/ui/store-review-prompt.js"]
+    },
+    {
+      "_why": "Send feedback to the AgentX WebMate issue tracker.",
+      "from": "https://github.com/webbrain-one/webbrain/issues/new",
+      "to": "https://github.com/astralxkienlt/agentx-webmate/issues/new",
+      "only": ["src/ui/store-review-prompt.js"]
+    },
+    {
+      "_why": "Point the in-app documentation link to AgentX WebMate documentation.",
+      "from": "https://webbrain.one/docs",
+      "to": "https://github.com/astralxkienlt/agentx-webmate/tree/main/docs",
+      "only": ["src/ui/settings.html"]
+    },
+    {
+      "_why": "Avoid promoting the upstream brand in localized social-share copy.",
+      "regex": "https://webbrain\\.one(?=['\"])",
+      "to": "https://github.com/astralxkienlt/agentx-webmate",
+      "only": ["src/ui/locales/**"]
+    },
+    {
+      "_why": "Keep upstream cloud endpoints functional without displaying them as the product label.",
+      "from": ">webbrain.one/subscribe</a>",
+      "to": ">AgentX WebMate Cloud</a>",
+      "only": ["src/ui/settings.js"]
     }
   ],
 
@@ -36,6 +120,10 @@
     "webbrain_cloud",
     "webbrain_data_use",
     "webbrain_traces",
+    "X-WebBrain-Client",
+    "X-WebBrain-Device-Id",
+    "X-WebBrain-Help-Improve",
+    "X-WebBrain-Sync-Verifier",
     "WEBBRAIN_CLOUD_PROVIDER_ID",
     "WEBBRAIN_DEVICE_GUID_KEY",
     "HELP_IMPROVE_WEBBRAIN_KEY",
@@ -45,7 +133,12 @@
   ],
 
   "features": {
-    "exclude": []
+    "exclude": [
+      "README.md",
+      "ARCHITECTURE.md",
+      "icons/providers/SOURCES.md",
+      "vendor/**/README.md"
+    ]
   },
 
   "manifestOverrides": {

@@ -1,33 +1,35 @@
 #!/usr/bin/env node
 /**
- * Build extension submission zips from the current HEAD commit.
+ * Build branded extension submission zips.
  *
  *   node scripts/build-zip.mjs
  *
  * Or via npm:  npm run build:zip
  *
- * Uses `git archive --format=zip` so the output is POSIX-style with
+ * Runs the AgentX WebMate brand build, then uses `git archive --format=zip`
+ * with a temporary index so the output is POSIX-style with
  * forward-slash paths, which AMO's automated validator requires (it
  * silently rejects zips made by PowerShell's Compress-Archive because
  * those carry Windows backslash separators inside the central directory).
  *
- * Source-of-truth is the HEAD commit, NOT the working tree — uncommitted
- * local artifacts (.test-profile, .claude, dist/, etc.) won't leak into
- * the submission zip. If you need to ship something, commit it first.
+ * Source-of-truth is the generated brand-dist tree. The package version must
+ * still match HEAD, so an uncommitted version bump cannot produce a
+ * new-looking filename around old release metadata.
  *
  * Output:
- *   dist/webbrain-chrome-<version>.zip
- *   dist/webbrain-edge-<version>.zip
- *   dist/webbrain-firefox-<version>.zip
+ *   dist/agentx-webmate-chrome-<version>.zip
+ *   dist/agentx-webmate-edge-<version>.zip
+ *   dist/agentx-webmate-firefox-<version>.zip
  *
  * <version> is read from package.json at HEAD, and every archived manifest
  * must match it. An uncommitted version bump is rejected instead of creating
  * a new-looking filename around an old manifest.
  */
 
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,29 +127,36 @@ export function assertStoreReviewableJavaScript(source, label) {
   }
 }
 
-function readTextAtHead(relativePath) {
-  return execFileSync('git', ['show', `HEAD:${relativePath}`], {
+function readJsonAtHead(relativePath) {
+  const source = execFileSync('git', ['show', `HEAD:${relativePath}`], {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  return JSON.parse(source);
 }
 
-function readJsonAtHead(relativePath) {
-  return JSON.parse(readTextAtHead(relativePath));
-}
-
-function listTreeEntryNamesAtHead(relativePath) {
-  return execFileSync(
-    'git',
-    ['ls-tree', '-r', '--name-only', `HEAD:${relativePath}`],
-    {
+function archiveGeneratedTree(sourceDir, out) {
+  const scratch = mkdtempSync(path.join(tmpdir(), 'agentx-webmate-archive-'));
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(scratch, 'index') };
+  try {
+    execFileSync('git', ['read-tree', '--empty'], { cwd: root, env, stdio: 'ignore' });
+    execFileSync('git', ['add', '-f', '--', sourceDir], { cwd: root, env, stdio: 'ignore' });
+    const tree = execFileSync('git', ['write-tree'], {
       cwd: root,
+      env,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  ).split(/\r?\n/).filter(Boolean);
+    }).trim();
+    execFileSync(
+      'git',
+      ['archive', '--format=zip', '-o', out, `${tree}:${sourceDir}`],
+      { stdio: 'inherit', cwd: root }
+    );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 function runCli() {
@@ -160,37 +169,33 @@ function runCli() {
   );
 
   const version = headPackage.version;
+  execFileSync(process.execPath, [path.join(root, 'scripts', 'brand-build.mjs')], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+
   for (const { sourceDir } of targets) {
-    const manifest = readJsonAtHead(`src/${sourceDir}/manifest.json`);
-    assertMatchingArchiveVersion(version, manifest.version, `HEAD src/${sourceDir}/manifest.json version`);
-    assertStoreSafeFlagLicenseEntries(
-      listTreeEntryNamesAtHead(`src/${sourceDir}`),
-      `HEAD src/${sourceDir}`
-    );
+    const brandedDir = path.join(root, 'brand-dist', sourceDir);
+    const manifest = JSON.parse(readFileSync(path.join(brandedDir, 'manifest.json'), 'utf8'));
+    assertMatchingArchiveVersion(version, manifest.version, `brand-dist/${sourceDir}/manifest.json version`);
     for (const relativePath of STORE_REVIEWED_JAVASCRIPT_PATHS) {
-      const archivePath = `src/${sourceDir}/${relativePath}`;
-      assertStoreReviewableJavaScript(readTextAtHead(archivePath), `HEAD ${archivePath}`);
+      const archivePath = path.join(brandedDir, relativePath);
+      assertStoreReviewableJavaScript(readFileSync(archivePath, 'utf8'), archivePath);
     }
   }
 
   const distDir = path.join(root, 'dist');
   mkdirSync(distDir, { recursive: true });
-  console.log(`Building extension zips for v${version} from HEAD …`);
+  console.log(`Building AgentX WebMate extension zips for v${version} from branded output …`);
 
   for (const { packageName, sourceDir } of targets) {
-    const out = path.join(distDir, `webbrain-${packageName}-${version}.zip`);
-    // -o writes directly to the file; avoids needing shell redirection,
-    // so this runs identically on bash, zsh, cmd, and PowerShell.
-    execFileSync(
-      'git',
-      ['archive', '--format=zip', '-o', out, `HEAD:src/${sourceDir}`],
-      { stdio: 'inherit', cwd: root }
-    );
+    const out = path.join(distDir, `agentx-webmate-${packageName}-${version}.zip`);
+    archiveGeneratedTree(`brand-dist/${sourceDir}`, out);
     assertStoreSafeFlagLicenseEntries(
       listZipEntryNames(out),
-      `dist/webbrain-${packageName}-${version}.zip`
+      `dist/agentx-webmate-${packageName}-${version}.zip`
     );
-    console.log(`  ✓ dist/webbrain-${packageName}-${version}.zip`);
+    console.log(`  ✓ dist/agentx-webmate-${packageName}-${version}.zip`);
   }
 }
 

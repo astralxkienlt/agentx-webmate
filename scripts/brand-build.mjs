@@ -172,10 +172,16 @@ async function applyReplacements(outDir, rules) {
     const before = await fs.readFile(full, 'utf8');
     let after = before;
     for (const r of applicable) {
-      after = after.replace(r.re, (m) => {
-        hits++;
-        return r.to;
+      let ruleHits = 0;
+      after.replace(r.re, () => {
+        ruleHits++;
+        return '';
       });
+      if (!ruleHits) continue;
+      hits += ruleHits;
+      // Use the native replacement string so config rules can safely use
+      // capture references such as $1 without receiving a literal "$1".
+      after = after.replace(r.re, r.to);
     }
     if (after !== before) {
       await fs.writeFile(full, after);
@@ -232,6 +238,44 @@ async function applyTheme(outDir, config) {
   const theme = await fs.readFile(themeFile, 'utf8');
   await fs.appendFile(target, `\n\n/* ===== ${config.product.name} theme (brand/theme.css) ===== */\n${theme}`);
   return true;
+}
+
+async function applyFirstRunStyles(outDir, config) {
+  const tokensFile = path.join(ROOT, 'tokens.css');
+  if (!existsSync(tokensFile)) {
+    throw new Error('tokens.css not found — first-run styles require their shared design tokens');
+  }
+  const tokens = await fs.readFile(tokensFile, 'utf8');
+  const styles = [
+    {
+      source: 'first-run-onboarding.css',
+      target: path.join('styles', 'sidepanel.css'),
+      label: 'first-run onboarding',
+    },
+    {
+      source: 'first-run-install.css',
+      target: path.join('src', 'ui', 'install.css'),
+      label: 'first-run install page',
+    },
+  ];
+  let applied = 0;
+  for (const style of styles) {
+    const source = path.join(BRAND, style.source);
+    if (!existsSync(source)) continue;
+    const target = path.join(outDir, style.target);
+    if (!existsSync(target)) {
+      warn(`${style.target} not found — ${style.label} styles NOT applied`);
+      continue;
+    }
+    const css = await fs.readFile(source, 'utf8');
+    await fs.appendFile(
+      target,
+      `\n\n/* ===== ${config.product.name} first-run tokens (tokens.css) ===== */\n${tokens}` +
+      `\n\n/* ===== ${config.product.name} ${style.label} (brand/${style.source}) ===== */\n${css}`
+    );
+    applied++;
+  }
+  return applied;
 }
 
 // --- 7. verification -------------------------------------------------------
@@ -330,6 +374,8 @@ async function buildTarget(target, config) {
   const icons = await applyIcons(outDir, written);
   if (icons) log(`${target}: ${icons} icon(s)`);
   if (await applyTheme(outDir, config)) log(`${target}: theme appended`);
+  const firstRunStyles = await applyFirstRunStyles(outDir, config);
+  if (firstRunStyles) log(`${target}: ${firstRunStyles} first-run stylesheet(s) appended`);
 
   const removed = await prune(outDir, written);
   if (removed) log(`${target}: pruned ${removed} stale file(s)`);
@@ -360,7 +406,7 @@ async function main() {
   for (const t of targets) await buildTarget(t, config);
 
   if (flag('watch', false)) {
-    log('watching src/ and brand/ …');
+    log('watching src/, brand/, and tokens.css …');
     const { watch } = await import('node:fs');
     let timer = null;
     const rebuild = () => {
@@ -375,6 +421,7 @@ async function main() {
       }, 250);
     };
     for (const d of [path.join(ROOT, 'src'), BRAND]) watch(d, { recursive: true }, rebuild);
+    watch(path.join(ROOT, 'tokens.css'), rebuild);
     await new Promise(() => {});
   }
 }

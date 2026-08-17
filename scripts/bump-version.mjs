@@ -123,7 +123,7 @@ export function isReleaseBoundary(version) {
 export const SUBMISSION_ZIP_PACKAGES = Object.freeze(['chrome', 'edge', 'firefox']);
 
 export function submissionZipPaths(version) {
-  return SUBMISSION_ZIP_PACKAGES.map((browser) => `dist/webbrain-${browser}-${version}.zip`);
+  return SUBMISSION_ZIP_PACKAGES.map((browser) => `dist/agentx-webmate-${browser}-${version}.zip`);
 }
 
 export function submissionZipRemoveCommand(version) {
