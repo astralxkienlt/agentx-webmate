@@ -1,0 +1,24 @@
+/* AgentX WebMate — brand theme.
+ *
+ * Appended to the end of the upstream sidepanel.css at build time, so every
+ * declaration here wins over the upstream default without editing the 85KB
+ * upstream stylesheet. Keep to variable overrides where possible: the more
+ * selectors you write, the more likely an upstream refactor silently orphans
+ * them.
+ *
+ * The upstream variables, by how often they are used:
+ *   --accent (91)  --border (81)  --text-primary (65)  --text-secondary (64)
+ *   --text-muted   --bg-primary   --bg-secondary       --bg-tertiary
+ *   --bg-input     --accent-dim   --accent-hover       --success / --warning / --error
+ *   --radius, --radius-sm, --shadow, --tint-soft, --syntax-* (code blocks)
+ *
+ * Re-check after a big upstream merge:
+ *   grep -ohE '\-\-[a-z0-9-]+' src/chrome/styles/sidepanel.css | sort -u
+ */
+
+:root {
+  /* Uncomment and set to your palette. --accent alone shifts most of the UI. */
+  /* --accent: #4f46e5; */
+  /* --accent-hover: #4338ca; */
+  /* --accent-dim: #6366f1; */
+}

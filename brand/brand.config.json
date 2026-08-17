@@ -1,0 +1,58 @@
+{
+  "product": {
+    "name": "AgentX WebMate",
+    "shortName": "WebMate",
+    "slug": "agentx-webmate",
+    "description": "AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
+    "homepage": "https://example.com",
+    "firefoxId": "agentx-webmate@example.com"
+  },
+
+  "replacements": [
+    {
+      "_why": "Display name in UI text. Word-boundary guards keep it out of identifiers like ensureWebBrainGroup.",
+      "regex": "(?<![A-Za-z0-9_$])WebBrain(?![A-Za-z0-9_$])",
+      "to": "AgentX WebMate",
+      "except": ["vendor/**", "skills/**"]
+    },
+    {
+      "_why": "Lowercase brand name inside translated sentences. Scoped to locale files only; the lookarounds keep it off webbrain.one, webbrain_note and webbrain-tools.",
+      "regex": "(?<![A-Za-z0-9_$\\-./])webbrain(?![A-Za-z0-9_$\\-]|\\.one)",
+      "to": "AgentX WebMate",
+      "only": ["src/ui/locales/**", "src/selection-shortcut-i18n.js"]
+    },
+    {
+      "_why": "Fallback prefix for downloaded screenshot filenames.",
+      "from": "|| 'webbrain'",
+      "to": "|| 'agentx-webmate'",
+      "only": ["src/ui/sidepanel.js"]
+    }
+  ],
+
+  "preserve": [
+    "api.webbrain.one",
+    "webbrain.one/.well-known",
+    "webbrain_note",
+    "webbrain_cloud",
+    "webbrain_data_use",
+    "webbrain_traces",
+    "WEBBRAIN_CLOUD_PROVIDER_ID",
+    "WEBBRAIN_DEVICE_GUID_KEY",
+    "HELP_IMPROVE_WEBBRAIN_KEY",
+    "helpImproveWebBrain",
+    "webbrainVersion",
+    "webBrainGroupByWindow"
+  ],
+
+  "features": {
+    "exclude": []
+  },
+
+  "manifestOverrides": {
+    "all": {}
+  },
+
+  "audit": {
+    "token": "webbrain"
+  }
+}

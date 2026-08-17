@@ -1,0 +1,120 @@
+name: Sync upstream (webbrain)
+
+# Chiến lược:
+#   1. Luôn cập nhật nhánh `upstream-sync` = bản sao y hệt upstream/main (không bao giờ conflict).
+#   2. Thử merge upstream/main vào main trên nhánh tạm:
+#        - Sạch + build/test pass  -> merge thẳng vào main.
+#        - Conflict                -> mở/cập nhật PR để bạn tự xử lý, kèm danh sách file conflict.
+#
+# Thay đổi branding KHÔNG nằm trong src/ (xem brand/README.md), nên conflict là hiếm.
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # 01:00 giờ VN mỗi ngày
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/webbrain-one/webbrain.git
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cấu hình git
+        run: |
+          git config user.name  "agentx-sync-bot"
+          git config user.email "agentx-sync-bot@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM" 2>/dev/null || git remote set-url upstream "$UPSTREAM"
+          git fetch upstream "$UPSTREAM_BRANCH" --tags --force
+
+      - name: Cập nhật nhánh gương upstream-sync
+        run: git push --force origin "upstream/$UPSTREAM_BRANCH:refs/heads/upstream-sync"
+
+      - name: Kiểm tra có gì mới không
+        id: check
+        run: |
+          behind=$(git rev-list --count HEAD..upstream/$UPSTREAM_BRANCH)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "Đang chậm hơn upstream $behind commit."
+
+      - name: Thử merge
+        id: merge
+        if: steps.check.outputs.behind != '0'
+        run: |
+          if git merge --no-edit upstream/$UPSTREAM_BRANCH; then
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt || true
+            git merge --abort || true
+            echo "--- File conflict ---"; cat /tmp/conflicts.txt
+          fi
+
+      # ---------- Đường sạch: kiểm chứng rồi đẩy lên main ----------
+      # Gate on brand:build only. It needs no npm install (pure node builtins),
+      # runs in seconds, and checks exactly what a merge can break: patches
+      # still apply, replacements still land, output is still valid JS.
+      # Upstream's own test suite is deliberately not the gate — its flakiness
+      # would block syncs for reasons that have nothing to do with our layer.
+      - name: Build brand (gate)
+        id: verify
+        if: steps.merge.outputs.status == 'clean'
+        continue-on-error: true
+        run: npm run brand:build
+
+      - name: Đẩy lên main
+        if: steps.merge.outputs.status == 'clean' && steps.verify.outcome == 'success'
+        run: |
+          git push origin HEAD:main
+          echo "### ✅ Đã merge ${{ steps.check.outputs.behind }} commit từ upstream vào main" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------- Merge sạch nhưng build/test hỏng ----------
+      - name: Mở PR khi brand:build hỏng
+        if: steps.merge.outputs.status == 'clean' && steps.verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="sync/upstream-${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Sync upstream: merge sạch nhưng brand:build hỏng" \
+            --body "Merge ${{ steps.check.outputs.behind }} commit từ upstream không có conflict, nhưng \`npm run brand:build\` thất bại. Nguyên nhân thường gặp: upstream đổi file mà \`brand/patches\` bám vào, đổi đường dẫn \`styles/sidepanel.css\`, hoặc đặt tên biến mới trùng rule replace. Xem log run này để biết bước nào fail." \
+            || gh pr edit "$branch" --body "Cập nhật lần chạy ${{ github.run_id }}"
+          echo "### ⚠️ Merge sạch nhưng brand:build hỏng — đã mở PR" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------- Đường conflict: để người xử lý ----------
+      - name: Mở/cập nhật PR khi conflict
+        if: steps.merge.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(printf 'Upstream có %s commit mới nhưng merge vào `main` bị conflict.\n\n**File conflict:**\n```\n%s\n```\n\nXử lý tại máy:\n```bash\ngit fetch origin && git checkout main\ngit merge origin/upstream-sync\n# sửa conflict, rồi:\nnpm run brand:build && npm test && git push\n```\n' \
+            "${{ steps.check.outputs.behind }}" "$(cat /tmp/conflicts.txt)")
+          if gh pr view upstream-sync --json number >/dev/null 2>&1; then
+            gh pr edit upstream-sync --body "$body"
+          else
+            gh pr create --base main --head upstream-sync --title "Sync upstream (cần xử lý conflict thủ công)" --body "$body"
+          fi
+          echo "### 🔴 Conflict — đã mở PR để xử lý thủ công" >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/conflicts.txt >> "$GITHUB_STEP_SUMMARY"

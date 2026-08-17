@@ -1,0 +1,346 @@
+#!/usr/bin/env node
+// Builds the branded extension from the pristine upstream sources.
+//
+// Nothing under src/ is ever modified in place. Every brand change lives under
+// brand/ and is applied here, which is what keeps `git merge upstream/main`
+// conflict-free across the ~750 upstream files we do not own.
+//
+// Layering order (later wins):
+//   1. copy src/<target>/           pristine upstream
+//   2. brand/overrides/<target>/    whole-file replacements
+//   3. brand/additions/<target>/    brand-new files
+//   4. brand/patches/<target>/      surgical diffs (fail loudly on drift)
+//   5. config.replacements          string/regex swaps
+//   6. manifest + icons + theme
+//   7. verify: preserve guard, `node --check`, leftover audit
+//
+// Usage: node scripts/brand-build.mjs [--target chrome|firefox|all] [--watch] [--clean]
+
+import { promises as fs, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BRAND = path.join(ROOT, 'brand');
+const OUT = path.join(ROOT, 'brand-dist');
+
+const TEXT_EXT = new Set(['.js', '.mjs', '.json', '.html', '.css', '.md', '.txt', '.svg', '.xml']);
+
+const args = process.argv.slice(2);
+const flag = (name, fallback) => {
+  const i = args.indexOf(`--${name}`);
+  if (i === -1) return fallback;
+  const next = args[i + 1];
+  return next && !next.startsWith('--') ? next : true;
+};
+
+const log = (...m) => console.log('[brand]', ...m);
+const warn = (...m) => console.warn('[brand] WARN', ...m);
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Minimal glob support: ** crosses path separators, * does not.
+const globToRe = (g) => {
+  let out = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*') {
+      if (g[i + 1] === '*') {
+        out += '.*';
+        i++;
+      } else {
+        out += '[^/]*';
+      }
+    } else if ('.+^${}()|[]\\?'.includes(c)) {
+      out += '\\' + c;
+    } else {
+      out += c;
+    }
+  }
+  return new RegExp('^' + out + '$');
+};
+
+async function walk(dir, base = dir, acc = []) {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return acc;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) await walk(full, base, acc);
+    else acc.push(path.relative(base, full));
+  }
+  return acc;
+}
+
+async function copyTree(from, to, { skip = () => false } = {}) {
+  let n = 0;
+  for (const rel of await walk(from)) {
+    if (skip(rel)) continue;
+    const dest = path.join(to, rel);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.copyFile(path.join(from, rel), dest);
+    n++;
+  }
+  return n;
+}
+
+// --- 4. patches ------------------------------------------------------------
+// A patch that stops applying means upstream rewrote the code it hooks into.
+// Failing the build is the point: it surfaces the drift the day it lands
+// rather than silently shipping a half-branded or broken extension.
+async function applyPatches(outDir, target) {
+  const dir = path.join(BRAND, 'patches', target);
+  if (!existsSync(dir)) return 0;
+  const patches = (await fs.readdir(dir)).filter((f) => f.endsWith('.patch')).sort();
+  for (const p of patches) {
+    try {
+      await execFileAsync('git', ['apply', '--unsafe-paths', `--directory=${path.relative(ROOT, outDir)}`, path.join(dir, p)], {
+        cwd: ROOT,
+      });
+      log(`  patch ok: ${target}/${p}`);
+    } catch (err) {
+      throw new Error(
+        `Patch failed: brand/patches/${target}/${p}\n` +
+          `Upstream changed the code this patch targets.\n` +
+          `Fix: rebuild the patch against the current src/${target}/ tree.\n\n` +
+          (err.stderr || err.message)
+      );
+    }
+  }
+  return patches.length;
+}
+
+// --- 5. replacements -------------------------------------------------------
+function compileReplacements(config) {
+  return (config.replacements || []).map((r) => ({
+    label: r.from || r.regex,
+    re: r.regex ? new RegExp(r.regex, r.flags || 'g') : new RegExp(escapeRe(r.from), 'g'),
+    to: r.to,
+    only: r.only?.map(globToRe) || null,
+    except: r.except?.map(globToRe) || null,
+  }));
+}
+
+async function applyReplacements(outDir, rules) {
+  if (!rules.length) return { files: 0, hits: 0 };
+  let files = 0;
+  let hits = 0;
+  for (const rel of await walk(outDir)) {
+    if (!TEXT_EXT.has(path.extname(rel))) continue;
+    const posix = rel.split(path.sep).join('/');
+    const applicable = rules.filter(
+      (r) => (!r.only || r.only.some((re) => re.test(posix))) && !(r.except && r.except.some((re) => re.test(posix)))
+    );
+    if (!applicable.length) continue;
+    const full = path.join(outDir, rel);
+    const before = await fs.readFile(full, 'utf8');
+    let after = before;
+    for (const r of applicable) {
+      after = after.replace(r.re, (m) => {
+        hits++;
+        return r.to;
+      });
+    }
+    if (after !== before) {
+      await fs.writeFile(full, after);
+      files++;
+    }
+  }
+  return { files, hits };
+}
+
+// --- 6. manifest, icons, theme --------------------------------------------
+async function rewriteManifest(outDir, config, target) {
+  const file = path.join(outDir, 'manifest.json');
+  const manifest = JSON.parse(await fs.readFile(file, 'utf8'));
+  const p = config.product;
+
+  manifest.name = p.name;
+  if (p.description) manifest.description = p.description;
+  if (p.shortName) manifest.short_name = p.shortName;
+  if (p.homepage) manifest.homepage_url = p.homepage;
+  if (manifest.action?.default_title) manifest.action.default_title = p.name;
+
+  if (target === 'firefox' && p.firefoxId) {
+    manifest.browser_specific_settings = {
+      ...manifest.browser_specific_settings,
+      gecko: { ...manifest.browser_specific_settings?.gecko, id: p.firefoxId },
+    };
+  }
+
+  const overrides = { ...config.manifestOverrides?.all, ...config.manifestOverrides?.[target] };
+  Object.assign(manifest, overrides);
+
+  await fs.writeFile(file, JSON.stringify(manifest, null, 2) + '\n');
+  return manifest;
+}
+
+const applyIcons = (outDir) =>
+  existsSync(path.join(BRAND, 'icons')) ? copyTree(path.join(BRAND, 'icons'), path.join(outDir, 'icons')) : 0;
+
+// Appended rather than edited in: the last declaration wins in CSS, so a
+// variable override at the end of the file beats the upstream default without
+// touching the 85KB upstream stylesheet.
+async function applyTheme(outDir, config) {
+  const themeFile = path.join(BRAND, 'theme.css');
+  if (!existsSync(themeFile)) return false;
+  const target = path.join(outDir, 'styles', 'sidepanel.css');
+  if (!existsSync(target)) {
+    warn('styles/sidepanel.css not found — upstream moved it; theme NOT applied');
+    return false;
+  }
+  const theme = await fs.readFile(themeFile, 'utf8');
+  await fs.appendFile(target, `\n\n/* ===== ${config.product.name} theme (brand/theme.css) ===== */\n${theme}`);
+  return true;
+}
+
+// --- 7. verification -------------------------------------------------------
+// Guards against the failure mode that actually bites: a replacement rule that
+// is broader than intended silently rewriting an API host or a storage key.
+async function checkPreserved(outDir, config) {
+  const preserve = config.preserve || [];
+  if (!preserve.length) return;
+  const broken = [];
+  for (const rel of await walk(outDir)) {
+    if (!TEXT_EXT.has(path.extname(rel))) continue;
+    const srcFile = path.join(ROOT, 'src', path.basename(outDir), rel);
+    if (!existsSync(srcFile)) continue;
+    const [out, orig] = await Promise.all([
+      fs.readFile(path.join(outDir, rel), 'utf8'),
+      fs.readFile(srcFile, 'utf8'),
+    ]);
+    for (const token of preserve) {
+      const n = (s) => s.split(token).length - 1;
+      if (n(out) < n(orig)) broken.push(`${rel}: "${token}" ${n(orig)} -> ${n(out)}`);
+    }
+  }
+  if (broken.length) {
+    throw new Error(
+      `A replacement rule modified a token listed in brand.config.json "preserve".\n` +
+        `These are API hosts / storage keys — rewriting them breaks the product.\n` +
+        `Narrow the offending rule with "only"/"except".\n\n  ` +
+        broken.slice(0, 20).join('\n  ')
+    );
+  }
+}
+
+// Catches the classic white-label bug: a replacement that lands inside an
+// identifier and turns valid JS into a syntax error.
+async function checkSyntax(outDir) {
+  const files = (await walk(outDir)).filter((f) => f.endsWith('.js') && !f.includes('vendor'));
+  const bad = [];
+  for (const rel of files) {
+    try {
+      await execFileAsync(process.execPath, ['--check', path.join(outDir, rel)]);
+    } catch (err) {
+      bad.push(`${rel}: ${String(err.stderr || err.message).split('\n').slice(0, 3).join(' ')}`);
+    }
+  }
+  if (bad.length) {
+    throw new Error(`Branded output is not valid JavaScript:\n  ` + bad.slice(0, 10).join('\n  '));
+  }
+  return files.length;
+}
+
+async function auditLeftovers(outDir, config) {
+  const token = config.audit?.token || 'webbrain';
+  const re = new RegExp(escapeRe(token), 'gi');
+  const byFile = [];
+  let total = 0;
+  for (const rel of await walk(outDir)) {
+    if (!TEXT_EXT.has(path.extname(rel))) continue;
+    const n = ((await fs.readFile(path.join(outDir, rel), 'utf8')).match(re) || []).length;
+    if (n) {
+      byFile.push([rel, n]);
+      total += n;
+    }
+  }
+  byFile.sort((a, b) => b[1] - a[1]);
+  return { total, byFile };
+}
+
+// --- driver ----------------------------------------------------------------
+async function buildTarget(target, config) {
+  const srcDir = path.join(ROOT, 'src', target);
+  if (!existsSync(srcDir)) return warn(`src/${target} not found — skipping`);
+
+  const outDir = path.join(OUT, target);
+  await fs.rm(outDir, { recursive: true, force: true });
+  await fs.mkdir(outDir, { recursive: true });
+
+  const excluded = (config.features?.exclude || []).map(globToRe);
+  const copied = await copyTree(srcDir, outDir, {
+    skip: (rel) => excluded.some((re) => re.test(rel.split(path.sep).join('/'))),
+  });
+  log(`${target}: copied ${copied} upstream files`);
+
+  for (const layer of ['overrides', 'additions']) {
+    const dir = path.join(BRAND, layer, target);
+    if (existsSync(dir)) log(`${target}: ${layer} ${await copyTree(dir, outDir)}`);
+  }
+
+  const patched = await applyPatches(outDir, target);
+  if (patched) log(`${target}: ${patched} patch(es)`);
+
+  const { files, hits } = await applyReplacements(outDir, compileReplacements(config));
+  log(`${target}: ${hits} replacement(s) across ${files} file(s)`);
+
+  const manifest = await rewriteManifest(outDir, config, target);
+  const icons = await applyIcons(outDir);
+  if (icons) log(`${target}: ${icons} icon(s)`);
+  if (await applyTheme(outDir, config)) log(`${target}: theme appended`);
+
+  await checkPreserved(outDir, config);
+  log(`${target}: syntax ok (${await checkSyntax(outDir)} js files)`);
+
+  const { total, byFile } = await auditLeftovers(outDir, config);
+  log(`${target}: ${total} leftover "${config.audit?.token || 'webbrain'}" occurrence(s)`);
+  if (total && flag('audit', false)) {
+    byFile.slice(0, 25).forEach(([f, n]) => console.log(`        ${String(n).padStart(4)}  ${f}`));
+  }
+
+  log(`${target}: -> brand-dist/${target}  (${manifest.name} v${manifest.version})\n`);
+}
+
+async function main() {
+  if (flag('clean', false)) {
+    await fs.rm(OUT, { recursive: true, force: true });
+    return log('cleaned brand-dist/');
+  }
+
+  const readConfig = async () => JSON.parse(await fs.readFile(path.join(BRAND, 'brand.config.json'), 'utf8'));
+  const config = await readConfig();
+  const target = flag('target', 'all');
+  const targets = target === 'all' ? ['chrome', 'firefox'] : [String(target)];
+
+  for (const t of targets) await buildTarget(t, config);
+
+  if (flag('watch', false)) {
+    log('watching src/ and brand/ …');
+    const { watch } = await import('node:fs');
+    let timer = null;
+    const rebuild = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          const fresh = await readConfig();
+          for (const t of targets) await buildTarget(t, fresh);
+        } catch (e) {
+          warn(e.message);
+        }
+      }, 250);
+    };
+    for (const d of [path.join(ROOT, 'src'), BRAND]) watch(d, { recursive: true }, rebuild);
+    await new Promise(() => {});
+  }
+}
+
+main().catch((err) => {
+  console.error('\n[brand] BUILD FAILED\n' + (err.stack || err.message));
+  process.exit(1);
+});

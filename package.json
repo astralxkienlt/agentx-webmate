@@ -25,7 +25,11 @@
     "update:coupon-domains": "node scripts/update-coupon-domains.mjs",
     "sync:logo": "python3 scripts/sync-logo-assets.py && python3 scripts/gen-store-promos.py && node assets/webstore-explainer-2026/render.mjs && node assets/brand-assets-2026-2/render.mjs",
     "bump": "node scripts/bump-version.mjs",
-    "release": "node scripts/bump-version.mjs --release"
+    "release": "node scripts/bump-version.mjs --release",
+    "brand:build": "node scripts/brand-build.mjs",
+    "brand:watch": "node scripts/brand-build.mjs --watch",
+    "brand:audit": "node scripts/brand-build.mjs --audit",
+    "brand:clean": "node scripts/brand-build.mjs --clean"
   },
   "devDependencies": {
     "playwright": "^1.48.0",
