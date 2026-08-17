@@ -2414,7 +2414,8 @@ function syncInferredOpenRouterRoutingVariant(id, model) {
 
 function automaticTokenField(config) {
   if (shouldUseOpenAIResponsesApi(config)) return 'max_output_tokens';
-  return isNewOpenAIContractConfig(config) ? 'max_completion_tokens' : 'max_tokens';
+  const isNewOfficialContract = config.type === 'openai' && isNewOpenAIContractConfig(config);
+  return isNewOfficialContract ? 'max_completion_tokens' : 'max_tokens';
 }
 
 function compatibilitySummary(config) {

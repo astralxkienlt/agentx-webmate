@@ -1,7 +1,7 @@
 import { BaseLLMProvider } from './base.js';
 import { fetchWithTimeout } from './fetch-timeout.js';
 import {
-  isNewOpenAIContractModel,
+  isNewOpenAIContractConfig,
   isOfficialOpenAIConfig,
   isOpenCodeZenConfig,
   shouldUseOpenAIResponsesApi,
@@ -201,9 +201,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
    * servers and LM Studio keep the legacy contract.
    */
   _isNewOpenAIContract() {
-    if (this.config.category === 'local') return false;
-    if (String(this.config.providerName || '').toLowerCase() === 'lmstudio') return false;
-    return isNewOpenAIContractModel(this.config.model, this.config);
+    return isNewOpenAIContractConfig(this.config);
   }
 
   _addMaxTokens(body, options) {

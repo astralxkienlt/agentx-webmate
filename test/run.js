@@ -53911,6 +53911,38 @@ test('OpenAI contract config keeps non-OpenRouter slash ids on legacy fields', (
     assert.match(settings, /function automaticTokenField\(config\)[\s\S]*isNewOpenAIContractConfig\(config\)/, `${label}: Settings must use the shared config predicate`);
   }
 });
+test('OpenAI contract config keeps non-OpenRouter slash ids on legacy fields', () => {
+  for (const [label, compatibility, settingsRel] of [
+    ['chrome', ProviderCompatibilityCh, 'src/chrome/src/ui/settings.js'],
+    ['firefox', ProviderCompatibilityFx, 'src/firefox/src/ui/settings.js'],
+  ]) {
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model: 'openai/gpt-5.6-terra' }),
+      true,
+      `${label}: OpenRouter GPT-5.6 Terra should use the new contract`,
+    );
+    for (const model of ['openai/o1', 'openai/o3-mini', 'openai/gpt-5.5-pro', 'openai/gpt-5.2-pro']) {
+      assert.equal(
+        compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model }),
+        false,
+        `${label}: ${model} should keep OpenRouter's legacy contract`,
+      );
+    }
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'custom-proxy', model: 'vendor/o3-mini' }),
+      false,
+      `${label}: unrelated slash-prefixed providers must keep legacy fields`,
+    );
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'lmstudio', category: 'local', model: 'openai/o3' }),
+      false,
+      `${label}: local providers must keep legacy fields`,
+    );
+    const settings = fs.readFileSync(path.join(ROOT, settingsRel), 'utf8');
+    assert.match(settings, /function automaticTokenField\(config\)[\s\S]*isNewOpenAIContractConfig\(config\)/, `${label}: Settings must use the shared config predicate`);
+  }
+});
+
 test('provider compatibility defaults preserve legacy chat request bodies', () => {
   const messages = [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }];
   for (const Provider of [OpenAIProviderCh, OpenAIProviderFx]) {
