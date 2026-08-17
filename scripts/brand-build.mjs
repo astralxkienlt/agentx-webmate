@@ -77,16 +77,47 @@ async function walk(dir, base = dir, acc = []) {
   return acc;
 }
 
-async function copyTree(from, to, { skip = () => false } = {}) {
+// `written` collects every path this build produced, so prune() can delete
+// whatever is left over from a previous build. Chrome holds an unpacked
+// extension by directory path and re-reads it on reload, so the directory has
+// to exist continuously — wiping and recreating it makes `brand:watch` race
+// against Chrome and surface a spurious "manifest file is missing" error.
+async function copyTree(from, to, { skip = () => false, written = null } = {}) {
   let n = 0;
   for (const rel of await walk(from)) {
     if (skip(rel)) continue;
     const dest = path.join(to, rel);
     await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.copyFile(path.join(from, rel), dest);
+    written?.add(rel.split(path.sep).join('/'));
     n++;
   }
   return n;
+}
+
+// Remove files a previous build left behind (upstream deleted them, or they
+// dropped out of features.exclude), then drop the directories that emptied out.
+async function prune(outDir, written) {
+  let removed = 0;
+  for (const rel of await walk(outDir)) {
+    if (written.has(rel.split(path.sep).join('/'))) continue;
+    await fs.rm(path.join(outDir, rel), { force: true });
+    removed++;
+  }
+  const dirs = [];
+  const collect = async (dir) => {
+    for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(dir, e.name);
+      await collect(full);
+      dirs.push(full);
+    }
+  };
+  await collect(outDir);
+  for (const dir of dirs.reverse()) {
+    if ((await fs.readdir(dir)).length === 0) await fs.rmdir(dir);
+  }
+  return removed;
 }
 
 // --- 4. patches ------------------------------------------------------------
@@ -180,8 +211,12 @@ async function rewriteManifest(outDir, config, target) {
   return manifest;
 }
 
-const applyIcons = (outDir) =>
-  existsSync(path.join(BRAND, 'icons')) ? copyTree(path.join(BRAND, 'icons'), path.join(outDir, 'icons')) : 0;
+const applyIcons = (outDir, written) =>
+  existsSync(path.join(BRAND, 'icons'))
+    ? copyTree(path.join(BRAND, 'icons'), path.join(outDir, 'icons'), {
+        written: { add: (rel) => written.add(`icons/${rel}`) },
+      })
+    : 0;
 
 // Appended rather than edited in: the last declaration wins in CSS, so a
 // variable override at the end of the file beats the upstream default without
@@ -270,18 +305,19 @@ async function buildTarget(target, config) {
   if (!existsSync(srcDir)) return warn(`src/${target} not found — skipping`);
 
   const outDir = path.join(OUT, target);
-  await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(outDir, { recursive: true });
+  const written = new Set();
 
   const excluded = (config.features?.exclude || []).map(globToRe);
   const copied = await copyTree(srcDir, outDir, {
     skip: (rel) => excluded.some((re) => re.test(rel.split(path.sep).join('/'))),
+    written,
   });
   log(`${target}: copied ${copied} upstream files`);
 
   for (const layer of ['overrides', 'additions']) {
     const dir = path.join(BRAND, layer, target);
-    if (existsSync(dir)) log(`${target}: ${layer} ${await copyTree(dir, outDir)}`);
+    if (existsSync(dir)) log(`${target}: ${layer} ${await copyTree(dir, outDir, { written })}`);
   }
 
   const patched = await applyPatches(outDir, target);
@@ -291,9 +327,12 @@ async function buildTarget(target, config) {
   log(`${target}: ${hits} replacement(s) across ${files} file(s)`);
 
   const manifest = await rewriteManifest(outDir, config, target);
-  const icons = await applyIcons(outDir);
+  const icons = await applyIcons(outDir, written);
   if (icons) log(`${target}: ${icons} icon(s)`);
   if (await applyTheme(outDir, config)) log(`${target}: theme appended`);
+
+  const removed = await prune(outDir, written);
+  if (removed) log(`${target}: pruned ${removed} stale file(s)`);
 
   await checkPreserved(outDir, config);
   log(`${target}: syntax ok (${await checkSyntax(outDir)} js files)`);
