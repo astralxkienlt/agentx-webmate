@@ -102,7 +102,7 @@ export function createAgentXCloudSettingsController({
     if (!model) {
       throw new AgentXCloudError(
         'gateway_models_empty',
-        'LiteLLM không trả về model nào cho model key này.',
+        'LiteLLM không trả về mô hình nào cho khóa này.',
       );
     }
     const visionModel = pickGatewayVisionModel(
@@ -294,7 +294,7 @@ export function createAgentXCloudSettingsController({
           if (model && !availableModels.includes(model)) {
             throw new AgentXCloudError(
               'invalid_vision_model_selection',
-              'Model vision đã chọn không nằm trong danh sách được gateway cấp.',
+              'Mô hình nhìn ảnh đã chọn không nằm trong danh sách cổng này cấp.',
             );
           }
           await sendToBackground('update_provider', {
@@ -316,14 +316,14 @@ export function createAgentXCloudSettingsController({
           if (!String(status.provider?.visionModel || '').trim()) {
             throw new AgentXCloudError(
               'vision_model_required',
-              'Hãy chọn model vision từ Cloud trước khi kiểm tra kết nối.',
+              'Hãy chọn mô hình nhìn ảnh Cloud trước khi kiểm tra kết nối.',
             );
           }
           const result = await sendToBackground('test_vision_provider');
           if (!result?.ok) {
             throw new AgentXCloudError(
               'gateway_vision_test_failed',
-              result?.error || 'LiteLLM vision connection test failed.',
+              result?.error || 'Không kiểm tra được kết nối nhìn ảnh LiteLLM.',
             );
           }
           paint({

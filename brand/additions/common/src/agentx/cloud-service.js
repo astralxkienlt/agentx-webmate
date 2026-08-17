@@ -285,7 +285,7 @@ export function createAgentXCloudService(options = {}) {
   const clearTimer = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
 
   if (!api?.storage?.local || !api?.tabs || !api?.runtime) {
-    throw new AgentXCloudError('invalid_configuration', 'Extension API chưa sẵn sàng.');
+    throw new AgentXCloudError('invalid_configuration', 'API tiện ích chưa sẵn sàng.');
   }
   if (typeof fetchImpl !== 'function' || !cryptoImpl?.subtle) {
     throw new AgentXCloudError('invalid_configuration', 'Fetch hoặc Web Crypto chưa sẵn sàng.');
@@ -317,7 +317,7 @@ export function createAgentXCloudService(options = {}) {
       const timedOut = error?.name === 'AbortError';
       throw new AgentXCloudError(
         timedOut ? 'request_timeout' : 'network_unavailable',
-        timedOut ? 'Yêu cầu tới dịch vụ đã hết thời gian chờ.' : 'Không thể kết nối tới dịch vụ.',
+        timedOut ? 'Hết thời gian chờ khi gọi dịch vụ.' : 'Không kết nối được dịch vụ.',
         { transient: true, detail: error?.message || String(error) },
       );
     } finally {
@@ -445,7 +445,7 @@ export function createAgentXCloudService(options = {}) {
         if (returnedState !== expectedState) {
           return finish(reject, new AgentXCloudError(
             'state_mismatch',
-            'OAuth state không khớp; luồng đăng nhập đã bị huỷ.',
+            'OAuth state không khớp; đăng nhập đã bị hủy.',
           ));
         }
         const oauthError = callback.searchParams.get('error');
@@ -468,7 +468,7 @@ export function createAgentXCloudService(options = {}) {
         if (tabId === authTabId) {
           finish(reject, new AgentXCloudError(
             'sign_in_cancelled',
-            'Cửa sổ đăng nhập đã đóng trước khi hoàn tất.',
+            'Cửa sổ đăng nhập đã đóng trước khi xong.',
           ));
         }
       };
@@ -480,12 +480,12 @@ export function createAgentXCloudService(options = {}) {
         authTabId = authTab.id;
         timeoutId = setTimer(() => finish(reject, new AgentXCloudError(
           'sign_in_timeout',
-          'Đăng nhập đã hết thời gian chờ 5 phút. Hãy bắt đầu lại.',
+          'Đăng nhập quá 5 phút. Hãy bắt đầu lại.',
         )), Number(config.authTimeoutMs) || 5 * 60_000);
       } catch (error) {
         finish(reject, new AgentXCloudError(
           'sign_in_window_failed',
-          `Không thể mở cửa sổ đăng nhập: ${error?.message || error}`,
+          `Không mở được cửa sổ đăng nhập: ${error?.message || error}`,
         ));
       }
     });
@@ -760,7 +760,7 @@ export function createAgentXCloudService(options = {}) {
     if (!catalog.models.length) {
       throw new AgentXCloudError(
         'gateway_models_empty',
-        'LiteLLM không trả về model nào cho model key này.',
+        'LiteLLM không trả về mô hình nào cho khóa này.',
       );
     }
     return {
@@ -804,7 +804,7 @@ export function createAgentXCloudService(options = {}) {
     if (!key) {
       throw new AgentXCloudError(
         'invalid_model_key_response',
-        'Second Brain trả về model key không hợp lệ.',
+        'Second Brain trả về khóa mô hình không hợp lệ.',
       );
     }
     // LiteLLM is the source of truth. Second Brain metadata may be absent or

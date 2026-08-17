@@ -192,7 +192,7 @@ test('signed-out UI surfaces structured discovery errors and busy labels', () =>
       message: 'Dịch vụ trả HTTP 404.',
     },
   }, 'vi');
-  assert.match(errorMarkup, /Kết nối Cloud thất bại/);
+  assert.match(errorMarkup, /Không kết nối được Cloud/);
   assert.match(errorMarkup, /HTTP 404/);
 
   const busyMarkup = renderAgentXCloudPanel({
