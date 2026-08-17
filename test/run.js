@@ -47278,8 +47278,11 @@ test('provider-aware OpenAI contract detection keeps OpenRouter model families d
 
 test('router-prefixed OpenAI reasoning model ids use the new contract while routed legacy models keep the legacy one', () => {
   const messages = [{ role: 'user', content: 'hello' }];
-  const newContractModels = ['openai/o1', 'openai/o3-mini', 'openai/gpt-5.6-terra'];
+  const newContractModels = ['openai/gpt-5.6-terra', 'openai/gpt-5.6-terra:batch', 'openai/gpt-5.6-terra:image'];
   const legacyContractModels = [
+    'openai/o1',
+    'openai/o3-mini',
+    'openai/o4-mini:image',
     'openai/gpt-5-pro',
     'openai/gpt-5.2-pro',
     'openai/gpt-5.4-pro',
@@ -47294,10 +47297,10 @@ test('router-prefixed OpenAI reasoning model ids use the new contract while rout
   ];
   for (const compatibility of [ProviderCompatibilityCh, ProviderCompatibilityFx]) {
     for (const model of newContractModels) {
-      assert.equal(compatibility.isNewOpenAIContractModel(model), true, `${model} should use the new contract`);
+      assert.equal(compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model }), true, `${model} should use the new contract`);
     }
     for (const model of legacyContractModels) {
-      assert.equal(compatibility.isNewOpenAIContractModel(model), false, `${model} should keep the legacy contract`);
+      assert.equal(compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model }), false, `${model} should keep the legacy contract`);
     }
   }
 
@@ -47385,6 +47388,41 @@ test('router-prefixed OpenAI reasoning model ids use the new contract while rout
   }
 });
 
+<<<<<<< HEAD
+=======
+test('OpenAI contract config keeps non-OpenRouter slash ids on legacy fields', () => {
+  for (const [label, compatibility, settingsRel] of [
+    ['chrome', ProviderCompatibilityCh, 'src/chrome/src/ui/settings.js'],
+    ['firefox', ProviderCompatibilityFx, 'src/firefox/src/ui/settings.js'],
+  ]) {
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model: 'openai/gpt-5.6-terra' }),
+      true,
+      `${label}: OpenRouter GPT-5.6 Terra should use the new contract`,
+    );
+    for (const model of ['openai/o1', 'openai/o3-mini', 'openai/gpt-5.5-pro', 'openai/gpt-5.2-pro']) {
+      assert.equal(
+        compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model }),
+        false,
+        `${label}: ${model} should keep OpenRouter's legacy contract`,
+      );
+    }
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'custom-proxy', model: 'vendor/o3-mini' }),
+      false,
+      `${label}: unrelated slash-prefixed providers must keep legacy fields`,
+    );
+    assert.equal(
+      compatibility.isNewOpenAIContractConfig({ providerName: 'lmstudio', category: 'local', model: 'openai/o3' }),
+      false,
+      `${label}: local providers must keep legacy fields`,
+    );
+    const settings = fs.readFileSync(path.join(ROOT, settingsRel), 'utf8');
+    assert.match(settings, /function automaticTokenField\(config\)[\s\S]*isNewOpenAIContractConfig\(config\)/, `${label}: Settings must use the shared config predicate`);
+  }
+});
+
+>>>>>>> 0ac69371 (fix(providers): keep routed o-series on legacy contract)
 test('provider compatibility defaults preserve legacy chat request bodies', () => {
   const messages = [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }];
   for (const Provider of [OpenAIProviderCh, OpenAIProviderFx]) {
