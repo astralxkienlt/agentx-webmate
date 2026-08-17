@@ -148,11 +148,15 @@ export function shouldUseOpenAIResponsesApi(config = {}) {
 
 /**
  * Whether a model id uses the newer OpenAI wire contract (max_completion_tokens,
-<<<<<<< HEAD
- * no non-default temperature). OpenRouter has a provider-specific contract:
- * its current GPT-5.6 Terra route accepts max_completion_tokens, while routed
- * GPT-5 Pro and o-series models use max_tokens. Keep that distinction here so
- * provider request bodies and the Settings compatibility panel cannot drift.
+ * no non-default temperature) — the gpt-5 line and the o-series. gpt-4.1 is
+ * deliberately excluded: it accepts both parameter sets, so it stays on the
+ * legacy contract and keeps explicit temperatures. OpenAI's Responses-only
+ * Pro families also stay legacy when routed through a Chat Completions
+ * provider: those routed endpoints advertise `max_tokens`, while direct
+ * OpenAI calls are selected as Responses before this helper is consulted.
+ * OpenRouter's routed allowlist is intentionally narrow: only GPT-5.6 Terra
+ * variants use max_completion_tokens there; o-series, Pro, batch, and image
+ * routes remain on max_tokens.
  */
 export function isNewOpenAIContractModel(model, config = {}) {
   const m = String(model || '').toLowerCase();
@@ -163,7 +167,17 @@ export function isNewOpenAIContractModel(model, config = {}) {
   if (/(?:^|\/)gpt-5(?:\.(?:2|4|5))?-pro(?:$|[-_.\/:])/.test(m)) return false;
   return /(?:^|\/)(?:gpt-5|o1|o3|o4)(?:$|[-_.\/])/.test(m);
 }
-  return /(?:^|\/)(?:gpt-5|o1|o3|o4)(?:$|[-_.\/])/.test(m);
+
+export function isNewOpenAIContractConfig(config = {}) {
+  const providerName = String(config.providerName || '').trim().toLowerCase();
+  if (config.category === 'local' || providerName === 'lmstudio') return false;
+  if (providerName === 'openrouter') {
+    return /(?:^|\/)gpt-5\.6-terra(?:$|[-_.\/:])/.test(String(config.model || '').toLowerCase());
+  }
+  // Only OpenRouter is covered by the routed-model contract table. Other
+  // compatible endpoints may use slash-prefixed ids with legacy fields.
+  if (String(config.model || '').includes('/') && providerName !== 'openrouter') return false;
+  return isNewOpenAIContractModel(config.model, config);
 }
 
 export function supportsOpenAIAskStreaming(config = {}) {
