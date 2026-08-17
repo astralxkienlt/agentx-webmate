@@ -99,6 +99,23 @@ Sửa header trong file `.patch` cho đúng đường dẫn tương đối (`src
 
 Chạy tay: tab **Actions** → *Sync upstream (webbrain)* → *Run workflow*.
 
+### Secret `MIRROR_TOKEN` — đừng để hết hạn
+
+Workflow push bằng secret `MIRROR_TOKEN` chứ **không** dùng `github.token` mặc định. Lý do:
+token mặc định của Actions là token GitHub App, mà App bị GitHub cấm tạo/sửa file trong
+`.github/workflows/`. Upstream có sẵn 6 workflow, nên bất cứ lần nào upstream đụng vào chúng thì
+push bằng token mặc định sẽ bị từ chối ở đúng bước cuối — sau khi đã upload xong dữ liệu.
+
+Nếu PAT hết hạn, workflow fail ngay ở bước *Kiểm tra token* với hướng dẫn tạo lại:
+```bash
+gh auth refresh -h github.com -s workflow
+gh secret set MIRROR_TOKEN --repo astralxkienlt/agentx-webmate --body "$(gh auth token)"
+```
+
+6 workflow của upstream đã bị **tắt** trong mirror (tắt qua API, không xoá file — nên không tạo
+conflict khi merge). Nếu sau này merge upstream thêm workflow mới, nhớ tắt nó đi, không thì nó
+sẽ chạy và fail vì thiếu secret của WebBrain.
+
 Merge tại máy:
 ```bash
 git fetch upstream
