@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security",
+    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security && npm run test:agentx-auth",
     "test:security": "node test/security/injection-corpus.mjs",
     "test:toolbar-guard": "node test/rich-text-toolbar-guard.mjs",
     "test:injection-bench": "node test/llm/run-scenarios.mjs --category prompt-injection",
@@ -13,6 +13,7 @@
     "test:fixtures": "node test/fixtures/run.mjs",
     "test:webmcp": "node test/webmcp-e2e.mjs",
     "test:anonymous": "node test/anonymous/run.mjs",
+    "test:agentx-auth": "npm run brand:build && node test/agentx-auth.test.mjs",
     "test:ci": "node ci/test.mjs && node ci/cloud-capture.test.mjs",
     "ci:e2e": "node ci/run.mjs",
     "ci:e2e:dry": "node ci/run.mjs --dry-run",

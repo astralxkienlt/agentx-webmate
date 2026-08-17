@@ -8,6 +8,19 @@
     "firefoxId": "agentx-webmate@example.com"
   },
 
+  "services": {
+    "secondBrainBaseUrl": "https://brain.dev-server.cloud/",
+    "litellmBaseUrl": "https://aigw.dev-server.cloud/",
+    "oidcIssuer": "https://agentx.astralx.com.vn/auth/realms/agent-hub",
+    "oidcClientId": "agentx-workmate",
+    "oidcScopes": "openid profile email",
+    "oidcRedirectUris": [
+      "http://127.0.0.1:47821/callback",
+      "http://127.0.0.1:47822/callback",
+      "http://127.0.0.1:47823/callback"
+    ]
+  },
+
   "replacements": [
     {
       "_why": "Temporarily shield upstream API header names from display-name replacement.",
@@ -104,21 +117,11 @@
       "regex": "https://webbrain\\.one(?=['\"])",
       "to": "https://github.com/astralxkienlt/agentx-webmate",
       "only": ["src/ui/locales/**"]
-    },
-    {
-      "_why": "Keep upstream cloud endpoints functional without displaying them as the product label.",
-      "from": ">webbrain.one/subscribe</a>",
-      "to": ">AgentX WebMate Cloud</a>",
-      "only": ["src/ui/settings.js"]
     }
   ],
 
   "preserve": [
-    "api.webbrain.one",
     "webbrain.one/.well-known",
-    "webbrain_note",
-    "webbrain_cloud",
-    "webbrain_data_use",
     "webbrain_traces",
     "X-WebBrain-Client",
     "X-WebBrain-Device-Id",

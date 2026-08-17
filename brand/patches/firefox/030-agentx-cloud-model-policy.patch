@@ -1,0 +1,38 @@
+diff --git a/src/providers/manager.js b/src/providers/manager.js
+--- a/src/providers/manager.js
++++ b/src/providers/manager.js
+@@ -1072,6 +1072,9 @@ export class ProviderManager {
+    * active provider when this returns null.
+    */
+   async getVisionProvider() {
++    // Cloud mode is gateway-contained: screenshots may use the selected
++    // AgentX model itself, but never a separately configured external model.
++    if (this.activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID) return null;
+     try {
+       const { visionModel } = await browser.storage.local.get(['visionModel']);
+       if (!visionModel || !visionModel.baseUrl || !visionModel.model) return null;
+diff --git a/src/providers/openai.js b/src/providers/openai.js
+--- a/src/providers/openai.js
++++ b/src/providers/openai.js
+@@ -77,7 +77,20 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
+   }
+ 
+   get model() {
+-    if (this.config.model) return this.config.model;
++    const configuredModel = String(this.config.model || '').trim();
++    if (this.config.agentxCloudManaged === true) {
++      const availableModels = Array.isArray(this.config.models)
++        ? [...new Set(this.config.models.map(String).map((model) => model.trim()).filter(Boolean))]
++        : [];
++      if (!configuredModel) {
++        throw new Error('AgentX Cloud requires an active model selected from the gateway.');
++      }
++      if (!availableModels.includes(configuredModel)) {
++        throw new Error(`AgentX Cloud model "${configuredModel}" is not available through this gateway key.`);
++      }
++      return configuredModel;
++    }
++    if (configuredModel) return configuredModel;
+     if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
+     // Some local servers apply their own default when no model is configured.
+     // Others carry `requiresModel: true` and throw above. Treat the category as

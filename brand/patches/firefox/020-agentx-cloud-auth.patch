@@ -1,0 +1,215 @@
+diff --git a/src/ui/settings.html b/src/ui/settings.html
+--- a/src/ui/settings.html
++++ b/src/ui/settings.html
+@@ -1129,6 +1129,7 @@
+   </style>
+   <link rel="stylesheet" href="apocalypse-comm.css">
+   <link rel="stylesheet" href="download-tracker.css">
++  <link rel="stylesheet" href="agentx-cloud.css">
+ </head>
+ <body>
+   <div class="header-row">
+diff --git a/src/ui/settings.js b/src/ui/settings.js
+--- a/src/ui/settings.js
++++ b/src/ui/settings.js
+@@ -53,6 +53,7 @@ import { ADDITIONAL_PROVIDER_UI } from '../providers/provider-catalog.js';
+ import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
+ import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
+ import { AUTO_GROUP_TABS_KEY } from '../tab-group-preference.js';
++import { createAgentXCloudSettingsController } from './agentx-cloud-settings.js';
+ 
+ const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
+ 
+@@ -312,7 +313,19 @@ const providerCompatibilityJsonDrafts = new Map();
+ const dirtyProviderIds = new Set();
+ let activeProviderId = '';
+ let providerActivationRequestId = 0;
+ let requestedActiveProviderId = '';
++const agentxCloudController = createAgentXCloudSettingsController({
++  api: globalThis.browser,
++  locale: getLocale,
++  sendToBackground,
++  onProvidersChanged(refreshed) {
++    providersData = refreshed.providers;
++    activeProviderId = refreshed.active;
++  },
++  onRender() {
++    if (providersContainer) renderProviders();
++  },
++});
+ 
+ if (globalThis.browser?.storage?.onChanged) {
+   browser.storage.onChanged.addListener((changes, area) => {
+@@ -329,9 +342,6 @@ if (globalThis.browser?.storage?.onChanged) {
+   });
+ }
+ 
+-const WEBBRAIN_SUBSCRIBE_URL = 'https://webbrain.one/subscribe';
+-const WEBBRAIN_ACCOUNT_URL = 'https://api.webbrain.one/account';
+-
+ const DEFAULT_COST_ALLOWANCE_USD = 10;
+ const MAX_AGENT_STEPS_DEFAULT = 130;
+ const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
+@@ -384,22 +394,6 @@ function renderCostAllowanceSpent(spent, limit) {
+   costSpentValueLabel.textContent = `${formatUsd(spent)} / ${formatUsd(limit)}`;
+ }
+ 
+-function webbrainSubscribeUrl(deviceGuid) {
+-  const url = new URL(WEBBRAIN_SUBSCRIBE_URL);
+-  if (deviceGuid) {
+-    url.searchParams.set('client_reference_id', deviceGuid);
+-  }
+-  return url.toString();
+-}
+-
+-function webbrainAccountUrl(deviceGuid) {
+-  const url = new URL(WEBBRAIN_ACCOUNT_URL);
+-  if (deviceGuid) {
+-    url.searchParams.set('client_reference_id', deviceGuid);
+-  }
+-  return url.toString();
+-}
+-
+ function isUnlimitedMaxAgentSteps(value) {
+   const n = Number(value);
+   return Number.isFinite(n) && (n === 0 || n >= MAX_AGENT_STEPS_UNLIMITED_SENTINEL);
+@@ -582,7 +576,8 @@ async function init() {
+   const res = await sendToBackground('get_providers');
+   providersData = res.providers;
+   activeProviderId = res.active;
+   renderProviders();
++  await agentxCloudController.initialize();
+ }
+ 
+ // --- Site permissions (capability × origin grants) ---
+@@ -2465,7 +2460,7 @@ function renderProviders() {
+   let visibleCount = 0;
+   for (const [id, config] of entries) {
+     const isSelected = id === activeProviderId;
+-    const isConfigured = id !== 'webbrain_cloud' && config.configured === true;
++    const isConfigured = providerIsActive(id, config);
+     const definitionId = providerDefinitionId(id, config);
+     const fieldDefs = providerConfigs[definitionId]?.fields || [];
+ 
+@@ -2570,24 +2565,4 @@ function renderProviders() {
+     }
+ 
+-    const subscribeHref = id === 'webbrain_cloud' ? webbrainSubscribeUrl(config.deviceGuid) : '';
+-    const accountHref = id === 'webbrain_cloud' ? webbrainAccountUrl(config.deviceGuid) : '';
+-    const billingButton = id === 'webbrain_cloud'
+-      ? `<button class="btn-secondary btn-manage-billing" data-href="${escapeHtml(accountHref)}"${config.deviceGuid ? '' : ' disabled'}>${escapeHtml(t('st.account.manage_billing'))}</button>`
+-      : '';
+-    let providerNote = '';
+-    if (id === 'webbrain_cloud') {
+-      const linkStyle = 'color:var(--accent,#4A90D9);text-decoration:none;';
+-      const privacyLink = `<a href="https://webbrain.one/privacy" target="_blank" rel="noopener noreferrer"
+-              style="${linkStyle}">${escapeHtml(t('st.providers.webbrain_note.privacy_link'))}</a>`;
+-      const subscribeLink = `<a href="${escapeHtml(subscribeHref)}" target="_blank" rel="noopener noreferrer"
+-              style="${linkStyle}">webbrain.one/subscribe</a>`;
+-      const accountLink = `<a href="${escapeHtml(accountHref)}" target="_blank" rel="noopener noreferrer"
+-              style="${linkStyle}">api.webbrain.one/account</a>`;
+-      providerNote = `<div style="margin-top:10px;padding:10px 12px;border-radius:6px;
+-                  background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.22);
+-                  font-size:12px;color:var(--text2);line-height:1.5;">
+-           ${t('st.providers.webbrain_data_use.body', { privacyLink, subscribeLink, accountLink })}
+-         </div>`;
+-    }
+     const extensionOrigin = browser.runtime.getURL('').replace(/\/$/, '');
+     const ollamaWarningTitleId = `ollama-warning-title-${id}`;
+@@ -2611,7 +2586,8 @@ function renderProviders() {
+         ? 'st.providers.duplicate_unavailable'
+         : ((!isConfigured || dirtyProviderIds.has(id)) ? 'st.providers.duplicate_inactive' : ''));
+ 
+-    const body = `
++    const body = id === 'webbrain_cloud'
++      ? agentxCloudController.render()
++      : `
+       ${fieldsHTML}
+-      ${providerNote}
+       ${ollamaWarning}
+@@ -2619,7 +2595,6 @@ function renderProviders() {
+       <div class="btn-row">
+         <button class="btn-primary btn-save" data-provider="${id}">${escapeHtml(t('st.providers.save'))}</button>
+         <button class="btn-secondary btn-test" data-provider="${id}">${escapeHtml(t('st.providers.test'))}</button>
+-        ${billingButton}
+         ${!isSelected ? `<button class="btn-secondary btn-activate" data-provider="${id}">${escapeHtml(t('st.providers.select_for_chat'))}</button>` : ''}
+         ${config.isDuplicate
+           ? `<button class="btn-secondary btn-remove-duplicate" data-provider="${id}">${escapeHtml(t('st.providers.remove_duplicate'))}</button>`
+@@ -2628,7 +2603,11 @@ function renderProviders() {
+       <div class="test-result" id="test-${id}"></div>
+     `;
+ 
+-    providersContainer.appendChild(wrapCollapsibleCard(id, config, isSelected, isConfigured, body));
++    const card = wrapCollapsibleCard(id, config, isSelected, isConfigured, body);
++    providersContainer.appendChild(card);
++    if (id === 'webbrain_cloud') {
++      agentxCloudController.bind(card);
++    }
+   }
+ 
+   if (visibleCount === 0) {
+@@ -2661,14 +2640,7 @@ function renderProviders() {
+   document.querySelectorAll('.btn-remove-duplicate').forEach(btn => {
+     btn.addEventListener('click', () => removeDuplicateProvider(btn.dataset.provider));
+   });
+   document.querySelectorAll('.btn-load-models').forEach(btn => {
+     btn.addEventListener('click', () => loadProviderModels(btn.dataset.provider));
+   });
+-  document.querySelectorAll('.btn-manage-billing').forEach(btn => {
+-    btn.addEventListener('click', () => {
+-      const href = btn.dataset.href || '';
+-      if (!href) return;
+-      window.open(href, '_blank', 'noopener,noreferrer');
+-    });
+-  });
+   document.querySelectorAll('.model-select').forEach(sel => {
+@@ -2891,7 +2863,9 @@ function wrapCollapsibleCard(id, config, isSelected, isConfigured, bodyHtml) {
+ }
+ 
+ function providerIsActive(id, config) {
+-  return id !== 'webbrain_cloud' && config?.configured === true;
++  return id === 'webbrain_cloud'
++    ? agentxCloudController.isConnected()
++    : config?.configured === true;
+ }
+ 
+ function markProviderDirty(id) {
+diff --git a/src/providers/manager.js b/src/providers/manager.js
+--- a/src/providers/manager.js
++++ b/src/providers/manager.js
+@@ -38,6 +38,7 @@ import {
+   loadTranscriptionConnectionTestAudio,
+   loadVisionConnectionTestImage,
+ } from './connection-test-assets.js';
++import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
+ 
+ const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
+ const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
+@@ -213,7 +214,8 @@ export class ProviderManager {
+         category: 'cloud',
+         label: 'WebBrain Cloud',
+-        providerName: 'webbrain-cloud',
++        providerName: 'agentx-cloud',
+-        baseUrl: 'https://api.webbrain.one/v1',
+-        model: 'webbrain-cloud 1.0',
++        baseUrl: AGENTX_RUNTIME_CONFIG.litellmBaseUrl,
++        model: '',
++        requiresModel: true,
+         contextWindow: WEBBRAIN_CLOUD_CONTEXT_WINDOW,
+         inputCostPerMillionUsd: 0.20,
+diff --git a/src/agent/agent.js b/src/agent/agent.js
+--- a/src/agent/agent.js
++++ b/src/agent/agent.js
+@@ -1590,9 +1590,9 @@ export class Agent {
+   _isCostMeteredProvider(provider) {
+     const config = provider?.config || {};
+-    // WebBrain Cloud is billed and allowance-controlled by the managed
+-    // service, not by the user's per-provider API account. Its upstream token
++    // Managed cloud providers enforce budgets at their gateway, not through
++    // the user's per-provider API account. Their upstream token
+     // cost must not consume the extension's user-configured spend allowance.
+-    if (config.providerName === 'webbrain-cloud') return false;
++    if (config.providerName === 'webbrain-cloud' || config.agentxCloudManaged === true) return false;
+     if (this._isLocalBaseUrl(config.baseUrl)) return false;
+     if (config.type === 'anthropic_oauth') return false;
+     return config.category === 'cloud' || config.category === 'router';
