@@ -375,6 +375,19 @@ body {
   }
 }
 
+.agentx-cloud-vision {
+  margin-bottom: var(--ax-cloud-space-md);
+}
+
+.agentx-cloud-vision .agentx-cloud-copy h3 {
+  font-size: 0.9375rem;
+}
+
+#vision-card.agentx-cloud-vision-managed .vision-endpoint-divider,
+#vision-card.agentx-cloud-vision-managed .vision-local-option {
+  opacity: 0.58;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agentx-cloud-button {
     transition-duration: var(--ax-cloud-dur-micro);

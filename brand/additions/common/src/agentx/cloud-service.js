@@ -1,4 +1,10 @@
 import { AGENTX_RUNTIME_CONFIG } from './runtime-config.js';
+import {
+  gatewayCatalogFromPayload,
+  pickGatewayModel,
+  pickGatewayVisionModel,
+  visionModelsFromGateway,
+} from './cloud-models.js';
 
 export const AGENTX_SESSION_STORAGE_KEY = 'agentxAuthSessionV1';
 export const AGENTX_DEVICE_STORAGE_KEY = 'agentxDeviceIdentityV1';
@@ -728,9 +734,9 @@ export function createAgentXCloudService(options = {}) {
     }
     if (response.ok) {
       const body = await responseBody(response);
-      const models = gatewayModelsFromPayload(body.json);
-      return models.length
-        ? { ok: true, models }
+      const catalog = gatewayCatalogFromPayload(body.json);
+      return catalog.models.length
+        ? { ok: true, ...catalog }
         : { ok: false, rejected: true, code: 'gateway_models_empty' };
     }
     if (response.status === 401 || response.status === 403) {
@@ -739,16 +745,7 @@ export function createAgentXCloudService(options = {}) {
     return { ok: false, transient: true, code: `gateway_http_${response.status}` };
   }
 
-  function gatewayModelsFromPayload(payload) {
-    const models = Array.isArray(payload?.data)
-      ? payload.data
-        .map((entry) => String(entry?.id || '').trim())
-        .filter(Boolean)
-      : [];
-    return [...new Set(models)];
-  }
-
-  async function discoverGatewayModels(key, baseUrl) {
+  async function discoverGatewayCatalog(key, baseUrl) {
     const response = await fetchWithTimeout(`${stripTrailingSlash(baseUrl)}/models`, {
       headers: {
         Accept: 'application/json',
@@ -759,14 +756,18 @@ export function createAgentXCloudService(options = {}) {
     if (!response.ok || !body.json) {
       throw serviceErrorFromResponse(response, body, 'gateway_model_discovery_failed');
     }
-    const models = gatewayModelsFromPayload(body.json);
-    if (!models.length) {
+    const catalog = gatewayCatalogFromPayload(body.json);
+    if (!catalog.models.length) {
       throw new AgentXCloudError(
         'gateway_models_empty',
         'LiteLLM không trả về model nào cho model key này.',
       );
     }
-    return models;
+    return {
+      models: catalog.models,
+      visionFromInfo: catalog.visionFromInfo,
+      visionModels: visionModelsFromGateway(catalog.models, catalog.visionFromInfo),
+    };
   }
 
   async function requestModelKey(session, { rotate = false } = {}) {
@@ -808,15 +809,18 @@ export function createAgentXCloudService(options = {}) {
     }
     // LiteLLM is the source of truth. Second Brain metadata may be absent or
     // stale, so never install a model until the issued key can actually see it.
-    const models = await discoverGatewayModels(key, baseUrl);
-    const model = models.includes(responseDefaultModel) ? responseDefaultModel : models[0];
+    const catalog = await discoverGatewayCatalog(key, baseUrl);
+    const model = pickGatewayModel(responseDefaultModel, catalog.models);
     return {
       subject: session.user.subject,
       authority: secondBrainBaseUrl,
       key,
       baseUrl,
-      models: models.length ? models : [model],
+      models: catalog.models,
       model,
+      visionFromInfo: catalog.visionFromInfo,
+      visionModels: catalog.visionModels,
+      visionModel: '',
       keyAlias: String(body.json.key_alias || ''),
       keyToken: String(body.json.token || ''),
       account: String(body.json.account || ''),
@@ -840,11 +844,14 @@ export function createAgentXCloudService(options = {}) {
     if (cached && options.rotate !== true) {
       const probe = await probeCredential(cached);
       if (probe.ok) {
-        const model = probe.models.includes(cached.model) ? cached.model : probe.models[0];
+        const visionModels = visionModelsFromGateway(probe.models, probe.visionFromInfo);
         const refreshed = {
           ...cached,
           models: probe.models,
-          model,
+          model: pickGatewayModel(cached.model, probe.models),
+          visionFromInfo: probe.visionFromInfo,
+          visionModels,
+          visionModel: pickGatewayVisionModel(cached.visionModel, visionModels),
           provisionOutcome: 'reused-local',
           warningCode: '',
         };

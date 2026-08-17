@@ -1,16 +1,32 @@
 import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
 import { createAgentXCloudService, AgentXCloudError } from '../agentx/cloud-service.js';
-import { bindAgentXCloudPanel, renderAgentXCloudPanel } from './agentx-cloud-ui.js';
+import {
+  pickGatewayModel,
+  pickGatewayVisionModel,
+  visionModelsFromGateway,
+} from '../agentx/cloud-models.js';
+import {
+  bindAgentXCloudPanel,
+  bindAgentXCloudVisionPanel,
+  renderAgentXCloudPanel,
+  renderAgentXCloudVisionPanel,
+} from './agentx-cloud-ui.js';
 
 const PROVIDER_ID = 'webbrain_cloud';
 
 function publicProvider(credential) {
   if (!credential) return null;
+  const models = Array.isArray(credential.models) ? [...credential.models] : [];
+  const visionModels = Array.isArray(credential.visionModels)
+    ? [...credential.visionModels]
+    : visionModelsFromGateway(models);
   return {
     account: credential.account || '',
     baseUrl: credential.baseUrl || '',
     model: credential.model || '',
-    models: Array.isArray(credential.models) ? [...credential.models] : [],
+    models,
+    visionModel: credential.visionModel || '',
+    visionModels,
     keyAlias: credential.keyAlias || '',
     status: credential.status || credential.provisionOutcome || '',
   };
@@ -72,19 +88,34 @@ export function createAgentXCloudSettingsController({
     const models = Array.isArray(credential.models)
       ? [...new Set(credential.models.map(String).map((model) => model.trim()).filter(Boolean))]
       : [String(credential.model || '').trim()].filter(Boolean);
+    const visionModels = visionModelsFromGateway(
+      models,
+      credential.visionFromInfo,
+    );
     const current = await sendToBackground('get_providers').catch(() => null);
-    const currentModel = String(current?.providers?.[PROVIDER_ID]?.model || '').trim();
-    const credentialModel = String(credential.model || '').trim();
-    const model = models.includes(currentModel)
-      ? currentModel
-      : (models.includes(credentialModel) ? credentialModel : models[0]);
+    const currentConfig = current?.providers?.[PROVIDER_ID] || {};
+    const model = pickGatewayModel(
+      currentConfig.model,
+      models,
+      credential.model,
+    );
     if (!model) {
       throw new AgentXCloudError(
         'gateway_models_empty',
         'LiteLLM không trả về model nào cho model key này.',
       );
     }
-    const installedCredential = { ...credential, models, model };
+    const visionModel = pickGatewayVisionModel(
+      currentConfig.agentxCloudVisionModel || credential.visionModel,
+      visionModels,
+    );
+    const installedCredential = {
+      ...credential,
+      models,
+      model,
+      visionModels,
+      visionModel,
+    };
     await sendToBackground('update_provider', {
       providerId: PROVIDER_ID,
       markConfigured: false,
@@ -98,6 +129,8 @@ export function createAgentXCloudSettingsController({
         agentxCloudAuthority: installedCredential.authority,
         agentxCloudKeyAlias: installedCredential.keyAlias,
         agentxCloudAccount: installedCredential.account,
+        agentxCloudVisionModel: installedCredential.visionModel,
+        agentxCloudVisionModels: installedCredential.visionModels,
       },
     });
     await sendToBackground('set_active_provider', { providerId: PROVIDER_ID });
@@ -116,6 +149,8 @@ export function createAgentXCloudSettingsController({
         agentxCloudManaged: false,
         agentxCloudKeyAlias: '',
         agentxCloudAccount: '',
+        agentxCloudVisionModel: '',
+        agentxCloudVisionModels: [],
       },
     });
     await refreshProviders();
@@ -191,6 +226,9 @@ export function createAgentXCloudSettingsController({
         retry: 'provisioning',
         test: 'testing',
         'select-model': 'selecting-model',
+        'select-vision-model': 'selecting-vision-model',
+        'test-vision': 'testing-vision',
+        'clear-vision': 'clearing-vision',
         'sign-out': 'signing-out',
       }[action];
       if (!actionName) return;
@@ -243,6 +281,72 @@ export function createAgentXCloudSettingsController({
             provider: { ...status.provider, model },
             testOk: false,
             testModel: '',
+            visionTestOk: false,
+            visionTestModel: '',
+          });
+          return;
+        }
+        if (action === 'select-vision-model') {
+          const model = String(payload.model || '').trim();
+          const availableModels = Array.isArray(status.provider?.visionModels)
+            ? status.provider.visionModels
+            : [];
+          if (model && !availableModels.includes(model)) {
+            throw new AgentXCloudError(
+              'invalid_vision_model_selection',
+              'Model vision đã chọn không nằm trong danh sách được gateway cấp.',
+            );
+          }
+          await sendToBackground('update_provider', {
+            providerId: PROVIDER_ID,
+            markConfigured: false,
+            config: { agentxCloudVisionModel: model },
+          });
+          await refreshProviders();
+          paint({
+            action: null,
+            error: null,
+            provider: { ...status.provider, visionModel: model },
+            visionTestOk: false,
+            visionTestModel: '',
+          });
+          return;
+        }
+        if (action === 'test-vision') {
+          if (!String(status.provider?.visionModel || '').trim()) {
+            throw new AgentXCloudError(
+              'vision_model_required',
+              'Hãy chọn model vision từ Cloud trước khi kiểm tra kết nối.',
+            );
+          }
+          const result = await sendToBackground('test_vision_provider');
+          if (!result?.ok) {
+            throw new AgentXCloudError(
+              'gateway_vision_test_failed',
+              result?.error || 'LiteLLM vision connection test failed.',
+            );
+          }
+          paint({
+            action: null,
+            error: null,
+            visionTestOk: true,
+            visionTestModel: result.model || status.provider?.visionModel || '',
+          });
+          return;
+        }
+        if (action === 'clear-vision') {
+          await sendToBackground('update_provider', {
+            providerId: PROVIDER_ID,
+            markConfigured: false,
+            config: { agentxCloudVisionModel: '' },
+          });
+          await refreshProviders();
+          paint({
+            action: null,
+            error: null,
+            provider: { ...status.provider, visionModel: '' },
+            visionTestOk: false,
+            visionTestModel: '',
           });
           return;
         }
@@ -257,6 +361,8 @@ export function createAgentXCloudSettingsController({
           error: null,
           testOk: false,
           testModel: '',
+          visionTestOk: false,
+          visionTestModel: '',
         });
       } catch (error) {
         const latest = await service.publicStatus().catch(() => ({
@@ -280,15 +386,24 @@ export function createAgentXCloudSettingsController({
     bind(root) {
       bindAgentXCloudPanel(root, (action, payload) => void perform(action, payload));
     },
+    bindVision(root) {
+      bindAgentXCloudVisionPanel(root, (action, payload) => void perform(action, payload));
+    },
     initialize,
     selectModel(model) {
       return perform('select-model', { model });
+    },
+    selectVisionModel(model) {
+      return perform('select-vision-model', { model });
     },
     isConnected() {
       return status.connected === true;
     },
     render() {
       return renderAgentXCloudPanel(status, locale());
+    },
+    renderVision() {
+      return renderAgentXCloudVisionPanel(status, locale());
     },
     status() {
       return { ...status };

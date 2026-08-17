@@ -17,6 +17,7 @@ const COPY = {
     model: 'Active model',
     chooseModel: 'Choose active model',
     switchingModel: 'Switching model…',
+    switchingVisionModel: 'Switching vision model…',
     device: 'This device',
     account: 'Account',
     modelsAvailable: '{count} models available',
@@ -26,6 +27,22 @@ const COPY = {
     signOut: 'Sign out',
     signingOut: 'Signing out…',
     keyProtected: 'The model key is stored locally and is never displayed in Settings.',
+    visionTitle: 'Cloud vision model',
+    visionBodySignedOut: 'Sign in on the Providers tab to choose a Cloud vision model. The same model key is used; it is never shown here.',
+    visionBodyDisconnected: 'Finish connecting the Cloud gateway on the Providers tab before choosing a vision model.',
+    visionModel: 'Vision model',
+    chooseVisionModel: 'Choose vision model',
+    visionNone: 'Not selected — use the active provider',
+    visionModelsAvailable: '{count} vision models available',
+    visionTest: 'Test vision connection',
+    visionTesting: 'Testing vision connection…',
+    visionTestPassed: 'Vision connection verified with {model}.',
+    visionClear: 'Clear vision model',
+    visionClearing: 'Clearing vision model…',
+    visionHint: 'Screenshots are sent to this Cloud model with the same locally stored model key.',
+    vision_model_required: 'Choose a Cloud vision model before testing the connection.',
+    invalid_vision_model_selection: 'The selected vision model is not available through this gateway key.',
+    gateway_vision_test_failed: 'The Cloud vision connection test failed.',
     needs_login: 'Your session is no longer valid. Sign in again; AgentX WebMate will fetch the account’s current key without rotating it.',
     invalid_token: 'Second Brain rejected the identity token. Sign in again.',
     missing_bearer: 'The identity request did not include a valid bearer token. Sign in again.',
@@ -57,6 +74,7 @@ const COPY = {
     model: 'Model đang dùng',
     chooseModel: 'Chọn model đang dùng',
     switchingModel: 'Đang đổi model…',
+    switchingVisionModel: 'Đang đổi model vision…',
     device: 'Thiết bị này',
     account: 'Tài khoản',
     modelsAvailable: 'Có {count} model khả dụng',
@@ -66,6 +84,22 @@ const COPY = {
     signOut: 'Đăng xuất',
     signingOut: 'Đang đăng xuất…',
     keyProtected: 'Model key được lưu cục bộ và không bao giờ hiển thị trong Cài đặt.',
+    visionTitle: 'Model vision Cloud',
+    visionBodySignedOut: 'Đăng nhập ở tab Nhà cung cấp để chọn model vision Cloud. Cùng một model key được dùng và không bao giờ hiện ở đây.',
+    visionBodyDisconnected: 'Hãy hoàn tất kết nối gateway Cloud ở tab Nhà cung cấp trước khi chọn model vision.',
+    visionModel: 'Model vision',
+    chooseVisionModel: 'Chọn model vision',
+    visionNone: 'Chưa chọn — dùng provider đang hoạt động',
+    visionModelsAvailable: 'Có {count} model vision khả dụng',
+    visionTest: 'Kiểm tra kết nối vision',
+    visionTesting: 'Đang kiểm tra kết nối vision…',
+    visionTestPassed: 'Đã xác minh kết nối vision với {model}.',
+    visionClear: 'Bỏ chọn model vision',
+    visionClearing: 'Đang bỏ chọn model vision…',
+    visionHint: 'Screenshot được gửi tới model Cloud này bằng cùng model key đã lưu cục bộ.',
+    vision_model_required: 'Hãy chọn model vision Cloud trước khi kiểm tra kết nối.',
+    invalid_vision_model_selection: 'Model vision đã chọn không nằm trong danh sách được gateway cấp.',
+    gateway_vision_test_failed: 'Kiểm tra kết nối vision Cloud thất bại.',
     needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại; AgentX WebMate sẽ lấy key hiện tại của tài khoản và không tự xoay key.',
     invalid_token: 'Second Brain từ chối identity token. Hãy đăng nhập lại.',
     missing_bearer: 'Yêu cầu danh tính không có bearer token hợp lệ. Hãy đăng nhập lại.',
@@ -117,6 +151,9 @@ function actionLabel(status, locale) {
   if (['retry', 'retrying'].includes(status.action)) return copy(locale, 'retrying');
   if (['test', 'testing'].includes(status.action)) return copy(locale, 'testing');
   if (status.action === 'selecting-model') return copy(locale, 'switchingModel');
+  if (status.action === 'selecting-vision-model') return copy(locale, 'switchingVisionModel');
+  if (['test-vision', 'testing-vision'].includes(status.action)) return copy(locale, 'visionTesting');
+  if (['clear-vision', 'clearing-vision'].includes(status.action)) return copy(locale, 'visionClearing');
   if (['sign-out', 'signing-out'].includes(status.action)) return copy(locale, 'signingOut');
   return '';
 }
@@ -281,6 +318,102 @@ export function renderAgentXCloudPanel(status = {}, locale = 'en') {
     : renderSignedOut(status, locale);
 }
 
+function renderVisionModelControl(status, locale) {
+  const provider = status.provider || {};
+  const visionModels = Array.isArray(provider.visionModels)
+    ? [...new Set(provider.visionModels.map(String).map((model) => model.trim()).filter(Boolean))]
+    : [];
+  const selected = String(provider.visionModel || '').trim();
+  const options = [
+    `<option value="" ${selected ? '' : 'selected'}>${escapeHtml(copy(locale, 'visionNone'))}</option>`,
+    ...visionModels.map((model) => `
+      <option value="${escapeHtml(model)}" ${model === selected ? 'selected' : ''}>
+        ${escapeHtml(model)}
+      </option>`),
+  ];
+  return `
+    <select
+      class="agentx-cloud-model-select"
+      data-agentx-cloud-vision-model
+      aria-label="${escapeHtml(copy(locale, 'chooseVisionModel'))}"
+      ${status.action ? 'disabled aria-disabled="true"' : ''}
+    >
+      ${options.join('')}
+    </select>
+    ${visionModels.length
+      ? `<small>${escapeHtml(copy(locale, 'visionModelsAvailable', { count: visionModels.length }))}</small>`
+      : ''}`;
+}
+
+export function renderAgentXCloudVisionPanel(status = {}, locale = 'en') {
+  if (!status.signedIn) {
+    return `
+      <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-vision-title">
+        <div class="agentx-cloud-copy">
+          <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+          <h3 id="agentx-cloud-vision-title">${escapeHtml(copy(locale, 'visionTitle'))}</h3>
+          <p>${escapeHtml(copy(locale, 'visionBodySignedOut'))}</p>
+        </div>
+      </section>`;
+  }
+  if (!status.connected) {
+    return `
+      <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-vision-title">
+        <div class="agentx-cloud-copy">
+          <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+          <h3 id="agentx-cloud-vision-title">${escapeHtml(copy(locale, 'visionTitle'))}</h3>
+          <p>${escapeHtml(copy(locale, 'visionBodyDisconnected'))}</p>
+        </div>
+        ${renderNotice('error', errorMessage(status, locale))}
+        ${renderBusy(status, locale)}
+      </section>`;
+  }
+  const testMessage = status.visionTestOk
+    ? copy(locale, 'visionTestPassed', { model: status.visionTestModel || status.provider?.visionModel || 'model' })
+    : '';
+  const hasVisionModel = !!String(status.provider?.visionModel || '').trim();
+  return `
+    <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-vision-title">
+      <div class="agentx-cloud-copy">
+        <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+        <h3 id="agentx-cloud-vision-title">${escapeHtml(copy(locale, 'visionTitle'))}</h3>
+        <p>${escapeHtml(copy(locale, 'visionHint'))}</p>
+      </div>
+      <dl class="agentx-cloud-details">
+        <div>
+          <dt>${escapeHtml(copy(locale, 'account'))}</dt>
+          <dd>${escapeHtml(status.provider?.account || status.user?.email || status.user?.displayName || '—')}</dd>
+        </div>
+        <div>
+          <dt>${escapeHtml(copy(locale, 'gateway'))}</dt>
+          <dd><code>${escapeHtml(displayHost(status.provider?.baseUrl || status.configuredLiteLlmBaseUrl))}</code></dd>
+        </div>
+        <div>
+          <dt>${escapeHtml(copy(locale, 'visionModel'))}</dt>
+          <dd>${renderVisionModelControl(status, locale)}</dd>
+        </div>
+      </dl>
+      ${renderNotice('error', errorMessage(status, locale))}
+      ${renderNotice('success', testMessage)}
+      ${renderBusy(status, locale)}
+      <p class="agentx-cloud-key-note">${escapeHtml(copy(locale, 'keyProtected'))}</p>
+      <div class="agentx-cloud-actions">
+        <button
+          type="button"
+          class="btn-secondary agentx-cloud-button"
+          data-agentx-cloud-action="test-vision"
+          ${status.action || !hasVisionModel ? 'disabled aria-disabled="true"' : ''}
+        >${escapeHtml(copy(locale, 'visionTest'))}</button>
+        <button
+          type="button"
+          class="btn-secondary agentx-cloud-button"
+          data-agentx-cloud-action="clear-vision"
+          ${status.action || !hasVisionModel ? 'disabled aria-disabled="true"' : ''}
+        >${escapeHtml(copy(locale, 'visionClear'))}</button>
+      </div>
+    </section>`;
+}
+
 export function bindAgentXCloudPanel(root, onAction) {
   if (!root || typeof onAction !== 'function') return;
   root.querySelectorAll('[data-agentx-cloud-action]').forEach((button) => {
@@ -293,5 +426,20 @@ export function bindAgentXCloudPanel(root, onAction) {
   modelSelect?.addEventListener('change', () => {
     if (modelSelect.disabled) return;
     onAction('select-model', { model: modelSelect.value });
+  });
+}
+
+export function bindAgentXCloudVisionPanel(root, onAction) {
+  if (!root || typeof onAction !== 'function') return;
+  root.querySelectorAll('[data-agentx-cloud-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      onAction(button.dataset.agentxCloudAction);
+    });
+  });
+  const modelSelect = root.querySelector?.('[data-agentx-cloud-vision-model]');
+  modelSelect?.addEventListener('change', () => {
+    if (modelSelect.disabled) return;
+    onAction('select-vision-model', { model: modelSelect.value });
   });
 }

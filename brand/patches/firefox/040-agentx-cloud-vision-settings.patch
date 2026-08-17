@@ -1,0 +1,52 @@
+diff --git a/src/ui/settings.html b/src/ui/settings.html
+--- a/src/ui/settings.html
++++ b/src/ui/settings.html
+@@ -1498,6 +1498,7 @@
+     </h3>
+     <div class="provider-card" id="vision-card">
+       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;" data-i18n="st.vision.desc"></div>
++      <div id="agentx-cloud-vision-panel"></div>
+       <div class="field">
+         <label class="mm-field-label">
+           <span data-i18n="st.provider.field.api_base_url"></span>
+diff --git a/src/ui/settings.js b/src/ui/settings.js
+--- a/src/ui/settings.js
++++ b/src/ui/settings.js
+@@ -319,8 +319,9 @@ const agentxCloudController = createAgentXCloudSettingsController({
+     activeProviderId = refreshed.active;
+   },
+   onRender() {
+     if (providersContainer) renderProviders();
++    renderAgentXCloudVisionSettings();
+   },
+ });
+ 
+ if (globalThis.browser?.storage?.onChanged) {
+@@ -576,7 +577,8 @@ async function init() {
+   providersData = res.providers;
+   activeProviderId = res.active;
+   renderProviders();
+   await agentxCloudController.initialize();
++  renderAgentXCloudVisionSettings();
+ }
+ 
+ // --- Site permissions (capability × origin grants) ---
+@@ -1234,6 +1236,18 @@ scheduledConfirmToggle?.addEventListener('change', async () => {
+ });
+ 
+ // --- Vision Model ---
++
++function renderAgentXCloudVisionSettings() {
++  const root = document.getElementById('agentx-cloud-vision-panel');
++  if (!root) return;
++  root.innerHTML = agentxCloudController.renderVision();
++  agentxCloudController.bindVision(root);
++  const connected = agentxCloudController.isConnected();
++  document.getElementById('vision-card')?.classList.toggle('agentx-cloud-vision-managed', connected);
++  for (const input of [visionBaseUrlInput, visionApiKeyInput, visionModelInput, btnSaveVision]) {
++    if (input) input.disabled = connected;
++  }
++}
+ 
+ function updateMultimodalDetectedProvider(kind) {
+   const baseInput = kind === 'vision' ? visionBaseUrlInput : transcriptionBaseUrlInput;

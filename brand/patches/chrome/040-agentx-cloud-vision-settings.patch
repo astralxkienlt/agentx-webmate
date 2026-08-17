@@ -1,0 +1,61 @@
+diff --git a/src/ui/settings.html b/src/ui/settings.html
+--- a/src/ui/settings.html
++++ b/src/ui/settings.html
+@@ -1686,6 +1686,7 @@
+     </h3>
+     <div class="provider-card" id="vision-card">
+       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;" data-i18n="st.vision.desc"></div>
++      <div id="agentx-cloud-vision-panel"></div>
+       <div class="vision-local-option" id="webgpu-vision-option">
+         <div class="vision-local-iris" aria-hidden="true">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+diff --git a/src/ui/settings.js b/src/ui/settings.js
+--- a/src/ui/settings.js
++++ b/src/ui/settings.js
+@@ -336,8 +336,9 @@ const agentxCloudController = createAgentXCloudSettingsController({
+     activeProviderId = refreshed.active;
+   },
+   onRender() {
+     if (providersContainer) renderProviders();
++    renderAgentXCloudVisionSettings();
+   },
+ });
+ 
+ if (globalThis.chrome?.storage?.onChanged) {
+@@ -814,7 +815,8 @@ async function init() {
+   providersData = res.providers;
+   activeProviderId = res.active;
+   renderProviders();
+   await agentxCloudController.initialize();
++  renderAgentXCloudVisionSettings();
+ }
+ 
+ // --- Site permissions (capability × origin grants) ---
+@@ -1489,7 +1491,19 @@ if (scheduledConfirmToggle) {
+ }
+ 
+ // --- Vision Model ---
++
++function renderAgentXCloudVisionSettings() {
++  const root = document.getElementById('agentx-cloud-vision-panel');
++  if (!root) return;
++  root.innerHTML = agentxCloudController.renderVision();
++  agentxCloudController.bindVision(root);
++  const connected = agentxCloudController.isConnected();
++  document.getElementById('vision-card')?.classList.toggle('agentx-cloud-vision-managed', connected);
++  const localEnabled = typeof isWebgpuVisionEnabled === 'function' && isWebgpuVisionEnabled();
++  if (visionEndpointFields) visionEndpointFields.disabled = connected || localEnabled;
++  if (btnUseWebgpuVision) btnUseWebgpuVision.disabled = connected;
++}
+ 
+ function isWebgpuVisionEnabled() {
+   return webgpuVisionEnabled;
+ }
+@@ -1513,6 +1541,6 @@ function renderVisionConfig(config = {}, localEnabled = webgpuVisionEnabled) {
+     btnUseWebgpuVision.dataset.i18n = buttonKey;
+     btnUseWebgpuVision.textContent = t(buttonKey);
+   }
+-  if (visionEndpointFields) visionEndpointFields.disabled = isWebgpu;
++  if (visionEndpointFields) visionEndpointFields.disabled = isWebgpu || agentxCloudController.isConnected();
+   updateMultimodalDetectedProvider('vision');
+ }

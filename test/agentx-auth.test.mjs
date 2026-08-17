@@ -11,6 +11,7 @@ const CONTROLLER_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-settings.js'
 const UI_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-ui.js');
 const OPENAI_PROVIDER_PATH = path.join(CHROME_ROOT, 'src/providers/openai.js');
 const TRANSCRIBE_PATH = path.join(CHROME_ROOT, 'src/agent/transcribe.js');
+const MODELS_PATH = path.join(CHROME_ROOT, 'src/agentx/cloud-models.js');
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -25,6 +26,10 @@ const { createAgentXCloudSettingsController } = await import(pathToFileURL(CONTR
 const { renderAgentXCloudPanel } = await import(pathToFileURL(UI_PATH).href);
 const { OpenAICompatibleProvider } = await import(pathToFileURL(OPENAI_PROVIDER_PATH).href);
 const { transcribeAudio } = await import(pathToFileURL(TRANSCRIBE_PATH).href);
+const {
+  resolveCloudVisionSidecar,
+  visionModelsFromGateway,
+} = await import(pathToFileURL(MODELS_PATH).href);
 
 const ISSUER = 'https://identity.example.test/realms/agentx';
 const CLIENT_ID = 'agentx-workmate';
@@ -630,6 +635,94 @@ test('settings controller installs the key and persists a valid model selection'
   assert.match(controller.render(), /value="model-b" selected/);
 });
 
+test('settings controller can select a Cloud vision model without exposing the key', async () => {
+  const cached = credential({
+    models: ['model-a', 'Qwen/Qwen2.5-VL-7B'],
+    visionModels: ['Qwen/Qwen2.5-VL-7B'],
+    visionFromInfo: ['Qwen/Qwen2.5-VL-7B'],
+  });
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session(),
+    [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [cached] },
+  });
+  const providerState = {
+    providers: { webbrain_cloud: { type: 'openai', category: 'cloud' } },
+    active: 'openai',
+  };
+  const controller = createAgentXCloudSettingsController({
+    api: fake.api,
+    config: CONFIG,
+    locale: () => 'vi',
+    async sendToBackground(action, data = {}) {
+      if (action === 'update_provider') {
+        Object.assign(providerState.providers.webbrain_cloud, data.config);
+        return { ok: true };
+      }
+      if (action === 'set_active_provider') {
+        providerState.active = data.providerId;
+        return { ok: true };
+      }
+      if (action === 'get_providers') return structuredClone(providerState);
+      if (action === 'test_vision_provider') {
+        return { ok: true, model: providerState.providers.webbrain_cloud.agentxCloudVisionModel };
+      }
+      throw new Error(`Unexpected background action: ${action}`);
+    },
+    onRender() {},
+    serviceOptions: {
+      fetchImpl: async () => jsonResponse({
+        data: [
+          { id: 'model-a' },
+          { id: 'Qwen/Qwen2.5-VL-7B', supports_vision: true },
+        ],
+      }),
+      cryptoImpl: webcrypto,
+      now: () => NOW,
+    },
+  });
+
+  await controller.initialize();
+  const visionMarkup = controller.renderVision();
+  assert.doesNotMatch(visionMarkup, /sk-existing-secret/);
+  assert.match(visionMarkup, /data-agentx-cloud-vision-model/);
+  assert.match(visionMarkup, /Qwen\/Qwen2\.5-VL-7B/);
+  assert.match(visionMarkup, /Chưa chọn/);
+
+  await controller.selectVisionModel('Qwen/Qwen2.5-VL-7B');
+  assert.equal(controller.status().provider.visionModel, 'Qwen/Qwen2.5-VL-7B');
+  assert.equal(
+    providerState.providers.webbrain_cloud.agentxCloudVisionModel,
+    'Qwen/Qwen2.5-VL-7B',
+  );
+  assert.match(controller.renderVision(), /value="Qwen\/Qwen2\.5-VL-7B" selected/);
+  assert.doesNotMatch(controller.renderVision(), /sk-existing-secret/);
+});
+
+test('Cloud vision sidecar uses the gateway key and ignores an empty selection', () => {
+  const cloudConfig = {
+    agentxCloudManaged: true,
+    apiKey: 'sk-existing-secret',
+    baseUrl: CONFIG.litellmBaseUrl,
+    models: ['model-a', 'Qwen/Qwen2.5-VL-7B'],
+    agentxCloudVisionModels: ['Qwen/Qwen2.5-VL-7B'],
+    agentxCloudVisionModel: 'Qwen/Qwen2.5-VL-7B',
+  };
+  const sidecar = resolveCloudVisionSidecar(cloudConfig);
+  assert.equal(sidecar.providerName, 'agentx-cloud');
+  assert.equal(sidecar.model, 'Qwen/Qwen2.5-VL-7B');
+  assert.equal(sidecar.apiKey, 'sk-existing-secret');
+  assert.equal(sidecar.supportsVision, true);
+  assert.equal(resolveCloudVisionSidecar({ ...cloudConfig, agentxCloudVisionModel: '' }), null);
+  assert.equal(
+    resolveCloudVisionSidecar({ ...cloudConfig, agentxCloudVisionModel: 'outside-gateway' }),
+    null,
+  );
+  assert.deepEqual(
+    visionModelsFromGateway(['model-a', 'Qwen/Qwen2.5-VL-7B']),
+    ['Qwen/Qwen2.5-VL-7B'],
+  );
+});
+
 test('both branded targets keep Cloud auth in settings without occupying the side panel', async () => {
   for (const target of ['chrome', 'firefox']) {
     const root = path.join(ROOT, 'brand-dist', target);
@@ -643,7 +736,9 @@ test('both branded targets keep Cloud auth in settings without occupying the sid
       fs.readFile(path.join(root, 'src/ui/sidepanel.js'), 'utf8'),
     ]);
     assert.match(html, /agentx-cloud\.css/);
+    assert.match(html, /agentx-cloud-vision-panel/);
     assert.match(settings, /createAgentXCloudSettingsController/);
+    assert.match(settings, /renderAgentXCloudVisionSettings/);
     assert.doesNotMatch(settings, /btn-manage-billing|api\.webbrain\.one\/account/);
     assert.match(runtime, /https:\/\/brain\.dev-server\.cloud/);
     assert.match(runtime, /https:\/\/aigw\.dev-server\.cloud\/v1/);
@@ -652,6 +747,7 @@ test('both branded targets keep Cloud auth in settings without occupying the sid
     assert.match(manager, /baseUrl: AGENTX_RUNTIME_CONFIG\.litellmBaseUrl/);
     assert.match(manager, /providerName: 'agentx-cloud'/);
     assert.match(manager, /requiresModel: true/);
+    assert.match(manager, /resolveCloudVisionSidecar/);
     assert.match(manager, /activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID/);
     assert.match(openai, /not available through this gateway key/);
     assert.doesNotMatch(manager, /webbrain-cloud 1\.0|api\.webbrain\.one\/v1/);

@@ -67,12 +67,24 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 diff --git a/src/providers/manager.js b/src/providers/manager.js
 --- a/src/providers/manager.js
 +++ b/src/providers/manager.js
-@@ -1137,6 +1137,9 @@ export class ProviderManager {
+@@ -183,6 +183,7 @@ import {
+   loadVisionConnectionTestImage,
+ } from './connection-test-assets.js';
+ import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
++import { resolveCloudVisionSidecar } from '../agentx/cloud-models.js';
+ 
+ const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
+ const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
+@@ -1137,6 +1138,13 @@ export class ProviderManager {
     * separate local preference so toggling it never destroys that endpoint.
     */
    async getVisionProvider() {
-+    // Cloud mode is gateway-contained: screenshots may use the selected
-+    // AgentX model itself, but never a separately configured external model.
++    // Cloud mode is gateway-contained: screenshots may use a selected Cloud
++    // vision model on the same model key, but never an external sidecar.
++    const cloudSidecar = resolveCloudVisionSidecar(
++      this.providers.get(WEBBRAIN_CLOUD_PROVIDER_ID)?.config,
++    );
++    if (cloudSidecar) return new OpenAICompatibleProvider(cloudSidecar);
 +    if (this.activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID) return null;
      try {
        const stored = await chrome.storage.local.get(['visionModel', WEBGPU_VISION_ENABLED_KEY]);
