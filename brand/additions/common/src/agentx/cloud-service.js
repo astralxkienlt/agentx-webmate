@@ -317,7 +317,7 @@ export function createAgentXCloudService(options = {}) {
       const timedOut = error?.name === 'AbortError';
       throw new AgentXCloudError(
         timedOut ? 'request_timeout' : 'network_unavailable',
-        timedOut ? 'Hết thời gian chờ khi gọi dịch vụ.' : 'Không kết nối được dịch vụ.',
+        timedOut ? 'Gọi dịch vụ quá lâu, đã hết thời gian chờ.' : 'Không kết nối được dịch vụ.',
         { transient: true, detail: error?.message || String(error) },
       );
     } finally {
@@ -445,7 +445,7 @@ export function createAgentXCloudService(options = {}) {
         if (returnedState !== expectedState) {
           return finish(reject, new AgentXCloudError(
             'state_mismatch',
-            'OAuth state không khớp; đăng nhập đã bị hủy.',
+            'OAuth state không khớp nên đăng nhập bị hủy.',
           ));
         }
         const oauthError = callback.searchParams.get('error');
@@ -468,7 +468,7 @@ export function createAgentXCloudService(options = {}) {
         if (tabId === authTabId) {
           finish(reject, new AgentXCloudError(
             'sign_in_cancelled',
-            'Cửa sổ đăng nhập đã đóng trước khi xong.',
+            'Cửa sổ đăng nhập bị đóng khi chưa xong.',
           ));
         }
       };
@@ -480,7 +480,7 @@ export function createAgentXCloudService(options = {}) {
         authTabId = authTab.id;
         timeoutId = setTimer(() => finish(reject, new AgentXCloudError(
           'sign_in_timeout',
-          'Đăng nhập quá 5 phút. Hãy bắt đầu lại.',
+          'Quá 5 phút chưa đăng nhập xong. Hãy làm lại từ đầu.',
         )), Number(config.authTimeoutMs) || 5 * 60_000);
       } catch (error) {
         finish(reject, new AgentXCloudError(

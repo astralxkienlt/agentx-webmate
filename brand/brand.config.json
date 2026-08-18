@@ -117,6 +117,54 @@
       "regex": "https://webbrain\\.one(?=['\"])",
       "to": "https://github.com/astralxkienlt/agentx-webmate",
       "only": ["src/ui/locales/**"]
+    },
+    {
+      "_why": "Vietnamese is the default UI language. Upstream picks the browser language and falls back to English; AgentX WebMate ships to Vietnamese users whose browsers are mostly en-US, so a saved choice wins and everyone else starts in Vietnamese.",
+      "from": "  const nav = (globalThis.navigator?.language || 'en').slice(0, 2).toLowerCase();\n  return DICTS[nav] ? nav : 'en';",
+      "to": "  return DICTS.vi ? 'vi' : 'en';",
+      "only": ["src/ui/i18n.js"]
+    },
+    {
+      "_why": "Default locale in exported/imported config, so a config round-trip does not reset the UI to English.",
+      "from": "wbLocale: 'en',",
+      "to": "wbLocale: 'vi',",
+      "only": ["src/config-transfer.js"]
+    },
+    {
+      "_why": "Locale the background worker assumes for the selection shortcut before the user picks one.",
+      "from": "chrome.storage.local.get({ wbLocale: 'en' })",
+      "to": "chrome.storage.local.get({ wbLocale: 'vi' })",
+      "only": ["src/background.js"]
+    },
+    {
+      "_why": "Locale the background worker assumes for the selection shortcut before the user picks one (Firefox build).",
+      "from": "browser.storage.local.get({ wbLocale: 'en' })",
+      "to": "browser.storage.local.get({ wbLocale: 'vi' })",
+      "only": ["src/background.js"]
+    },
+    {
+      "_why": "Selection-shortcut strings fall back to Vietnamese instead of English for unknown locales.",
+      "from": "  return Object.prototype.hasOwnProperty.call(STRINGS, base) ? base : 'en';",
+      "to": "  return Object.prototype.hasOwnProperty.call(STRINGS, base) ? base : 'vi';",
+      "only": ["src/selection-shortcut-i18n.js"]
+    },
+    {
+      "_why": "The in-page selection bubble renders before the background answers with the stored locale; start it in Vietnamese instead of the browser language.",
+      "from": "    const browserLanguage = String(navigator.language || 'en').slice(0, 2).toLowerCase();\n    return isSupportedTranslationLanguage(browserLanguage) ? browserLanguage : 'en';",
+      "to": "    return isSupportedTranslationLanguage('vi') ? 'vi' : 'en';",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Vietnamese heads the language picker, matching the default locale. Paired with the rule below, which drops the entry from its alphabetical slot at the end.",
+      "from": "  { code: 'en', label: 'English', englishLabel: 'English', flagCode: 'us' },\n  { code: 'zh', label: '中文', englishLabel: 'Chinese', flagCode: 'cn' },\n  // English and Chinese stay pinned first; the rest are sorted by English name.",
+      "to": "  { code: 'vi', label: 'Tiếng Việt', englishLabel: 'Vietnamese', flagCode: 'vn' },\n  { code: 'en', label: 'English', englishLabel: 'English', flagCode: 'us' },\n  { code: 'zh', label: '中文', englishLabel: 'Chinese', flagCode: 'cn' },\n  // Vietnamese, English and Chinese stay pinned first; the rest are sorted by English name.",
+      "only": ["src/ui/i18n.js"]
+    },
+    {
+      "_why": "Remove the alphabetical Vietnamese entry now that it is pinned to the top of the picker.",
+      "from": "  { code: 'vi', label: 'Tiếng Việt', englishLabel: 'Vietnamese', flagCode: 'vn' },\n];",
+      "to": "];",
+      "only": ["src/ui/i18n.js"]
     }
   ],
 
