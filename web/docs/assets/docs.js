@@ -9,7 +9,7 @@
       const saved = localStorage.getItem('webbrain-theme');
       if (saved === 'light' || saved === 'dark') return saved;
     } catch (_) {}
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    return 'light';
   }
 
   function setTheme(theme, persist) {

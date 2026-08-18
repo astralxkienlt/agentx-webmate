@@ -6,7 +6,7 @@
  *
  * Or via npm:  npm run build:zip
  *
- * Runs the AgentX WebMate brand build, then uses `git archive --format=zip`
+ * Runs the netMind Extension brand build, then uses `git archive --format=zip`
  * with a temporary index so the output is POSIX-style with
  * forward-slash paths, which AMO's automated validator requires (it
  * silently rejects zips made by PowerShell's Compress-Archive because
@@ -17,13 +17,14 @@
  * new-looking filename around old release metadata.
  *
  * Output:
- *   dist/agentx-webmate-chrome-<version>.zip
- *   dist/agentx-webmate-edge-<version>.zip
- *   dist/agentx-webmate-firefox-<version>.zip
+ *   dist/<slug>-chrome-<version>.zip
+ *   dist/<slug>-edge-<version>.zip
+ *   dist/<slug>-firefox-<version>.zip
  *
- * <version> is read from package.json at HEAD, and every archived manifest
- * must match it. An uncommitted version bump is rejected instead of creating
- * a new-looking filename around an old manifest.
+ * <slug> is brand.config.json product.slug. <version> is read from
+ * package.json at HEAD, and every archived manifest must match it.
+ * An uncommitted version bump is rejected instead of creating a
+ * new-looking filename around an old manifest.
  */
 
 import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -32,8 +33,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { productSlug } from './bump-version.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
+const slug = productSlug(root);
 
 const targets = [
   { packageName: 'chrome', sourceDir: 'chrome' },
@@ -138,7 +142,7 @@ function readJsonAtHead(relativePath) {
 }
 
 function archiveGeneratedTree(sourceDir, out) {
-  const scratch = mkdtempSync(path.join(tmpdir(), 'agentx-webmate-archive-'));
+  const scratch = mkdtempSync(path.join(tmpdir(), `${slug}-archive-`));
   const env = { ...process.env, GIT_INDEX_FILE: path.join(scratch, 'index') };
   try {
     execFileSync('git', ['read-tree', '--empty'], { cwd: root, env, stdio: 'ignore' });
@@ -186,16 +190,16 @@ function runCli() {
 
   const distDir = path.join(root, 'dist');
   mkdirSync(distDir, { recursive: true });
-  console.log(`Building AgentX WebMate extension zips for v${version} from branded output …`);
+  console.log(`Building ${slug} extension zips for v${version} from branded output …`);
 
   for (const { packageName, sourceDir } of targets) {
-    const out = path.join(distDir, `agentx-webmate-${packageName}-${version}.zip`);
+    const out = path.join(distDir, `${slug}-${packageName}-${version}.zip`);
     archiveGeneratedTree(`brand-dist/${sourceDir}`, out);
     assertStoreSafeFlagLicenseEntries(
       listZipEntryNames(out),
-      `dist/agentx-webmate-${packageName}-${version}.zip`
+      `dist/${slug}-${packageName}-${version}.zip`
     );
-    console.log(`  ✓ dist/agentx-webmate-${packageName}-${version}.zip`);
+    console.log(`  ✓ dist/${slug}-${packageName}-${version}.zip`);
   }
 }
 

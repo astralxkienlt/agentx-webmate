@@ -1,9 +1,9 @@
 const COPY = {
   en: {
     eyebrow: 'ACCOUNT CONNECTION',
-    titleSignedOut: 'Sign in to use AgentX WebMate Cloud',
-    bodySignedOut: 'Your browser opens the organization’s Keycloak sign-in page. AgentX WebMate never receives your password.',
-    signIn: 'Sign in to AgentX',
+    titleSignedOut: 'Sign in to use netMind Cloud',
+    bodySignedOut: 'Your browser opens the organization’s Keycloak sign-in page. netMind Extension never receives your password.',
+    signIn: 'Sign in to netMind',
     signingIn: 'Opening secure sign-in…',
     restoring: 'Restoring your secure session…',
     provisioning: 'Creating your Cloud connection…',
@@ -43,7 +43,7 @@ const COPY = {
     vision_model_required: 'Choose a Cloud vision model before testing the connection.',
     invalid_vision_model_selection: 'The selected vision model is not available through this gateway key.',
     gateway_vision_test_failed: 'The Cloud vision connection test failed.',
-    needs_login: 'Your session is no longer valid. Sign in again; AgentX WebMate will fetch the account’s current key without rotating it.',
+    needs_login: 'Your session is no longer valid. Sign in again; netMind Extension will fetch the account’s current key without rotating it.',
     invalid_token: 'Second Brain rejected the identity token. Sign in again.',
     missing_bearer: 'The identity request did not include a valid bearer token. Sign in again.',
     device_revoked: 'This device has been revoked. The saved model key was kept, but Cloud is disconnected until you sign in again.',
@@ -58,9 +58,9 @@ const COPY = {
   },
   vi: {
     eyebrow: 'KẾT NỐI TÀI KHOẢN',
-    titleSignedOut: 'Đăng nhập để dùng AgentX WebMate Cloud',
-    bodySignedOut: 'Trình duyệt sẽ mở trang đăng nhập Keycloak của tổ chức. AgentX WebMate không nhận mật khẩu của bạn.',
-    signIn: 'Đăng nhập AgentX',
+    titleSignedOut: 'Đăng nhập để dùng netMind Cloud',
+    bodySignedOut: 'Trình duyệt sẽ mở trang đăng nhập Keycloak của tổ chức. netMind Extension không nhận mật khẩu của bạn.',
+    signIn: 'Đăng nhập netMind',
     signingIn: 'Đang mở trang đăng nhập bảo mật…',
     restoring: 'Đang khôi phục phiên đăng nhập…',
     provisioning: 'Đang tạo kết nối Cloud…',
@@ -100,7 +100,7 @@ const COPY = {
     vision_model_required: 'Hãy chọn mô hình nhìn ảnh Cloud trước khi kiểm tra kết nối.',
     invalid_vision_model_selection: 'Mô hình nhìn ảnh đã chọn không nằm trong danh sách cổng này cấp.',
     gateway_vision_test_failed: 'Không kiểm tra được kết nối nhìn ảnh Cloud.',
-    needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại; AgentX WebMate sẽ lấy khóa hiện tại của tài khoản và không tự đổi khóa.',
+    needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại; netMind Extension sẽ lấy khóa hiện tại của tài khoản và không tự đổi khóa.',
     invalid_token: 'Second Brain từ chối token đăng nhập. Hãy đăng nhập lại.',
     missing_bearer: 'Yêu cầu xác minh tài khoản thiếu bearer token hợp lệ. Hãy đăng nhập lại.',
     device_revoked: 'Thiết bị này đã bị thu hồi. Khóa mô hình đã lưu vẫn được giữ, nhưng Cloud bị ngắt đến khi bạn đăng nhập lại.',
@@ -252,7 +252,7 @@ function renderConnectionDetails(status, locale) {
       </div>
       <div>
         <dt>${escapeHtml(copy(locale, 'device'))}</dt>
-        <dd>${escapeHtml(status.device?.name || 'AgentX WebMate')}</dd>
+        <dd>${escapeHtml(status.device?.name || 'netMind Extension')}</dd>
       </div>
     </dl>`;
 }

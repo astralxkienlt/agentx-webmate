@@ -71,7 +71,7 @@ export function resolveCloudVisionSidecar(cloudConfig = {}) {
   return {
     type: 'openai',
     category: 'cloud',
-    label: 'AgentX Cloud Vision',
+    label: 'netMind Cloud Vision',
     providerName: 'agentx-cloud',
     baseUrl,
     model,

@@ -760,7 +760,7 @@ test('both branded targets keep Cloud auth in settings without occupying the sid
     fs.readFile(path.join(CHROME_ROOT, 'src/recorder/host.js'), 'utf8'),
   ]);
   assert.match(transcribe, /restrictedProviderId/);
-  assert.match(transcribe, /active AgentX Cloud model is not in the gateway model list/);
+  assert.match(transcribe, /active netMind Cloud model is not in the gateway model list/);
   assert.match(recorderHost, /allowedModels: activeConfig\.models/);
 });
 

@@ -1,10 +1,10 @@
 # AgentX — Đăng nhập Keycloak & cấp model key qua Second Brain
 
-> **File này là instruction để tích hợp, không phải tài liệu nội bộ của AgentX Workmate.**
+> **File này là instruction để tích hợp, không phải tài liệu nội bộ của netMind Extension.**
 > Copy nguyên file vào repo của sản phẩm mới (đặt cạnh `AGENTS.md` / `CLAUDE.md` hoặc trong
 > `docs/`), rồi bảo agent/lập trình viên đọc nó trước khi viết code auth. Mọi thứ cần biết để
 > nói chuyện được với hệ thống — realm, wire contract, mã lỗi, thứ tự thao tác, các bẫy đã
-> vấp — đều nằm ở đây; không cần đọc source của AgentX Workmate.
+> vấp — đều nằm ở đây; không cần đọc source của netMind Extension.
 
 **Bản thân hệ thống trả lời đúng một câu hỏi:** *"Người này là ai, và họ được dùng model key
 nào?"* — cho nhiều thiết bị của cùng một người, mà thiết bị sau không giết key của thiết bị trước.

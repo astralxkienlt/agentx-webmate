@@ -1,6 +1,6 @@
-# AgentX WebMate — lớp thương hiệu
+# netMind Extension — lớp thương hiệu
 
-Sản phẩm này là bản tuỳ biến của [webbrain-one/webbrain](https://github.com/webbrain-one/webbrain) (MIT).
+Sản phẩm này là bản tuỳ biến của [webbrain-one/webbrain](https://github.com/webbrain-one/webbrain) (MIT), rebrand thành **netMind Extension**.
 Mục tiêu của thư mục `brand/`: **giữ nguyên vẹn toàn bộ upstream để merge tính năng mới mỗi ngày gần như không conflict.**
 
 ## Nguyên tắc số một
@@ -19,10 +19,12 @@ Sửa thẳng vào `src/` sẽ vẫn chạy, nhưng mỗi lần upstream đổi 
 ```
 brand/
 ├── brand.config.json     Tên, mô tả, các rule thay chuỗi, danh sách token phải giữ nguyên
+├── fonts.css             @font-face Inter + font-family sản phẩm
 ├── theme.css             Ghi đè biến CSS (nối vào cuối sidepanel.css lúc build)
 ├── first-run-install.css Giao diện trang chào mừng sau khi cài extension
 ├── first-run-onboarding.css
 │                         Giao diện coachmark ghim và onboarding 3 bước trong side panel
+├── additions/common/fonts/ Inter variable (SIL OFL)
 ├── icons/                Icon đã sinh từ assets/logo/logo.jpg — đè lên src/<target>/icons/
 ├── overrides/<target>/   Thay nguyên file upstream (cùng đường dẫn tương đối)
 ├── additions/<target>/   File hoàn toàn mới của bạn
@@ -42,7 +44,7 @@ npm run brand:build     # dựng brand-dist/chrome và brand-dist/firefox
 npm run brand:watch     # build lại mỗi khi sửa src/, brand/ hoặc tokens.css
 npm run brand:audit     # liệt kê file còn sót chữ "webbrain", nhiều nhất trước
 npm run brand:clean     # xoá brand-dist/
-npm run build:zip       # build brand-dist rồi đóng gói dist/agentx-webmate-*.zip
+npm run build:zip       # build brand-dist rồi đóng gói dist/netmind-extension-*.zip
 ```
 
 Nạp extension khi dev: Chrome → `chrome://extensions` → Load unpacked → chọn **`brand-dist/chrome`**
@@ -73,8 +75,8 @@ Khảo sát repo cho ra 3182 chỗ, và **không phải chỗ nào cũng đượ
 Rule trong `brand.config.json` dùng lookahead/lookbehind để tách đúng 4 nhóm trên. Khi thêm rule mới,
 luôn chạy `npm run brand:build` — `preserve` guard và `node --check` sẽ chặn nếu bạn quét quá tay.
 
-Tên file do người dùng tải xuống dùng tiền tố `agentx-webmate-`. Riêng đuôi workflow cũ
-`.webbrain-workflow.json` vẫn được chấp nhận khi import để không làm hỏng dữ liệu đã có.
+Tên file do người dùng tải xuống dùng tiền tố `netmind-extension-`. Đuôi workflow cũ
+`.agentx-webmate-workflow.json` và `.webbrain-workflow.json` vẫn được chấp nhận khi import để không làm hỏng dữ liệu đã có.
 Các README/ARCHITECTURE và ghi chú nguồn asset của upstream không cần lúc chạy được loại khỏi gói phát hành;
 `LICENSE` luôn được giữ lại.
 
@@ -144,14 +146,14 @@ npm run brand:build
 
 Build hiện dùng giá trị tạm. Những mục dưới đây **phải** xử lý trước khi lên store:
 
-- [ ] `product.firefoxId` đang là `agentx-webmate@example.com` — đổi sang domain bạn sở hữu.
+- [ ] `product.firefoxId` đang là `netmind-extension@astralx.com.vn` — xác nhận với AMO trước khi lên store.
 - [ ] **Privacy policy**: `https://webbrain.one/privacy` còn xuất hiện 24 chỗ. Chrome Web Store **bắt buộc** có
       privacy policy của chính bạn với bộ quyền này (`debugger`, `<all_urls>`, `tabCapture`…). Trỏ về trang của bạn
       bằng một rule replace URL.
 - [ ] Prompt đánh giá đang bị vô hiệu hoá để không đưa người dùng tới listing cũ → sau khi publish, cấu hình URL listing mới và bật lại ngưỡng hiển thị.
 - [ ] Quyết định về `api.webbrain.one`: hiện các tính năng cloud vẫn gọi backend của WebBrain. Muốn tách hẳn thì
       phải tự dựng backend rồi mới đổi URL — đừng đổi URL trước.
-- [ ] `theme.css` mới chỉ có khung; đặt `--accent` theo bảng màu của bạn.
+- [ ] `theme.css` và `tokens.css` đã khóa palette raspberry + Inter theo netMind Chat. Re-check biến CSS sau mỗi lần merge upstream lớn.
 
 ## Giấy phép
 

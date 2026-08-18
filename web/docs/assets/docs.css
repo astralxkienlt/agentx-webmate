@@ -1,15 +1,41 @@
-:root {
-  --ink: #eef0ff;
-  --muted: #a6abc4;
-  --faint: #747b9c;
-  --canvas: #0c0f1b;
-  --panel: #12172a;
-  --panel-2: #171e35;
-  --panel-3: #1d2642;
-  --line: rgba(183, 191, 255, 0.13);
-  --line-strong: rgba(183, 191, 255, 0.24);
-  --brand: #7b72ff;
-  --brand-2: #a9a3ff;
+:root,
+:root[data-theme="light"] {
+  --ink: #2c2020;
+  --muted: #786c70;
+  --faint: #8c8084;
+  --canvas: #f7f3f4;
+  --panel: #fdfdfd;
+  --panel-2: #f6eced;
+  --panel-3: #efe6e8;
+  --line: rgba(44, 32, 32, 0.12);
+  --line-strong: rgba(44, 32, 32, 0.22);
+  --brand: #f1143c;
+  --brand-2: #d41034;
+  --signal: #147b6b;
+  --signal-soft: rgba(20, 123, 107, 0.09);
+  --warn: #9c6200;
+  --warn-soft: rgba(156, 98, 0, 0.09);
+  --danger: #b83d50;
+  --danger-soft: rgba(184, 61, 80, 0.08);
+  --shadow: 0 24px 70px rgba(44, 32, 32, 0.12);
+  --radius: 18px;
+  --radius-sm: 11px;
+  --header-h: 68px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --ink: #f7f3f4;
+  --muted: #c4b6b9;
+  --faint: #9a8b8f;
+  --canvas: #1c1416;
+  --panel: #251c1e;
+  --panel-2: #2a2022;
+  --panel-3: #34282b;
+  --line: rgba(247, 243, 244, 0.13);
+  --line-strong: rgba(247, 243, 244, 0.24);
+  --brand: #ff4d6d;
+  --brand-2: #ff6a84;
   --signal: #72e4cf;
   --signal-soft: rgba(114, 228, 207, 0.12);
   --warn: #ffc96b;
@@ -17,32 +43,7 @@
   --danger: #ff8d9b;
   --danger-soft: rgba(255, 141, 155, 0.11);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
-  --radius: 18px;
-  --radius-sm: 11px;
-  --header-h: 68px;
   color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --ink: #211b34;
-  --muted: #645d78;
-  --faint: #837c94;
-  --canvas: #f3f2fb;
-  --panel: #ffffff;
-  --panel-2: #f8f7ff;
-  --panel-3: #eeecfb;
-  --line: rgba(52, 40, 90, 0.12);
-  --line-strong: rgba(52, 40, 90, 0.22);
-  --brand: #5b52e8;
-  --brand-2: #4a42c4;
-  --signal: #147b6b;
-  --signal-soft: rgba(20, 123, 107, 0.09);
-  --warn: #9c6200;
-  --warn-soft: rgba(156, 98, 0, 0.09);
-  --danger: #b83d50;
-  --danger-soft: rgba(184, 61, 80, 0.08);
-  --shadow: 0 24px 70px rgba(52, 40, 90, 0.12);
-  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -66,7 +67,7 @@ body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: radial-gradient(circle at 78% -10%, rgba(123, 114, 255, 0.18), transparent 34rem);
+  background: radial-gradient(circle at 78% -10%, rgba(241, 20, 60, 0.16), transparent 34rem);
 }
 
 a { color: var(--brand-2); text-decoration-thickness: 1px; text-underline-offset: 3px; }

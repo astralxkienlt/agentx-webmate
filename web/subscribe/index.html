@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebBrain Cloud Subscribe</title>
+  <title>Đăng ký netMind Cloud</title>
   <meta name="robots" content="noindex, follow">
   <link rel="canonical" href="https://webbrain.one/subscribe/">
   <style>
@@ -14,8 +14,8 @@
       display: grid;
       place-items: center;
       padding: 24px;
-      background: #0b0e17;
-      color: #e4e4ec;
+      background: #f7f3f4;
+      color: #2c2020;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
       line-height: 1.6;
     }
@@ -24,7 +24,7 @@
       font-size: 20px;
       font-weight: 800;
       margin-bottom: 22px;
-      color: #a78bfa;
+      color: #f1143c;
     }
     h1 {
       margin: 0 0 12px;
@@ -33,11 +33,11 @@
     }
     p {
       margin: 0 auto 18px;
-      color: #a7adbd;
+      color: #8c8084;
       font-size: 16px;
     }
     a {
-      color: #a78bfa;
+      color: #d41034;
       font-weight: 700;
       text-decoration: none;
     }
@@ -46,8 +46,8 @@
       width: 30px;
       height: 30px;
       margin: 26px auto;
-      border: 3px solid rgba(167, 139, 250, 0.25);
-      border-top-color: #a78bfa;
+      border: 3px solid rgba(241, 20, 60, 0.25);
+      border-top-color: #f1143c;
       border-radius: 50%;
       animation: spin 0.85s linear infinite;
     }
@@ -56,10 +56,10 @@
 </head>
 <body>
   <main>
-    <div class="brand">WebBrain Cloud</div>
-    <h1 id="subscribe-title">Redirecting to Stripe</h1>
-    <p id="subscribe-copy">The payment page will open in a few seconds.</p>
-    <p id="checkout-row">If redirect does not work, <a id="checkout-link" href="https://buy.stripe.com/bJebJ13at2kc5XP7eY8g00a">open Stripe checkout</a>.</p>
+    <div class="brand">netMind Cloud</div>
+    <h1 id="subscribe-title">Đang chuyển tới Stripe</h1>
+    <p id="subscribe-copy">Trang thanh toán sẽ mở sau vài giây.</p>
+    <p id="checkout-row">Nếu không chuyển trang được, <a id="checkout-link" href="https://buy.stripe.com/bJebJ13at2kc5XP7eY8g00a">mở Stripe checkout</a>.</p>
     <div class="spinner" aria-hidden="true"></div>
   </main>
   <script>
@@ -72,8 +72,8 @@
         window.location.href = checkoutUrl.toString();
       }, 3500);
     } else {
-      document.getElementById('subscribe-title').textContent = 'Open this link from WebBrain';
-      document.getElementById('subscribe-copy').textContent = 'You may be using an outdated version of the WebBrain plugin on your browser, please update.';
+      document.getElementById('subscribe-title').textContent = 'Hãy mở liên kết này từ netMind Extension';
+      document.getElementById('subscribe-copy').textContent = 'Có thể bạn đang dùng phiên bản tiện ích cũ. Hãy cập nhật netMind Extension rồi thử lại.';
       document.getElementById('checkout-row').style.display = 'none';
     }
   </script>

@@ -192,7 +192,7 @@ export function selectPublicOidcProvider(payload) {
   }
   return {
     name: String(provider.name || 'keycloak'),
-    displayName: String(provider.display_name || 'AgentX'),
+    displayName: String(provider.display_name || 'netMind'),
     issuer,
     clientId,
     scopes: normalizeScopes(native.scopes),
@@ -211,7 +211,7 @@ function configuredOidcProvider(config) {
   }
   return {
     name: 'keycloak',
-    displayName: 'AgentX',
+    displayName: 'netMind',
     issuer: normalizeHttpsBaseUrl(issuerValue, 'OIDC issuer'),
     clientId,
     scopes: normalizeScopes(config.oidcScopes),
@@ -685,7 +685,7 @@ export function createAgentXCloudService(options = {}) {
     }[platform?.os] || 'Browser';
     const identity = {
       id: createUuidV4(cryptoImpl),
-      name: sanitizeDeviceName(`AgentX WebMate ${platformLabel}`),
+      name: sanitizeDeviceName(`netMind Extension ${platformLabel}`),
       createdAt: now(),
     };
     await api.storage.local.set({ [AGENTX_DEVICE_STORAGE_KEY]: identity }).catch(() => {});
@@ -905,7 +905,7 @@ export function createAgentXCloudService(options = {}) {
   async function retryProvision() {
     const restored = await restoreSession();
     if (!restored.session) {
-      throw new AgentXCloudError('needs_login', 'Hãy đăng nhập AgentX trước khi kết nối Cloud.');
+      throw new AgentXCloudError('needs_login', 'Hãy đăng nhập netMind trước khi kết nối Cloud.');
     }
     const credential = await provisionModelKey(restored.session, { rotate: false });
     return {

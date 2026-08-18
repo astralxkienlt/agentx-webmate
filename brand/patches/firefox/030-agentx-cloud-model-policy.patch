@@ -37,10 +37,10 @@ diff --git a/src/providers/openai.js b/src/providers/openai.js
 +        ? [...new Set(this.config.models.map(String).map((model) => model.trim()).filter(Boolean))]
 +        : [];
 +      if (!configuredModel) {
-+        throw new Error('AgentX Cloud requires an active model selected from the gateway.');
++        throw new Error('netMind Cloud requires an active model selected from the gateway.');
 +      }
 +      if (!availableModels.includes(configuredModel)) {
-+        throw new Error(`AgentX Cloud model "${configuredModel}" is not available through this gateway key.`);
++        throw new Error(`netMind Cloud model "${configuredModel}" is not available through this gateway key.`);
 +      }
 +      return configuredModel;
 +    }

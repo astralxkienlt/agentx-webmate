@@ -15,16 +15,16 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="WebBrain — Open-source AI browser agent">
+      <meta property="og:image:alt" content="netMind Extension — Open-source AI browser agent">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Ornith-1.0-35B WebBrain planner benchmark">
   <meta name="twitter:description" content="Ornith-1.0-35B vs Gemma 4 31B and Qwen 3.6 35B in WebBrain&#39;s frozen first-tool browser-agent benchmark.">
   <meta name="twitter:image" content="https://webbrain.one/twitter-image.png">
-  <meta name="twitter:image:alt" content="WebBrain — Open-source AI browser agent">
+      <meta name="twitter:image:alt" content="netMind Extension — Open-source AI browser agent">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="canonical" href="https://webbrain.one/blog/ornith-35b-webbrain-planner-benchmark">
   <!-- Blog is English-only; alternates point to locale homepages. -->
-  <link rel="alternate" hreflang="en" href="https://webbrain.one/">
+  <link rel="alternate" hreflang="en" href="https://webbrain.one/en/">
   <link rel="alternate" hreflang="es" href="https://webbrain.one/es/">
   <link rel="alternate" hreflang="fr" href="https://webbrain.one/fr/">
   <link rel="alternate" hreflang="tr" href="https://webbrain.one/tr/">
@@ -39,57 +39,65 @@
   <link rel="alternate" hreflang="ms" href="https://webbrain.one/ms/">
   <link rel="alternate" hreflang="tl" href="https://webbrain.one/tl/">
   <link rel="alternate" hreflang="he" href="https://webbrain.one/he/">
+  <link rel="alternate" hreflang="hi" href="https://webbrain.one/hi/">
+  <link rel="alternate" hreflang="pt" href="https://webbrain.one/pt/">
+  <link rel="alternate" hreflang="vi" href="https://webbrain.one/">
+  <link rel="alternate" hreflang="bn" href="https://webbrain.one/bn/">
+  <link rel="alternate" hreflang="fa" href="https://webbrain.one/fa/">
+  <link rel="alternate" hreflang="nl" href="https://webbrain.one/nl/">
+  <link rel="alternate" hreflang="de" href="https://webbrain.one/de/">
   <link rel="alternate" hreflang="x-default" href="https://webbrain.one/">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --bg: #0b0e17;
-      --bg-card: #111827;
-      --bg-card-hover: #1a2233;
-      --surface: #161d2e;
-      --border: rgba(255,255,255,0.07);
-      --text: #e4e4ec;
-      --text-dim: #8b8fa4;
-      --accent: #6c63ff;
-      --accent-glow: rgba(108,99,255,0.25);
-      --accent2: #a78bfa;
+    :root,
+    :root[data-theme="light"] {
+      --bg: #f7f3f4;
+      --bg-card: #fdfdfd;
+      --bg-card-hover: #f6eced;
+      --surface: #efe6e8;
+      --border: rgba(44,32,32,0.12);
+      --text: #2c2020;
+      --text-dim: #8c8084;
+      --accent: #f1143c;
+      --accent-glow: rgba(241,20,60,0.18);
+      --accent2: #d41034;
+      --success: #2d8866;
+      --warning: #9a6500;
+      --danger: #b74747;
+      --tint-soft: rgba(44,32,32,0.05);
+      --tint-soft-2: rgba(44,32,32,0.07);
+      --tint-medium: rgba(44,32,32,0.10);
+      --nav-bg: rgba(247,243,244,0.85);
+      --code-bg: #fff7f8;
+      --inline-code-bg: rgba(44,32,32,0.08);
+      --shadow-strong: rgba(44,32,32,0.18);
+      --radius: 12px;
+      --radius-lg: 16px;
+      --max-w: 760px;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --bg: #1c1416;
+      --bg-card: #251c1e;
+      --bg-card-hover: #34282b;
+      --surface: #2a2022;
+      --border: rgba(247,243,244,0.10);
+      --text: #f7f3f4;
+      --text-dim: #c4b6b9;
+      --accent: #ff4d6d;
+      --accent-glow: rgba(255,77,109,0.25);
+      --accent2: #ff6a84;
       --success: #34d399;
       --warning: #fbbf24;
       --danger: #f87171;
       --tint-soft: rgba(255,255,255,0.05);
       --tint-soft-2: rgba(255,255,255,0.04);
       --tint-medium: rgba(255,255,255,0.08);
-      --nav-bg: rgba(11,14,23,0.85);
-      --code-bg: #0a0e17;
+      --nav-bg: rgba(28,20,22,0.85);
+      --code-bg: #140e10;
       --inline-code-bg: rgba(255,255,255,0.06);
       --shadow-strong: rgba(0,0,0,0.40);
-      --radius: 12px;
-      --radius-lg: 16px;
-      --max-w: 760px;
       color-scheme: dark;
-    }
-    :root[data-theme="light"] {
-      --bg: #f7f1e6;
-      --bg-card: #fffdf8;
-      --bg-card-hover: #f2e9d4;
-      --surface: #ede2cb;
-      --border: rgba(89,55,25,0.15);
-      --text: #2c1810;
-      --text-dim: #6b5b47;
-      --accent: #5b52e8;
-      --accent-glow: rgba(91,82,232,0.20);
-      --accent2: #7c6ce6;
-      --success: #2d8866;
-      --warning: #9a6500;
-      --danger: #b74747;
-      --tint-soft: rgba(89,55,25,0.05);
-      --tint-soft-2: rgba(89,55,25,0.07);
-      --tint-medium: rgba(89,55,25,0.10);
-      --nav-bg: rgba(247,241,230,0.85);
-      --code-bg: #fff7e6;
-      --inline-code-bg: rgba(89,55,25,0.08);
-      --shadow-strong: rgba(89,55,25,0.18);
-      color-scheme: light;
     }
     html { scroll-behavior: smooth; }
     body {
@@ -453,12 +461,10 @@
     (function () {
       try {
         var saved = localStorage.getItem('webbrain-theme');
-        var theme = (saved === 'light' || saved === 'dark')
-          ? saved
-          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var theme = (saved === 'light' || saved === 'dark') ? saved : 'light';
         document.documentElement.setAttribute('data-theme', theme);
       } catch (_) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>
@@ -485,7 +491,7 @@
   "image": "https://webbrain.one/og-image.png",
   "publisher": {
     "@type": "Organization",
-    "name": "WebBrain",
+    "name": "netMind Extension",
     "logo": {
       "@type": "ImageObject",
       "url": "https://webbrain.one/logo-github.png"
@@ -502,12 +508,12 @@
   <div class="glow-bg"></div>
   <nav>
     <div class="nav-inner">
-      <a href="/" class="nav-brand"><img class="brand-logo" src="/logo-github.png" alt="" aria-hidden="true"> WebBrain<span class="domain">.one</span></a>
+      <a href="/" class="nav-brand"><img class="brand-logo" src="/logo-github.png" alt="" aria-hidden="true"> netMind Extension</a>
       <div class="nav-links">
         <a href="/">Home</a>
         <a href="/docs/">Docs</a>
         <a href="/blog" aria-current="page">Blog</a>
-        <select class="lang-dropdown" id="lang-dropdown" aria-label="Select language" data-current="en"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="tr">Türkçe</option><option value="zh">中文</option><option value="ru">Русский</option><option value="uk">Українська</option><option value="ar">العربية</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="id">Bahasa Indonesia</option><option value="th">ไทย</option><option value="ms">Bahasa Melayu</option><option value="tl">Filipino</option><option value="he">עברית</option></select>
+        <select class="lang-dropdown" id="lang-dropdown" aria-label="Select language" data-current="en"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="tr">Türkçe</option><option value="zh">中文</option><option value="ru">Русский</option><option value="uk">Українська</option><option value="ar">العربية</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="id">Bahasa Indonesia</option><option value="th">ไทย</option><option value="ms">Bahasa Melayu</option><option value="tl">Filipino</option><option value="he">עברית</option><option value="hi">हिन्दी</option><option value="pt">Português</option><option value="vi">Tiếng Việt</option><option value="bn">বাংলা</option><option value="fa">فارسی</option><option value="nl">Nederlands</option><option value="de">Deutsch</option></select>
         <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Toggle light / dark theme" title="Toggle light / dark theme">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"/>
@@ -517,7 +523,7 @@
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
-        <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </nav>
@@ -580,13 +586,13 @@
 <p>Tags: #Ornith #DeepReinforce #Gemma4 #Qwen36 #ToolCalling #BrowserAgent #WebBrain</p>
 
     <div class="author-box">
-      Written by <a href="https://emresokullu.com" target="_blank" rel="noopener">Emre Sokullu</a>. WebBrain is MIT-licensed and open on <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a>.
+      Written by <a href="https://emresokullu.com" target="_blank" rel="noopener">Emre Sokullu</a>. netMind Extension is MIT-licensed and open on <a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a>.
     </div>
   </article>
 
   <footer>
-    <div>&copy; 2026 WebBrain &middot; <a href="/privacy">Privacy</a></div>
-    <div><a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a></div>
+    <div>&copy; 2026 netMind Extension &middot; <a href="/privacy">Privacy</a></div>
+    <div><a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a></div>
   </footer>
   <script>
     (function () {
@@ -605,28 +611,19 @@
         const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
         setTheme(next, true);
       });
-
-      const mq = window.matchMedia('(prefers-color-scheme: light)');
-      function onMQ(e) {
-        try {
-          if (localStorage.getItem('webbrain-theme')) return;
-        } catch (_) {}
-        setTheme(e.matches ? 'light' : 'dark', false);
-      }
-      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onMQ);
-      else if (typeof mq.addListener === 'function') mq.addListener(onMQ);
     })();
   </script>
   <script>
     (function () {
-      const LOCALES = ["en","es","fr","tr","zh","ru","uk","ar","ja","ko","id","th","ms","tl","he"];
+      const LOCALES = ["en","es","fr","tr","zh","ru","uk","ar","ja","ko","id","th","ms","tl","he","hi","pt","vi","bn","fa","nl","de"];
+      const DEFAULT_LOCALE = "vi";
       const sel = document.getElementById('lang-dropdown');
       if (!sel) return;
       sel.value = sel.dataset.current || 'en';
       sel.addEventListener('change', function () {
         const target = sel.value;
         if (!LOCALES.includes(target)) return;
-        window.location.href = target === 'en' ? '/' : '/' + target + '/';
+        window.location.href = target === DEFAULT_LOCALE ? '/' : '/' + target + '/';
       });
     })();
   </script>

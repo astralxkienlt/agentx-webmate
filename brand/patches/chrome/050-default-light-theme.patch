@@ -1,0 +1,63 @@
+diff --git a/src/ui/theme-bootstrap.js b/src/ui/theme-bootstrap.js
+--- a/src/ui/theme-bootstrap.js
++++ b/src/ui/theme-bootstrap.js
+@@ -1,5 +1,5 @@
+ // Pre-paint theme bootstrap. Sets <html data-theme="..."> from
+-// localStorage('wbTheme') > prefers-color-scheme > 'dark' before the
++// localStorage('wbTheme') > prefers-color-scheme > 'light' before the
+ // stylesheet loads, so the page never opens in the wrong theme.
+ //
+ // Must be a classic script (not a module) loaded synchronously in <head>
+@@ -19,12 +19,12 @@
+ 
+   try {
+     var mode = localStorage.getItem('wbTheme');
+-    if (mode !== 'light' && mode !== 'dark') mode = 'system';
++    if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'light';
+     var theme = (mode === 'system')
+       ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+       : mode;
+     document.documentElement.setAttribute('data-theme', theme);
+   } catch (_) {
+-    document.documentElement.setAttribute('data-theme', 'dark');
++    document.documentElement.setAttribute('data-theme', 'light');
+   }
+ })();
+diff --git a/src/ui/theme.js b/src/ui/theme.js
+--- a/src/ui/theme.js
++++ b/src/ui/theme.js
+@@ -1,10 +1,10 @@
+ // Theme helper for the WebBrain extension UI (sidepanel + settings + traces).
+ //
+ // Three modes:
+-//   - 'system' (default) — follows prefers-color-scheme, updates live if the
++//   - 'light'            — default; raspberry paper palette.
++//   - 'system'           — follows prefers-color-scheme, updates live if the
+ //                          OS theme changes.
+-//   - 'light'            — forced cream / coffee palette.
+-//   - 'dark'             — forced original dark palette.
++//   - 'dark'             — forced raspberry dark palette.
+ //
+ // We mirror the pref into both localStorage (sync read for FOUC-free
+ // bootstrap from inline <head> scripts) and chrome.storage.local (canonical
+@@ -18,7 +18,7 @@
+ const LS_KEY = 'wbTheme';
+ 
+ export const THEME_MODES = ['system', 'light', 'dark'];
+-export const DEFAULT_MODE = 'system';
++export const DEFAULT_MODE = 'light';
+ 
+ function readLocal() {
+   try {
+diff --git a/src/config-transfer.js b/src/config-transfer.js
+--- a/src/config-transfer.js
++++ b/src/config-transfer.js
+@@ -20,7 +20,7 @@
+ // Cloud device ID, and Cloud Sync session/token metadata.
+ export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
+   wbLocale: 'en',
+-  themeMode: 'system',
++  themeMode: 'light',
+   verboseMode: false,
+   selectionShortcutEnabled: true,
+   [AUTO_GROUP_TABS_KEY]: true,

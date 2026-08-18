@@ -5,9 +5,9 @@
  * Reads web/build/template.html, web/build/faq-template.html, and
  * web/build/locales/*.json and writes:
  *   web/index.html
- *   web/{es,fr,tr,zh}/index.html
+ *   web/{en,es,fr,...}/index.html
  *   web/docs/faq/index.html
- *   web/docs/{es,fr,tr,zh,...}/faq/index.html
+ *   web/docs/{en,es,fr,...}/faq/index.html
  *   web/sitemap.xml
  *   web/robots.txt
  *
@@ -47,10 +47,10 @@ const SITE_ORIGIN = 'https://webbrain.one';
 const SOCIAL_IMAGE_URL = `${SITE_ORIGIN}/og-image.png`;
 const LOGO_IMAGE_URL = `${SITE_ORIGIN}/logo-github.png`;
 
-// Locale config. The default locale (en) renders to web/index.html;
+// Locale config. The default locale (vi) renders to web/index.html;
 // the others render to web/<code>/index.html.
 const LOCALES = [
-  { code: 'en', bcp47: 'en-US', label: 'English',          dir: 'ltr', isDefault: true  },
+  { code: 'en', bcp47: 'en-US', label: 'English',          dir: 'ltr', isDefault: false },
   { code: 'es', bcp47: 'es-ES', label: 'Español',          dir: 'ltr', isDefault: false },
   { code: 'fr', bcp47: 'fr-FR', label: 'Français',         dir: 'ltr', isDefault: false },
   { code: 'tr', bcp47: 'tr-TR', label: 'Türkçe',           dir: 'ltr', isDefault: false },
@@ -67,12 +67,14 @@ const LOCALES = [
   { code: 'he', bcp47: 'he-IL', label: 'עברית',           dir: 'rtl', isDefault: false },
   { code: 'hi', bcp47: 'hi-IN', label: 'हिन्दी', dir: 'ltr', isDefault: false },
   { code: 'pt', bcp47: 'pt-BR', label: 'Português', dir: 'ltr', isDefault: false },
-  { code: 'vi', bcp47: 'vi-VN', label: 'Tiếng Việt', dir: 'ltr', isDefault: false },
+  { code: 'vi', bcp47: 'vi-VN', label: 'Tiếng Việt', dir: 'ltr', isDefault: true  },
   { code: 'bn', bcp47: 'bn-BD', label: 'বাংলা', dir: 'ltr', isDefault: false },
   { code: 'fa', bcp47: 'fa-IR', label: 'فارسی', dir: 'rtl', isDefault: false },
   { code: 'nl', bcp47: 'nl-NL', label: 'Nederlands', dir: 'ltr', isDefault: false },
   { code: 'de', bcp47: 'de-DE', label: 'Deutsch', dir: 'ltr', isDefault: false },
 ];
+const DEFAULT_LOCALE = LOCALES.find((locale) => locale.isDefault);
+if (!DEFAULT_LOCALE) throw new Error('Exactly one locale must be marked isDefault');
 
 // Keep the website on the same bundled 4:3 flag artwork as the extension
 // language picker. The web build copies only the flags used by web locales.
@@ -236,7 +238,7 @@ function buildHreflangBlock() {
   const links = LOCALES.map(
     (l) => `  <link rel="alternate" hreflang="${l.code}" href="${homeUrlFor(l)}">`,
   );
-  // x-default points at the default (English) homepage.
+  // x-default points at the default (Vietnamese) homepage.
   const xDefault = `  <link rel="alternate" hreflang="x-default" href="${SITE_ORIGIN}/">`;
   return [...links, xDefault].join('\n');
 }
@@ -245,7 +247,7 @@ function buildFaqHreflangBlock() {
   const links = LOCALES.map(
     (locale) => `  <link rel="alternate" hreflang="${locale.code}" href="${faqUrlFor(locale)}">`,
   );
-  const xDefault = `  <link rel="alternate" hreflang="x-default" href="${faqUrlFor(LOCALES[0])}">`;
+  const xDefault = `  <link rel="alternate" hreflang="x-default" href="${faqUrlFor(DEFAULT_LOCALE)}">`;
   return [...links, xDefault].join('\n');
 }
 
@@ -358,7 +360,7 @@ function buildSoftwareJsonLd(dict, locale) {
   const payload = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'WebBrain',
+    name: 'netMind Extension',
     applicationCategory: 'BrowserApplication',
     operatingSystem: 'Chrome, Edge, Firefox',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
@@ -378,11 +380,11 @@ function buildSoftwareJsonLd(dict, locale) {
 
 function buildSubscribeHtml() {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebBrain Cloud Subscribe</title>
+  <title>Đăng ký netMind Cloud</title>
   <meta name="robots" content="noindex, follow">
   <link rel="canonical" href="${SITE_ORIGIN}/subscribe/">
   <style>
@@ -393,8 +395,8 @@ function buildSubscribeHtml() {
       display: grid;
       place-items: center;
       padding: 24px;
-      background: #0b0e17;
-      color: #e4e4ec;
+      background: #f7f3f4;
+      color: #2c2020;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
       line-height: 1.6;
     }
@@ -403,7 +405,7 @@ function buildSubscribeHtml() {
       font-size: 20px;
       font-weight: 800;
       margin-bottom: 22px;
-      color: #a78bfa;
+      color: #f1143c;
     }
     h1 {
       margin: 0 0 12px;
@@ -412,11 +414,11 @@ function buildSubscribeHtml() {
     }
     p {
       margin: 0 auto 18px;
-      color: #a7adbd;
+      color: #8c8084;
       font-size: 16px;
     }
     a {
-      color: #a78bfa;
+      color: #d41034;
       font-weight: 700;
       text-decoration: none;
     }
@@ -425,8 +427,8 @@ function buildSubscribeHtml() {
       width: 30px;
       height: 30px;
       margin: 26px auto;
-      border: 3px solid rgba(167, 139, 250, 0.25);
-      border-top-color: #a78bfa;
+      border: 3px solid rgba(241, 20, 60, 0.25);
+      border-top-color: #f1143c;
       border-radius: 50%;
       animation: spin 0.85s linear infinite;
     }
@@ -435,10 +437,10 @@ function buildSubscribeHtml() {
 </head>
 <body>
   <main>
-    <div class="brand">WebBrain Cloud</div>
-    <h1 id="subscribe-title">Redirecting to Stripe</h1>
-    <p id="subscribe-copy">The payment page will open in a few seconds.</p>
-    <p id="checkout-row">If redirect does not work, <a id="checkout-link" href="${STRIPE_SUBSCRIBE_URL}">open Stripe checkout</a>.</p>
+    <div class="brand">netMind Cloud</div>
+    <h1 id="subscribe-title">Đang chuyển tới Stripe</h1>
+    <p id="subscribe-copy">Trang thanh toán sẽ mở sau vài giây.</p>
+    <p id="checkout-row">Nếu không chuyển trang được, <a id="checkout-link" href="${STRIPE_SUBSCRIBE_URL}">mở Stripe checkout</a>.</p>
     <div class="spinner" aria-hidden="true"></div>
   </main>
   <script>
@@ -451,14 +453,45 @@ function buildSubscribeHtml() {
         window.location.href = checkoutUrl.toString();
       }, 3500);
     } else {
-      document.getElementById('subscribe-title').textContent = 'Open this link from WebBrain';
-      document.getElementById('subscribe-copy').textContent = 'You may be using an outdated version of the WebBrain plugin on your browser, please update.';
+      document.getElementById('subscribe-title').textContent = 'Hãy mở liên kết này từ netMind Extension';
+      document.getElementById('subscribe-copy').textContent = 'Có thể bạn đang dùng phiên bản tiện ích cũ. Hãy cập nhật netMind Extension rồi thử lại.';
       document.getElementById('checkout-row').style.display = 'none';
     }
   </script>
 </body>
 </html>
 `;
+}
+
+function writeRedirectHtml(toPath) {
+  const href = escHtml(toPath);
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="0;url=${href}">
+  <link rel="canonical" href="${SITE_ORIGIN}${href}">
+  <title>Redirect</title>
+</head>
+<body>
+  <a href="${href}">Tiếp tục</a>
+</body>
+</html>
+`;
+}
+
+async function writeLegacyLocaleRedirects() {
+  // Previous default was English at / and Vietnamese at /vi/. Keep the old
+  // Vietnamese paths working after the default locale swap.
+  const redirects = [
+    [path.join(ROOT, 'vi', 'index.html'), '/'],
+    [path.join(ROOT, 'docs', 'vi', 'faq', 'index.html'), '/docs/faq/'],
+  ];
+  for (const [outPath, toPath] of redirects) {
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, writeRedirectHtml(toPath), 'utf8');
+    console.log(`✓ wrote ${path.relative(process.cwd(), outPath)} → ${toPath}`);
+  }
 }
 
 function applyTemplate(template, dict, locale) {
@@ -527,15 +560,13 @@ async function main() {
 
   let totalMissing = 0;
   for (const locale of LOCALES) {
-    const raw = locale.isDefault
-      ? en
-      : JSON.parse(await readFile(path.join(LOCALES_DIR, `${locale.code}.json`), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(LOCALES_DIR, `${locale.code}.json`), 'utf8'));
     validateFaqLocale(raw, locale.code);
 
     let dict = raw;
-    if (!locale.isDefault) {
+    if (locale.code !== 'en') {
       // Fall back to English for any untranslated key so the build never
-      // produces an empty slot.
+      // produces an empty slot. Default locale (vi) still uses vi.json.
       dict = { ...en, ...raw };
     }
     // Synthesize per-locale share-intent URLs from the locale's share text
@@ -582,6 +613,8 @@ async function main() {
     console.log(`✓ wrote ${path.relative(process.cwd(), faqOutPath)} (${faqHtml.length.toLocaleString()} bytes)`);
   }
 
+  await writeLegacyLocaleRedirects();
+
   // sitemap.xml — localized homes plus public utility, blog, and user-doc pages.
   const sitemapUrls = [
     ...LOCALES.map((l) => ({ loc: homeUrlFor(l), alternates: 'home' })),
@@ -611,7 +644,7 @@ async function main() {
       const alts = u.alternates
         ? LOCALES.map(
             (l) => `    <xhtml:link rel="alternate" hreflang="${l.code}" href="${alternateUrlFor(l)}"/>`,
-          ).concat([`    <xhtml:link rel="alternate" hreflang="x-default" href="${alternateUrlFor(LOCALES[0])}"/>`]).join('\n') + '\n'
+          ).concat([`    <xhtml:link rel="alternate" hreflang="x-default" href="${alternateUrlFor(DEFAULT_LOCALE)}"/>`]).join('\n') + '\n'
         : '';
       return `  <url>\n    <loc>${u.loc}</loc>\n${alts}  </url>`;
     }),

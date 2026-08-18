@@ -54,7 +54,7 @@ const SOCIAL_IMAGE_HEIGHT = 630;
 // Labels use each language's own script, matching web/build/template.html's
 // dropdown — keep the two lists in sync when adding a new locale.
 const LOCALES = [
-  { code: 'en', label: 'English', path: '/' },
+  { code: 'en', label: 'English', path: '/en/' },
   { code: 'es', label: 'Español', path: '/es/' },
   { code: 'fr', label: 'Français', path: '/fr/' },
   { code: 'tr', label: 'Türkçe', path: '/tr/' },
@@ -69,7 +69,15 @@ const LOCALES = [
   { code: 'ms', label: 'Bahasa Melayu', path: '/ms/' },
   { code: 'tl', label: 'Filipino', path: '/tl/' },
   { code: 'he', label: 'עברית', path: '/he/' },
+  { code: 'hi', label: 'हिन्दी', path: '/hi/' },
+  { code: 'pt', label: 'Português', path: '/pt/' },
+  { code: 'vi', label: 'Tiếng Việt', path: '/' },
+  { code: 'bn', label: 'বাংলা', path: '/bn/' },
+  { code: 'fa', label: 'فارسی', path: '/fa/' },
+  { code: 'nl', label: 'Nederlands', path: '/nl/' },
+  { code: 'de', label: 'Deutsch', path: '/de/' },
 ];
+const DEFAULT_LOCALE = 'vi';
 
 function parseArgs(argv) {
   const args = {
@@ -593,7 +601,7 @@ async function buildPost(filePath, args) {
     ledeHtml,
     bodyHtml,
     urlPath: `/blog/${slug}`,
-    titleTag: String(meta.titleTag || meta.title_tag || `${title} - WebBrain Blog`),
+    titleTag: String(meta.titleTag || meta.title_tag || `${title} - netMind Extension Blog`),
     ogTitle: String(meta.ogTitle || meta.og_title || title),
     ogDescription: String(meta.ogDescription || meta.og_description || description),
     twitterTitle: String(meta.twitterTitle || meta.twitter_title || meta.ogTitle || meta.og_title || title),
@@ -634,54 +642,55 @@ function sortPosts(posts) {
 function blogStyle() {
   return `<style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --bg: #0b0e17;
-      --bg-card: #111827;
-      --bg-card-hover: #1a2233;
-      --surface: #161d2e;
-      --border: rgba(255,255,255,0.07);
-      --text: #e4e4ec;
-      --text-dim: #8b8fa4;
-      --accent: #6c63ff;
-      --accent-glow: rgba(108,99,255,0.25);
-      --accent2: #a78bfa;
+    :root,
+    :root[data-theme="light"] {
+      --bg: #f7f3f4;
+      --bg-card: #fdfdfd;
+      --bg-card-hover: #f6eced;
+      --surface: #efe6e8;
+      --border: rgba(44,32,32,0.12);
+      --text: #2c2020;
+      --text-dim: #8c8084;
+      --accent: #f1143c;
+      --accent-glow: rgba(241,20,60,0.18);
+      --accent2: #d41034;
+      --success: #2d8866;
+      --warning: #9a6500;
+      --danger: #b74747;
+      --tint-soft: rgba(44,32,32,0.05);
+      --tint-soft-2: rgba(44,32,32,0.07);
+      --tint-medium: rgba(44,32,32,0.10);
+      --nav-bg: rgba(247,243,244,0.85);
+      --code-bg: #fff7f8;
+      --inline-code-bg: rgba(44,32,32,0.08);
+      --shadow-strong: rgba(44,32,32,0.18);
+      --radius: 12px;
+      --radius-lg: 16px;
+      --max-w: 760px;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --bg: #1c1416;
+      --bg-card: #251c1e;
+      --bg-card-hover: #34282b;
+      --surface: #2a2022;
+      --border: rgba(247,243,244,0.10);
+      --text: #f7f3f4;
+      --text-dim: #c4b6b9;
+      --accent: #ff4d6d;
+      --accent-glow: rgba(255,77,109,0.25);
+      --accent2: #ff6a84;
       --success: #34d399;
       --warning: #fbbf24;
       --danger: #f87171;
       --tint-soft: rgba(255,255,255,0.05);
       --tint-soft-2: rgba(255,255,255,0.04);
       --tint-medium: rgba(255,255,255,0.08);
-      --nav-bg: rgba(11,14,23,0.85);
-      --code-bg: #0a0e17;
+      --nav-bg: rgba(28,20,22,0.85);
+      --code-bg: #140e10;
       --inline-code-bg: rgba(255,255,255,0.06);
       --shadow-strong: rgba(0,0,0,0.40);
-      --radius: 12px;
-      --radius-lg: 16px;
-      --max-w: 760px;
       color-scheme: dark;
-    }
-    :root[data-theme="light"] {
-      --bg: #f7f1e6;
-      --bg-card: #fffdf8;
-      --bg-card-hover: #f2e9d4;
-      --surface: #ede2cb;
-      --border: rgba(89,55,25,0.15);
-      --text: #2c1810;
-      --text-dim: #6b5b47;
-      --accent: #5b52e8;
-      --accent-glow: rgba(91,82,232,0.20);
-      --accent2: #7c6ce6;
-      --success: #2d8866;
-      --warning: #9a6500;
-      --danger: #b74747;
-      --tint-soft: rgba(89,55,25,0.05);
-      --tint-soft-2: rgba(89,55,25,0.07);
-      --tint-medium: rgba(89,55,25,0.10);
-      --nav-bg: rgba(247,241,230,0.85);
-      --code-bg: #fff7e6;
-      --inline-code-bg: rgba(89,55,25,0.08);
-      --shadow-strong: rgba(89,55,25,0.18);
-      color-scheme: light;
     }
     html { scroll-behavior: smooth; }
     body {
@@ -1242,12 +1251,10 @@ function themeBootstrapScript() {
     (function () {
       try {
         var saved = localStorage.getItem('webbrain-theme');
-        var theme = (saved === 'light' || saved === 'dark')
-          ? saved
-          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var theme = (saved === 'light' || saved === 'dark') ? saved : 'light';
         document.documentElement.setAttribute('data-theme', theme);
       } catch (_) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>`;
@@ -1271,16 +1278,6 @@ function themeToggleScript() {
         const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
         setTheme(next, true);
       });
-
-      const mq = window.matchMedia('(prefers-color-scheme: light)');
-      function onMQ(e) {
-        try {
-          if (localStorage.getItem('webbrain-theme')) return;
-        } catch (_) {}
-        setTheme(e.matches ? 'light' : 'dark', false);
-      }
-      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onMQ);
-      else if (typeof mq.addListener === 'function') mq.addListener(onMQ);
     })();
   </script>`;
 }
@@ -1290,13 +1287,14 @@ function languageScript() {
   return `<script>
     (function () {
       const LOCALES = ${localeCodes};
+      const DEFAULT_LOCALE = ${JSON.stringify(DEFAULT_LOCALE)};
       const sel = document.getElementById('lang-dropdown');
       if (!sel) return;
       sel.value = sel.dataset.current || 'en';
       sel.addEventListener('change', function () {
         const target = sel.value;
         if (!LOCALES.includes(target)) return;
-        window.location.href = target === 'en' ? '/' : '/' + target + '/';
+        window.location.href = target === DEFAULT_LOCALE ? '/' : '/' + target + '/';
       });
     })();
   </script>`;
@@ -1467,7 +1465,7 @@ function navHtml() {
 
   return `<nav>
     <div class="nav-inner">
-      <a href="/" class="nav-brand"><img class="brand-logo" src="/logo-github.png" alt="" aria-hidden="true"> WebBrain<span class="domain">.one</span></a>
+      <a href="/" class="nav-brand"><img class="brand-logo" src="/logo-github.png" alt="" aria-hidden="true"> netMind Extension</a>
       <div class="nav-links">
         <a href="/">Home</a>
         <a href="/docs/">Docs</a>
@@ -1482,7 +1480,7 @@ function navHtml() {
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
-        <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </nav>`;
@@ -1517,12 +1515,12 @@ function sharedHead({ title, description, canonical, ogType = 'website', ogTitle
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="${SOCIAL_IMAGE_WIDTH}">
   <meta property="og:image:height" content="${SOCIAL_IMAGE_HEIGHT}">
-  <meta property="og:image:alt" content="WebBrain — Open-source AI browser agent">
+      <meta property="og:image:alt" content="netMind Extension — Open-source AI browser agent">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escAttr(twitterTitle || ogTitle || title)}">
   <meta name="twitter:description" content="${escAttr(twitterDescription || ogDescription || description)}">
   <meta name="twitter:image" content="${escAttr(twitterImageUrl)}">
-  <meta name="twitter:image:alt" content="WebBrain — Open-source AI browser agent">
+      <meta name="twitter:image:alt" content="netMind Extension — Open-source AI browser agent">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="canonical" href="${escAttr(canonical)}">
   <!-- Blog is English-only; alternates point to locale homepages. -->
@@ -1553,7 +1551,7 @@ function renderPostPage(post, args) {
     image: socialImageUrl,
     publisher: {
       '@type': 'Organization',
-      name: 'WebBrain',
+      name: 'netMind Extension',
       logo: {
         '@type': 'ImageObject',
         url: `${args.site}/logo-github.png`,
@@ -1590,7 +1588,7 @@ ${sharedHead({
 ${post.bodyHtml}
 
     <div class="author-box">
-      Written by <a href="${escAttr(post.authorUrl)}" target="_blank" rel="noopener">${escHtml(post.author)}</a>. WebBrain is MIT-licensed and open on <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a>.
+      Written by <a href="${escAttr(post.authorUrl)}" target="_blank" rel="noopener">${escHtml(post.author)}</a>. netMind Extension is MIT-licensed and open on <a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a>.
     </div>
   </article>
 
@@ -1605,7 +1603,7 @@ ${post.bodyHtml}
 function renderIndexPage(posts, args) {
   const canonical = `${args.site}/blog`;
   const socialImageUrl = `${args.site}${SOCIAL_IMAGE_PATH}`;
-  const description = 'Engineering notes from WebBrain - the open-source AI browser agent.';
+  const description = 'Engineering notes from netMind Extension - the open-source AI browser agent.';
   const cards = posts.map((post) => {
     const searchText = [
       post.title,
@@ -1626,7 +1624,7 @@ function renderIndexPage(posts, args) {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Blog',
-    name: 'WebBrain Blog',
+    name: 'netMind Extension Blog',
     description,
     url: canonical,
     image: socialImageUrl,
@@ -1643,13 +1641,13 @@ function renderIndexPage(posts, args) {
   return `<!DOCTYPE html>
 <html lang="en">
 ${sharedHead({
-    title: 'WebBrain Blog',
+    title: 'netMind Extension Blog',
     description,
     canonical,
-    ogTitle: 'WebBrain Blog',
+    ogTitle: 'netMind Extension Blog',
     ogDescription: description,
-    twitterTitle: 'WebBrain Blog',
-    twitterDescription: 'Engineering notes from WebBrain.',
+    twitterTitle: 'netMind Extension Blog',
+    twitterDescription: 'Engineering notes from netMind Extension.',
     jsonLd,
     extraHead: blogIndexStyle(),
   }, args.site)}
@@ -1658,7 +1656,7 @@ ${sharedHead({
   ${navHtml()}
 
   <main>
-    <h1 class="sr-only">WebBrain Blog</h1>
+    <h1 class="sr-only">netMind Extension Blog</h1>
 
     <section class="blog-tools" id="blog-tools" aria-label="Search the blog archive">
       <label class="archive-search-label" for="blog-search">Search the archive</label>
@@ -1706,8 +1704,8 @@ ${sharedHead({
 
 function footerHtml() {
   return `<footer>
-    <div>&copy; 2026 WebBrain &middot; <a href="/privacy">Privacy</a></div>
-    <div><a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">GitHub</a></div>
+    <div>&copy; 2026 netMind Extension &middot; <a href="/privacy">Privacy</a></div>
+    <div><a href="https://github.com/astralxkienlt/agentx-webmate" target="_blank" rel="noopener">GitHub</a></div>
   </footer>`;
 }
 

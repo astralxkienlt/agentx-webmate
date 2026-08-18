@@ -227,17 +227,78 @@ const applyIcons = (outDir, written) =>
 // Appended rather than edited in: the last declaration wins in CSS, so a
 // variable override at the end of the file beats the upstream default without
 // touching the 85KB upstream stylesheet.
-async function applyTheme(outDir, config) {
+const THEME_HTML = new Set([
+  'settings.html',
+  'history.html',
+  'traces.html',
+  'install.html',
+  'mic-permission.html',
+  'emergency-box.html',
+  'emergency-pdf.html',
+  'emergency-communication.html',
+]);
+
+const FONT_HTML_SKIP = new Set(['sidepanel.html']);
+
+async function applyTheme(outDir, config, written) {
+  const fontsFile = path.join(BRAND, 'fonts.css');
   const themeFile = path.join(BRAND, 'theme.css');
   if (!existsSync(themeFile)) return false;
-  const target = path.join(outDir, 'styles', 'sidepanel.css');
-  if (!existsSync(target)) {
-    warn('styles/sidepanel.css not found — upstream moved it; theme NOT applied');
-    return false;
-  }
+
+  const fonts = existsSync(fontsFile) ? `${await fs.readFile(fontsFile, 'utf8')}\n` : '';
   const theme = await fs.readFile(themeFile, 'utf8');
-  await fs.appendFile(target, `\n\n/* ===== ${config.product.name} theme (brand/theme.css) ===== */\n${theme}`);
+  const combined = `${fonts}${theme}`;
+
+  const stylesDir = path.join(outDir, 'styles');
+  await fs.mkdir(stylesDir, { recursive: true });
+  await fs.writeFile(path.join(stylesDir, 'brand-fonts.css'), fonts || combined);
+  await fs.writeFile(path.join(stylesDir, 'brand-theme.css'), combined);
+  written?.add('styles/brand-fonts.css');
+  written?.add('styles/brand-theme.css');
+
+  const sidepanel = path.join(outDir, 'styles', 'sidepanel.css');
+  if (!existsSync(sidepanel)) {
+    warn('styles/sidepanel.css not found — upstream moved it; theme NOT appended');
+  } else {
+    await fs.appendFile(
+      sidepanel,
+      `\n\n/* ===== ${config.product.name} theme (brand/fonts.css + brand/theme.css) ===== */\n${combined}`
+    );
+  }
+
+  await injectBrandStylesheets(outDir);
   return true;
+}
+
+async function injectBrandStylesheets(outDir) {
+  for (const rel of await walk(outDir)) {
+    if (!rel.endsWith('.html')) continue;
+    const posix = rel.split(path.sep).join('/');
+    if (posix.split('/').includes('vendor')) continue;
+    const base = path.basename(rel);
+    const full = path.join(outDir, rel);
+    let html = await fs.readFile(full, 'utf8');
+    if (!html.includes('</head>')) continue;
+    if (html.includes('brand-fonts.css') || html.includes('brand-theme.css')) continue;
+
+    const hrefFor = (file) =>
+      path.relative(path.dirname(full), path.join(outDir, 'styles', file)).split(path.sep).join('/');
+
+    const links = [];
+    if (THEME_HTML.has(base)) {
+      links.push(`<link rel="stylesheet" href="${hrefFor('brand-theme.css')}">`);
+    } else if (!FONT_HTML_SKIP.has(base)) {
+      links.push(`<link rel="stylesheet" href="${hrefFor('brand-fonts.css')}">`);
+    }
+    if (base === 'mic-permission.html') {
+      links.push(
+        '<style id="netmind-brand-page">body{background:var(--bg-primary);color:var(--text-primary)}h1{color:var(--text-primary);-webkit-text-fill-color:var(--text-primary)}</style>'
+      );
+    }
+    if (!links.length) continue;
+    html = html.replace('</head>', `  ${links.join('\n  ')}\n</head>`);
+    await fs.writeFile(full, html);
+  }
 }
 
 async function applyFirstRunStyles(outDir, config) {
@@ -464,7 +525,7 @@ async function buildTarget(target, config) {
   const manifest = await rewriteManifest(outDir, config, target);
   const icons = await applyIcons(outDir, written);
   if (icons) log(`${target}: ${icons} icon(s)`);
-  if (await applyTheme(outDir, config)) log(`${target}: theme appended`);
+  if (await applyTheme(outDir, config, written)) log(`${target}: theme appended`);
   const firstRunStyles = await applyFirstRunStyles(outDir, config);
   if (firstRunStyles) log(`${target}: ${firstRunStyles} first-run stylesheet(s) appended`);
 

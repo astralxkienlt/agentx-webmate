@@ -1,11 +1,11 @@
 {
   "product": {
-    "name": "AgentX WebMate",
-    "shortName": "WebMate",
-    "slug": "agentx-webmate",
+    "name": "netMind Extension",
+    "shortName": "netMind",
+    "slug": "netmind-extension",
     "description": "AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
     "homepage": "https://github.com/astralxkienlt/agentx-webmate",
-    "firefoxId": "agentx-webmate@example.com"
+    "firefoxId": "netmind-extension@astralx.com.vn"
   },
 
   "services": {
@@ -31,7 +31,7 @@
     {
       "_why": "Display name in UI and skill text. Guards keep it out of identifiers and protocol tokens such as ensureWebBrainGroup and X-WebBrain-Help-Improve.",
       "regex": "(?<![A-Za-z0-9_$])WebBrain(?![A-Za-z0-9_$])",
-      "to": "AgentX WebMate",
+      "to": "netMind Extension",
       "except": ["vendor/**"]
     },
     {
@@ -43,19 +43,19 @@
     {
       "_why": "Lowercase brand name inside translated sentences. Scoped to locale files only; the lookarounds keep it off webbrain.one, webbrain_note and webbrain-tools.",
       "regex": "(?<![A-Za-z0-9_$\\-./])webbrain(?![A-Za-z0-9_$\\-]|\\.one)",
-      "to": "AgentX WebMate",
+      "to": "netMind Extension",
       "only": ["src/ui/locales/**", "src/selection-shortcut-i18n.js"]
     },
     {
       "_why": "Fallback prefix for downloaded screenshot filenames.",
       "from": "|| 'webbrain'",
-      "to": "|| 'agentx-webmate'",
+      "to": "|| 'netmind-extension'",
       "only": ["src/ui/sidepanel.js"]
     },
     {
       "_why": "User-visible export and capture filenames.",
       "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage)-",
-      "to": "agentx-webmate-$1-",
+      "to": "netmind-extension-$1-",
       "only": [
         "src/ui/sidepanel.js",
         "src/ui/settings.js",
@@ -69,7 +69,7 @@
     {
       "_why": "Fallback names for recordings and staged screenshots.",
       "regex": "webbrain-(recording|screenshot\\.png)(?=['\"])",
-      "to": "agentx-webmate-$1",
+      "to": "netmind-extension-$1",
       "only": [
         "src/ui/sidepanel.js",
         "src/ui/staged-screenshot-store.js",
@@ -77,37 +77,37 @@
       ]
     },
     {
-      "_why": "Branded workflow exports while continuing to import legacy WebBrain workflow files.",
+      "_why": "Branded workflow exports while continuing to import legacy WebBrain and AgentX WebMate workflow files.",
       "from": "return `${stem}.webbrain-workflow.json`;",
-      "to": "return `${stem}.agentx-webmate-workflow.json`;",
+      "to": "return `${stem}.netmind-extension-workflow.json`;",
       "only": ["src/ui/sidepanel.js"]
     },
     {
-      "_why": "Accept both new and legacy workflow file extensions.",
+      "_why": "Accept new, previous-brand, and legacy workflow file extensions.",
       "from": ".json,.webbrain-workflow.json,application/json",
-      "to": ".json,.agentx-webmate-workflow.json,.webbrain-workflow.json,application/json",
+      "to": ".json,.netmind-extension-workflow.json,.agentx-webmate-workflow.json,.webbrain-workflow.json,application/json",
       "only": ["src/ui/sidepanel.js"]
     },
     {
-      "_why": "Send reviews and feedback to the AgentX WebMate repository until store listings are available.",
+      "_why": "Send reviews and feedback to the product repository until store listings are available.",
       "regex": "https://(?:chromewebstore\\.google\\.com/detail/webbrain/ljhijonmfahplgbbacgcfnaihbjljhhb|addons\\.mozilla\\.org/en-US/firefox/addon/webbrain/)",
       "to": "https://github.com/astralxkienlt/agentx-webmate",
       "only": ["src/ui/store-review-prompt.js"]
     },
     {
-      "_why": "Do not show a misleading store-review prompt before AgentX WebMate has official listings.",
+      "_why": "Do not show a misleading store-review prompt before netMind Extension has official listings.",
       "from": "export const MIN_SUCCESSFUL_TASKS = 3;",
       "to": "export const MIN_SUCCESSFUL_TASKS = Number.POSITIVE_INFINITY;",
       "only": ["src/ui/store-review-prompt.js"]
     },
     {
-      "_why": "Send feedback to the AgentX WebMate issue tracker.",
+      "_why": "Send feedback to the product issue tracker.",
       "from": "https://github.com/webbrain-one/webbrain/issues/new",
       "to": "https://github.com/astralxkienlt/agentx-webmate/issues/new",
       "only": ["src/ui/store-review-prompt.js"]
     },
     {
-      "_why": "Point the in-app documentation link to AgentX WebMate documentation.",
+      "_why": "Point the in-app documentation link to this repository's documentation.",
       "from": "https://webbrain.one/docs",
       "to": "https://github.com/astralxkienlt/agentx-webmate/tree/main/docs",
       "only": ["src/ui/settings.html"]

@@ -122,8 +122,15 @@ export function isReleaseBoundary(version) {
 
 export const SUBMISSION_ZIP_PACKAGES = Object.freeze(['chrome', 'edge', 'firefox']);
 
-export function submissionZipPaths(version) {
-  return SUBMISSION_ZIP_PACKAGES.map((browser) => `dist/agentx-webmate-${browser}-${version}.zip`);
+const BUMP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+export function productSlug(root = BUMP_ROOT) {
+  const brand = JSON.parse(readFileSync(path.join(root, 'brand/brand.config.json'), 'utf8'));
+  return String(brand?.product?.slug || 'netmind-extension');
+}
+
+export function submissionZipPaths(version, slug = productSlug()) {
+  return SUBMISSION_ZIP_PACKAGES.map((browser) => `dist/${slug}-${browser}-${version}.zip`);
 }
 
 export function submissionZipRemoveCommand(version) {

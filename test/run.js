@@ -14083,16 +14083,16 @@ test('isReleaseBoundary: composes with bumpSemver to classify the next version',
 
 test('submissionZipPaths includes every store package artifact', () => {
   assert.deepEqual(submissionZipPaths('18.2.0'), [
-    'dist/agentx-webmate-chrome-18.2.0.zip',
-    'dist/agentx-webmate-edge-18.2.0.zip',
-    'dist/agentx-webmate-firefox-18.2.0.zip',
+    'dist/netmind-extension-chrome-18.2.0.zip',
+    'dist/netmind-extension-edge-18.2.0.zip',
+    'dist/netmind-extension-firefox-18.2.0.zip',
   ]);
 });
 
 test('submissionZipRemoveCommand tolerates missing first Edge artifact', () => {
   assert.equal(
     submissionZipRemoveCommand('18.1.0'),
-    'git rm --ignore-unmatch dist/agentx-webmate-chrome-18.1.0.zip dist/agentx-webmate-edge-18.1.0.zip dist/agentx-webmate-firefox-18.1.0.zip'
+    'git rm --ignore-unmatch dist/netmind-extension-chrome-18.1.0.zip dist/netmind-extension-edge-18.1.0.zip dist/netmind-extension-firefox-18.1.0.zip'
   );
 });
 
@@ -14181,7 +14181,7 @@ test('multimodal connection-test assets preserve the prior image and silent WAV 
 test('tracked store archives contain the Opera-safe flag license filename', () => {
   const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   for (const browser of ['chrome', 'edge', 'firefox']) {
-    const relativePath = `dist/agentx-webmate-${browser}-${version}.zip`;
+    const relativePath = `dist/netmind-extension-${browser}-${version}.zip`;
     const archivePath = path.join(ROOT, relativePath);
     assert.ok(fs.existsSync(archivePath), `${relativePath} is missing`);
     assert.doesNotThrow(

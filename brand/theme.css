@@ -1,24 +1,143 @@
-/* AgentX WebMate — brand theme.
+/* netMind Extension — brand theme.
  *
- * Appended to the end of the upstream sidepanel.css at build time, so every
- * declaration here wins over the upstream default without editing the 85KB
- * upstream stylesheet. Keep to variable overrides where possible: the more
- * selectors you write, the more likely an upstream refactor silently orphans
- * them.
+ * Appended to styles/sidepanel.css and injected as styles/brand-theme.css
+ * on product chrome pages. Variable overrides only: last declaration wins
+ * over upstream without editing the 85KB stylesheet.
  *
- * The upstream variables, by how often they are used:
- *   --accent (91)  --border (81)  --text-primary (65)  --text-secondary (64)
- *   --text-muted   --bg-primary   --bg-secondary       --bg-tertiary
- *   --bg-input     --accent-dim   --accent-hover       --success / --warning / --error
- *   --radius, --radius-sm, --shadow, --tint-soft, --syntax-* (code blocks)
+ * Sampled from netMind Chat (2026-08-18): paper #F7F3F4, ink #2C2020,
+ * raspberry #F1143C, blush #FCE0E4, muted #8C8084.
  *
- * Re-check after a big upstream merge:
- *   grep -ohE '\-\-[a-z0-9-]+' src/chrome/styles/sidepanel.css | sort -u
+ * Light is the default (:root). Dark is opt-in via data-theme="dark".
  */
 
-:root {
-  /* Uncomment and set to your palette. --accent alone shifts most of the UI. */
-  /* --accent: #4f46e5; */
-  /* --accent-hover: #4338ca; */
-  /* --accent-dim: #6366f1; */
+:root,
+:root[data-theme="light"] {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --bg-primary: #f7f3f4;
+  --bg-secondary: #fdfdfd;
+  --bg-tertiary: #efe6e8;
+  --bg-input: #ffffff;
+  --text-primary: #2c2020;
+  --text-secondary: #786c70;
+  --text-muted: #8c8084;
+  --accent: #f1143c;
+  --accent-hover: #d41034;
+  --accent-dim: rgba(241, 20, 60, 0.12);
+  --promotion-action-accent: #c41030;
+  --success: #2d8866;
+  --warning: #b97a00;
+  --error: #c5363c;
+  --error-soft: #b04349;
+  --destructive-action: #b4233c;
+  --destructive-action-hover: #9b1d34;
+  --border: rgba(44, 32, 32, 0.12);
+  --tint-soft: rgba(44, 32, 32, 0.05);
+  --tint-soft-2: rgba(44, 32, 32, 0.07);
+  --tint-medium: rgba(44, 32, 32, 0.1);
+  --overlay-bg: rgba(44, 32, 32, 0.1);
+  --overlay-bg-strong: rgba(44, 32, 32, 0.18);
+  --shadow: 0 2px 8px rgba(44, 32, 32, 0.08);
+  --radius: 14px;
+  --radius-sm: 10px;
+
+  /* settings / history / traces */
+  --bg: var(--bg-primary);
+  --bg2: var(--bg-secondary);
+  --bg3: var(--bg-input);
+  --bg4: var(--bg-tertiary);
+  --text: var(--text-primary);
+  --text2: var(--text-secondary);
+  --text3: var(--text-muted);
+  --accent2: var(--accent-hover);
+
+  /* install page (upstream names) */
+  --page: var(--bg-primary);
+  --surface: var(--bg-secondary);
+  --surface-soft: var(--bg-tertiary);
+  --muted: var(--text-secondary);
+  --quiet: var(--text-muted);
+  --accent-strong: var(--accent-hover);
+  --accent-soft: var(--accent-dim);
+  --line: var(--border);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg-primary: #1c1416;
+  --bg-secondary: #251c1e;
+  --bg-tertiary: #34282b;
+  --bg-input: #2a2022;
+  --text-primary: #f7f3f4;
+  --text-secondary: #c4b6b9;
+  --text-muted: #9a8b8f;
+  --accent: #ff4d6d;
+  --accent-hover: #ff6a84;
+  --accent-dim: rgba(255, 77, 109, 0.18);
+  --promotion-action-accent: #ff8a9b;
+  --success: #4caf50;
+  --warning: #ff9800;
+  --error: #ff6b73;
+  --error-soft: #ff8a80;
+  --destructive-action: #e85a64;
+  --destructive-action-hover: #d14c56;
+  --border: rgba(247, 243, 244, 0.1);
+  --tint-soft: rgba(247, 243, 244, 0.05);
+  --tint-soft-2: rgba(247, 243, 244, 0.04);
+  --tint-medium: rgba(247, 243, 244, 0.08);
+  --overlay-bg: rgba(12, 8, 9, 0.42);
+  --overlay-bg-strong: rgba(12, 8, 9, 0.55);
+  --shadow: 0 2px 8px rgba(8, 4, 5, 0.45);
+
+  --bg: var(--bg-primary);
+  --bg2: var(--bg-secondary);
+  --bg3: var(--bg-input);
+  --bg4: var(--bg-tertiary);
+  --text: var(--text-primary);
+  --text2: var(--text-secondary);
+  --text3: var(--text-muted);
+  --accent2: var(--accent-hover);
+
+  --page: var(--bg-primary);
+  --surface: var(--bg-secondary);
+  --surface-soft: var(--bg-tertiary);
+  --muted: var(--text-secondary);
+  --quiet: var(--text-muted);
+  --accent-strong: var(--accent-hover);
+  --accent-soft: var(--accent-dim);
+  --line: var(--border);
+
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Flatten leftover purple wordmark gradients on settings / history / traces. */
+h1 {
+  background-image: none;
+  -webkit-text-fill-color: unset;
+}
+
+.event.screenshot {
+  border-left-color: var(--accent);
+}
+
+/* Settings light-mode leftovers that hardcode cream/brown tints instead of
+   CSS variables. Ink-based rgba so they track the raspberry paper palette. */
+:root[data-theme="light"] .provider-category-badge {
+  background: rgba(44, 32, 32, 0.07);
+}
+:root[data-theme="light"] .provider-category-cloud {
+  color: var(--accent-hover);
+}
+:root[data-theme="light"] .btn-secondary:hover,
+:root[data-theme="light"] .btn-sign-out:hover {
+  background: rgba(44, 32, 32, 0.06);
+}
+:root[data-theme="light"] .info-box code {
+  background: rgba(44, 32, 32, 0.08);
 }
