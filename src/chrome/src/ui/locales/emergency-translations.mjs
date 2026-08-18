@@ -2424,13 +2424,13 @@ const emergencyModeTranslations = {
           "eb.unknown_publisher": "Không rõ nhà xuất bản",
           "eb.keep_open": "Đang tải vào bộ nhớ do trình duyệt quản lý. Giữ cửa sổ này mở; bạn có thể tạm dừng và tiếp tục.",
           "eb.download_complete": "“{title}” đã sẵn sàng để đọc khi không có mạng.",
-          "eb.confirm_download_basic": "Tải xuống {count} tài nguyên sức khỏe và sinh tồn thiết yếu nhất?\n\nBộ cơ bản tải từng tài nguyên một. Tệp đã xong vẫn còn nếu bạn dừng sớm.",
+          "eb.confirm_download_basic": "Tải {count} tài nguyên sức khỏe và sinh tồn thiết yếu nhất?\n\nBộ cơ bản tải lần lượt từng tài nguyên. Dừng giữa chừng thì những tệp đã tải xong vẫn còn.",
           "eb.confirm_download_all": "Tải xuống tất cả {count} tài nguyên trong phần đang xem?\n\nCó thể nặng nhiều gigabyte. Tải lần lượt từng tệp; phần đã xong vẫn còn nếu bạn dừng sớm.",
           "eb.downloading_all": "Đang tải {current}/{count}: {title}",
           "eb.download_all_complete": "{count} tài nguyên đã sẵn sàng để dùng offline.",
-          "eb.download_basic_stopped": "Đã dừng tải bộ cơ bản. Tài nguyên đã xong được giữ lại.",
+          "eb.download_basic_stopped": "Đã dừng tải bộ cơ bản. Những tài nguyên tải xong vẫn được giữ lại.",
           "eb.download_all_stopped": "Đã dừng tải tất cả. Tài nguyên đã xong được giữ lại.",
-          "eb.size_estimate_note": "Dung lượng tải xuống là ước tính theo tệp hiện tại của nhà xuất bản, có thể thay đổi. “Tải xuống tất cả” theo phần đang xem và bỏ qua tài nguyên đã cài.",
+          "eb.size_estimate_note": "Dung lượng tải là ước tính theo tệp hiện có của nhà xuất bản nên có thể thay đổi. “Tải tất cả” chỉ áp dụng cho phần bạn đang xem và bỏ qua tài nguyên đã cài.",
           "eb.confirm_delete": "Xóa “{title}” và PDF đã lưu trên máy?",
           "eb.deleted": "Đã xóa PDF trên máy.",
           "wl.page_title": "WebBrain — Wikipedia offline",
@@ -2467,8 +2467,8 @@ const emergencyModeTranslations = {
           "ep.loading": "Đang tải tài liệu…",
           "ep.source": "Nguồn nhà xuất bản",
           "ep.save_copy": "Xuất PDF",
-          "ep.available_offline": "✓ Dùng được khi không có mạng",
-          "ep.export_tooltip": "Xuất PDF offline này để chia sẻ hoặc dùng ngoài WebBrain.",
+          "ep.available_offline": "✓ Dùng được khi mất mạng",
+          "ep.export_tooltip": "Xuất bản PDF ngoại tuyến này ra để chia sẻ hoặc dùng bên ngoài WebBrain.",
           "ep.exported": "Đã xuất vào thư mục Tải xuống.",
           "ep.previous": "Trang trước",
           "ep.next": "Trang sau",
@@ -3151,9 +3151,9 @@ const emergencyBasicTranslations = {
   },
   vi: {
         'eb.download_basic': 'Tải bộ cơ bản',
-        'eb.confirm_download_basic': 'Tải xuống {count} tài nguyên sức khỏe và sinh tồn thiết yếu nhất?\n\nBộ cơ bản tải từng tài nguyên một. Tệp đã xong vẫn còn nếu bạn dừng sớm.',
-        'eb.download_basic_stopped': 'Đã dừng tải bộ cơ bản. Tài nguyên đã xong được giữ lại.',
-        'eb.size_estimate_note': 'Dung lượng tải xuống là ước tính theo tệp hiện tại của nhà xuất bản, có thể thay đổi. “Tải xuống tất cả” theo phần đang xem và bỏ qua tài nguyên đã cài.'
+        'eb.confirm_download_basic': 'Tải {count} tài nguyên sức khỏe và sinh tồn thiết yếu nhất?\n\nBộ cơ bản tải lần lượt từng tài nguyên. Dừng giữa chừng thì những tệp đã tải xong vẫn còn.',
+        'eb.download_basic_stopped': 'Đã dừng tải bộ cơ bản. Những tài nguyên tải xong vẫn được giữ lại.',
+        'eb.size_estimate_note': 'Dung lượng tải là ước tính theo tệp hiện có của nhà xuất bản nên có thể thay đổi. “Tải tất cả” chỉ áp dụng cho phần bạn đang xem và bỏ qua tài nguyên đã cài.'
       },
   bn: {
     'eb.download_basic': 'মৌলিক কিট ডাউনলোড করুন',
@@ -3377,8 +3377,8 @@ const emergencyPdfExportTranslations = {
   },
   vi: {
         'ep.save_copy': 'Xuất PDF',
-        'ep.available_offline': '✓ Dùng được khi không có mạng',
-        'ep.export_tooltip': 'Xuất PDF offline này để chia sẻ hoặc dùng ngoài WebBrain.',
+        'ep.available_offline': '✓ Dùng được khi mất mạng',
+        'ep.export_tooltip': 'Xuất bản PDF ngoại tuyến này ra để chia sẻ hoặc dùng bên ngoài WebBrain.',
         'ep.exported': 'Đã xuất vào thư mục Tải xuống.'
       },
   bn: {

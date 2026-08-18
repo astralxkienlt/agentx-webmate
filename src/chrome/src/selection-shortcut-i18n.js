@@ -405,8 +405,8 @@ const STRINGS = Object.freeze({
     openChat: 'Mở WebBrain để trò chuyện',
     summarize: 'Tóm tắt',
     explain: 'Giải thích',
-    quiz: 'Hỏi bài',
-    proofread: 'Sửa chính tả',
+    quiz: 'Kiểm tra tôi',
+    proofread: 'Soát lỗi',
     humanize: 'Viết tự nhiên hơn',
     translate: 'Dịch',
     translateTo: 'Dịch sang',
@@ -414,9 +414,9 @@ const STRINGS = Object.freeze({
     askQuestion: 'Hỏi WebBrain',
     sendQuestion: 'Gửi câu hỏi',
     generalKnowledge: 'Dùng kiến thức chung',
-    hideShortcut: 'Ẩn',
-    sentManual: 'Đã gửi tới WebBrain. Hãy mở thanh bên nếu chưa chạy.',
-    sendFailed: 'Không gửi được tới WebBrain. Thử menu chuột phải.',
+    hideShortcut: 'Ẩn nút này',
+    sentManual: 'Đã gửi tới WebBrain. Nếu chưa thấy chạy, hãy mở thanh bên.',
+    sendFailed: 'Không gửi được tới WebBrain. Bạn thử dùng menu chuột phải xem sao.',
   },
 });
 
