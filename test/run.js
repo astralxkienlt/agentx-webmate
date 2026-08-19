@@ -338,36 +338,6 @@ const { validateFetchUrl: validateFetchUrlFx, registrableDomain: registrableDoma
 const { firefoxRestrictedDomainForUrl, firefoxRestrictedDomainFailure, firefoxHostPermissionFailure } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/firefox-restricted-domains.js').replace(/\\/g, '/')
 );
-const WikipediaOfflineCh = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/agent/wikipedia-offline.js').replace(/\\/g, '/')
-);
-const WikipediaOfflineFx = await import(
-  'file://' + path.join(ROOT, 'src/firefox/src/agent/wikipedia-offline.js').replace(/\\/g, '/')
-);
-const ApocalypseModeCh = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/agent/apocalypse-mode.js').replace(/\\/g, '/')
-);
-const ApocalypseModeFx = await import(
-  'file://' + path.join(ROOT, 'src/firefox/src/agent/apocalypse-mode.js').replace(/\\/g, '/')
-);
-const WikipediaArticleRendererCh = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/ui/wikipedia-article-renderer.js').replace(/\\/g, '/')
-);
-const WikipediaArticleRendererFx = await import(
-  'file://' + path.join(ROOT, 'src/firefox/src/ui/wikipedia-article-renderer.js').replace(/\\/g, '/')
-);
-const WikipediaImageLoaderCh = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/ui/wikipedia-image-loader.js').replace(/\\/g, '/')
-);
-const WikipediaImageLoaderFx = await import(
-  'file://' + path.join(ROOT, 'src/firefox/src/ui/wikipedia-image-loader.js').replace(/\\/g, '/')
-);
-const EmergencyBoxCh = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/agent/emergency-box.js').replace(/\\/g, '/')
-);
-const EmergencyBoxFx = await import(
-  'file://' + path.join(ROOT, 'src/firefox/src/agent/emergency-box.js').replace(/\\/g, '/')
-);
 const TabChatPersistenceCh = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/ui/tab-chat-persistence.js').replace(/\\/g, '/')
 );
@@ -432,7 +402,7 @@ const {
 } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/run-reconnect.js').replace(/\\/g, '/')
 );
-const { buildCloudPersistenceRows, createCloudRunController, normalizeCloudBridgeUrl } = await import(
+const { buildCloudPersistenceRows, createCloudRunController } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/cloud-runs.js').replace(/\\/g, '/')
 );
 const { handleDoneJson: handleDoneJsonCh } = await import(
@@ -808,23 +778,6 @@ const { ProviderManager: ProviderManagerCh } = await import(
 );
 const { ProviderManager: ProviderManagerFx } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/providers/manager.js').replace(/\\/g, '/')
-);
-const {
-  WebGPUProvider,
-  WebGPUVisionProvider,
-  WEBGPU_DTYPE,
-  WEBGPU_LFM25_MODEL_ID,
-  WEBGPU_MODEL_ID,
-  WEBGPU_MODEL_PRESETS,
-  WEBGPU_VISION_DTYPE,
-  WEBGPU_VISION_AUTO_SELECTED_KEY,
-  WEBGPU_VISION_DOWNLOAD_STATE_KEY,
-  WEBGPU_VISION_DOWNLOAD_STATE_MESSAGE,
-  WEBGPU_VISION_ENABLED_KEY,
-  WEBGPU_VISION_MODEL_ID,
-  normalizeWebgpuModelId,
-} = await import(
-  'file://' + path.join(ROOT, 'src/chrome/src/providers/webgpu.js').replace(/\\/g, '/')
 );
 const ProviderCatalogCh = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/providers/provider-catalog.js').replace(/\\/g, '/')
@@ -2931,7 +2884,7 @@ test('user memory browser wiring is mirrored and non-blocking', () => {
     assert.match(background, /queueMicrotask\(\(\) => \{[\s\S]*enqueueUserMemoryExtraction\(payload\)/, `${label}: extraction enqueue should be off-path`);
     assert.match(background, /takeUserMemoryTurnExtractionPayload\(tabId,[\s\S]*enqueueUserMemoryExtractionAfterTurn\(userMemoryPayload\)/, `${label}: chat should fold clarify answers into the post-turn memory job`);
     assert.doesNotMatch(background, /await enqueueUserMemoryExtractionAfterTurn/, `${label}: chat path must not await extraction enqueue`);
-    assert.match(background, /agent\._isCostAllowanceError\?\.\(error\)/, `${label}: extraction cost limit should be silent`);
+    assert.match(background, /agent\._isUsageLimitError\?\.\(error\)/, `${label}: extraction usage-limit stop should be silent`);
     assert.match(background, /async function markUserMemoryExtractionJobFailed\(jobId\)[\s\S]*attempts: attempts \+ 1/, `${label}: extraction jobs should retry once`);
     assert.match(background, /await markUserMemoryExtractionJobFailed\(job\.id\);\s*scheduleUserMemoryExtractionDrain\(USER_MEMORY_EXTRACTION_RETRY_DELAY_MS\);\s*return;/, `${label}: retryable extraction failures should reschedule the drain with a backoff delay`);
     assert.match(background, /function notifyUserMemoryCreated\(\)[\s\S]*target: 'sidepanel',[\s\S]*action: 'user_memory_created'/, `${label}: background should publish a sidepanel cue for newly formed memory`);
@@ -6762,7 +6715,7 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
     const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
     agent._persist = () => {};
     agent._currentUrl = async () => gmailUrl;
-    agent._chatWithCostAllowance = async () => ({ content: JSON.stringify(plan), usage: {} });
+    agent._chat = async () => ({ content: JSON.stringify(plan), usage: {} });
 
     const intentTabId = 52710 + index;
     await agent._beginReadCompleteness(intentTabId, semanticOnlyPrompt, {});
@@ -6770,7 +6723,6 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
       intentTabId,
       { role: 'user', content: semanticOnlyPrompt },
       () => {},
-      null,
       null,
       '',
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
@@ -6787,7 +6739,6 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
       { role: 'user', content: semanticOnlyPrompt },
       () => {},
       null,
-      null,
       '',
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
       'act',
@@ -6802,7 +6753,6 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
       fullTabId,
       { role: 'user', content: semanticOnlyPrompt },
       () => {},
-      null,
       null,
       '',
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
@@ -6831,7 +6781,6 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
       { role: 'user', content: semanticOnlyPrompt },
       () => {},
       null,
-      null,
       '',
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
       'try',
@@ -6855,7 +6804,6 @@ test('planner and intent gates arm whole-thread coverage for trace-derived Gmail
       summaryEditTabId,
       { role: 'user', content: semanticOnlyPrompt },
       () => {},
-      null,
       null,
       '',
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
@@ -6887,7 +6835,7 @@ test('Ask and managed cloud classify communication read scope across languages',
       agent._persistSubmittedTurn = async () => {};
       agent._currentUrl = async () => gmailUrl;
       agent._getTabUrlTitle = async () => ({ tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' });
-      agent._chatWithCostAllowance = async (_provider, messages, _options, _costState, metadata) => {
+      agent._chat = async (_provider, messages, _options, metadata) => {
         classifierCalls += 1;
         assert.equal(metadata?.generationName, 'read_scope', `${browserLabel}/${fixture.label}: wrong classifier generation`);
         assert.match(messages[0]?.content || '', /semantic request across any language/i, `${browserLabel}/${fixture.label}: classifier is language-bound`);
@@ -6902,7 +6850,6 @@ test('Ask and managed cloud classify communication read scope across languages',
         { role: 'user', content: fixture.task },
         () => {},
         fixture.mode,
-        null,
         null,
         null,
         fixture.runOptions,
@@ -6921,7 +6868,7 @@ test('Ask and managed cloud classify communication read scope across languages',
     repairAgent._persistSubmittedTurn = async () => {};
     repairAgent._currentUrl = async () => gmailUrl;
     repairAgent._getTabUrlTitle = async () => ({ tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' });
-    repairAgent._chatWithCostAllowance = async (_provider, messages, options, _costState, metadata) => {
+    repairAgent._chat = async (_provider, messages, options, metadata) => {
       repairCalls += 1;
       assert.equal(metadata?.generationName, 'read_scope', `${browserLabel}: scope repair changed generation accounting`);
       if (repairCalls === 1) return { content: 'I think the whole conversation is needed.', usage: {} };
@@ -6936,7 +6883,6 @@ test('Ask and managed cloud classify communication read scope across languages',
       { role: 'user', content: 'Bu konuşmayı özetle.' },
       () => {},
       'ask',
-      null,
       null,
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
       {},
@@ -6959,7 +6905,7 @@ test('Ask and managed cloud classify communication read scope across languages',
     requestRetryAgent._persistSubmittedTurn = async () => {};
     requestRetryAgent._currentUrl = async () => gmailUrl;
     requestRetryAgent._getTabUrlTitle = async () => ({ tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' });
-    requestRetryAgent._chatWithCostAllowance = async (_provider, messages, options, _costState, metadata) => {
+    requestRetryAgent._chat = async (_provider, messages, options, metadata) => {
       requestRetryCalls += 1;
       requestRetryOptions.push(options);
       assert.equal(metadata?.generationName, 'read_scope', `${browserLabel}: request retry changed generation accounting`);
@@ -6974,7 +6920,6 @@ test('Ask and managed cloud classify communication read scope across languages',
       { role: 'user', content: 'Bu konuşmayı özetle.' },
       () => {},
       'ask',
-      null,
       null,
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
       {},
@@ -6998,7 +6943,7 @@ test('Ask and managed cloud classify communication read scope across languages',
       plannerFailedContinueAct: true,
       requiresStateChange: null,
     });
-    fallbackAgent._chatWithCostAllowance = async () => ({ content: '{"read_scope":"complete_thread"}', usage: {} });
+    fallbackAgent._chat = async () => ({ content: '{"read_scope":"complete_thread"}', usage: {} });
     await fallbackAgent._beginReadCompleteness(fallbackTabId, 'Bu konuşmayı özetle.', {});
     const fallbackOutcome = await fallbackAgent._maybeRunPlannerGate(
       fallbackTabId,
@@ -7006,7 +6951,6 @@ test('Ask and managed cloud classify communication read scope across languages',
       { role: 'user', content: 'Bu konuşmayı özetle.' },
       () => {},
       'act',
-      null,
       null,
       { tabUrl: gmailUrl, tabTitle: 'Gmail - Thread' },
       { locale: 'tr' },
@@ -7021,7 +6965,7 @@ test('Ask and managed cloud classify communication read scope across languages',
     unrelatedAgent._persist = () => {};
     unrelatedAgent._persistSubmittedTurn = async () => {};
     unrelatedAgent._currentUrl = async () => 'https://example.com/article';
-    unrelatedAgent._chatWithCostAllowance = async () => {
+    unrelatedAgent._chat = async () => {
       unrelatedClassifierCalls += 1;
       return { content: '{"read_scope":"complete_thread"}', usage: {} };
     };
@@ -7032,7 +6976,6 @@ test('Ask and managed cloud classify communication read scope across languages',
       { role: 'user', content: 'Bunu açıkla.' },
       () => {},
       'ask',
-      null,
       null,
       null,
       {},
@@ -7565,7 +7508,6 @@ test('config transfer exports and restores Settings values including provider ke
     wb_permissions: [{ capability: 'click', host: 'example.com' }],
     wb_user_memory_v1: { version: 1, records: [{ id: 'mem_1', text: 'Prefer concise answers', kind: 'preference' }] },
     cloudCostSpentUsd: 8.5,
-    meteredProviderCostSpentUsd: 2.5,
     profileSyncToken: 'device-session-secret',
     webbrainDeviceGuid: 'device-guid',
   };
@@ -7585,7 +7527,6 @@ test('config transfer exports and restores Settings values including provider ke
   assert.equal(chromeExport.settings.wb_user_memory_v1.records.length, 1);
   assert.equal(chromeExport.settings.providers.webbrain_cloud.deviceGuid, undefined, 'device identity must not be portable');
   assert.equal(chromeExport.settings.cloudCostSpentUsd, undefined, 'spend counters are runtime state, not config');
-  assert.equal(chromeExport.settings.meteredProviderCostSpentUsd, undefined, 'metered spend counters are runtime state, not config');
   assert.equal(chromeExport.settings.profileSyncToken, undefined, 'Cloud Sync sessions must not be exported');
   assert.equal(chromeExport.settings.webbrainDeviceGuid, undefined, 'device GUID must not be exported');
   assert.match(chromeExport.warning, /plaintext provider API keys/i);
@@ -8062,7 +8003,6 @@ test('runtime trace config is versioned, bounded, and secret-free in both browse
     api_mutations_allowed: true,
     user_memory_enabled: true,
     selection_grounded: false,
-    standalone_webgpu_profile: true,
     max_agent_steps: 130,
     max_image_dimension: 1568,
     max_screenshots_per_turn: 4,
@@ -8086,7 +8026,6 @@ test('runtime trace config is versioned, bounded, and secret-free in both browse
     api_mutations_allowed: true,
     user_memory_enabled: true,
     selection_grounded: false,
-    standalone_webgpu_profile: true,
     max_agent_steps: 130,
     max_image_dimension: 1568,
     max_screenshots_per_turn: 4,
@@ -9028,7 +8967,7 @@ test('loop-stop recovery surfaces a checkpointed draft in chat without claiming 
     const updates = [];
     let request = null;
     agent._persist = () => {};
-    agent._chatWithCostAllowance = async (_provider, sentMessages, options) => {
+    agent._chat = async (_provider, sentMessages, options) => {
       request = { sentMessages, options };
       return {
         content: 'Subject: Thank you\n\nHi Gary,\n\nThank you for your help.\n\nBest,\nBarack',
@@ -9041,7 +8980,6 @@ test('loop-stop recovery surfaces a checkpointed draft in chat without claiming 
       messages,
       (type, data) => updates.push({ type, data }),
       { model: 'test-model' },
-      {},
       null,
       4,
       'Stuck in a loop. Stopped.',
@@ -9075,7 +9013,7 @@ test('delivery recovery exposes only done and persists a partial terminal result
     const updates = [];
     let request = null;
     agent._persist = () => {};
-    agent._chatWithCostAllowance = async (_provider, sentMessages, options) => {
+    agent._chat = async (_provider, sentMessages, options) => {
       request = { sentMessages, options };
       return {
         content: '',
@@ -9097,7 +9035,6 @@ test('delivery recovery exposes only done and persists a partial terminal result
       messages,
       (type, data) => updates.push({ type, data }),
       { model: 'test-model' },
-      {},
       null,
       8,
       'fallback should not be used',
@@ -9200,7 +9137,7 @@ test('delivery recovery rejects plain text or success and shows a runtime blocke
       ];
       const updates = [];
       agent._persist = () => {};
-      agent._chatWithCostAllowance = async () => response;
+      agent._chat = async () => response;
       const fallback = 'Browser observation limit reached before a valid partial result could be produced.';
 
       const recovery = await agent._recoverDeliveryCheckpointTurn(
@@ -9208,7 +9145,6 @@ test('delivery recovery rejects plain text or success and shows a runtime blocke
         messages,
         (type, data) => updates.push({ type, data }),
         { model: 'test-model' },
-        {},
         null,
         8,
         fallback,
@@ -9233,14 +9169,14 @@ test('tool-free response and recovery calls honor Stop before rendering model ou
       ];
       const updates = [];
       agent._persist = () => {};
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         agent.abort(tabId);
         return { content: 'This late model output must not be rendered.', toolCalls: [] };
       };
 
       const result = phase === 'response_only'
-        ? await agent._completeResponseOnlyTurn(tabId, messages, (type, data) => updates.push({ type, data }), {}, {}, null)
-        : await agent._recoverLoopStoppedTurn(tabId, messages, (type, data) => updates.push({ type, data }), {}, {}, null, 4, 'Stuck in a loop. Stopped.');
+        ? await agent._completeResponseOnlyTurn(tabId, messages, (type, data) => updates.push({ type, data }), {}, null)
+        : await agent._recoverLoopStoppedTurn(tabId, messages, (type, data) => updates.push({ type, data }), {}, null, 4, 'Stuck in a loop. Stopped.');
 
       assert.deepEqual(result, { content: '[Stopped by user]', status: 'cancelled' }, `${label}: ${phase} ignored Stop`);
       assert.equal(messages.at(-1)?.content, '[Stopped by user]', `${label}: ${phase} persisted late model output`);
@@ -16007,7 +15943,7 @@ test('cloud run controller uses the visible tab and persists terminal status', a
     },
     windows: { update: async () => ({}) },
     storage: {
-      local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+      local: { get: async () => ({}) },
       session: {
         get: async key => ({ [key]: session[key] || [] }),
         set: async value => Object.assign(session, value),
@@ -16487,7 +16423,7 @@ test('cloud run controller fails clarification-required terminals without schema
         },
         windows: { update: async () => ({}) },
         storage: {
-          local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+          local: { get: async () => ({}) },
           session: {
             get: async key => ({ [key]: session[key] || [] }),
             set: async value => Object.assign(session, value),
@@ -16549,7 +16485,7 @@ test('cloud run controller appends child runs to the same tab conversation', asy
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16609,7 +16545,7 @@ test('cloud run controller pauses and resumes clarify, permission, and submit in
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16714,7 +16650,7 @@ test('cloud run text_delta coalesce scrubs live status payloads', async () => {
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16764,7 +16700,7 @@ test('cloud run controller keeps the newest 200 monotonically sequenced updates'
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16815,7 +16751,7 @@ test('cloud run controller fails immediately if an interactive plan review leaks
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16900,7 +16836,7 @@ test('cloud workflow bridge compiles the correlated trace and never persists run
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16999,7 +16935,7 @@ test('cloud trace keeps CAPTCHA frame/vendor diagnostics after the rolling updat
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        local: { get: async () => ({}) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -17146,194 +17082,6 @@ test('cloud run default IDs use cryptographically secure randomness', () => {
   const controllerBody = source.slice(controllerStart, source.indexOf('\n  const api = chromeApi;', controllerStart));
   assert.match(controllerBody, /makeRunId = \(\) => `run_\$\{globalThis\.crypto\.randomUUID\(\)\}`/);
   assert.doesNotMatch(controllerBody, /Math\.random\(/);
-});
-
-test('cloud bridge accepts only loopback WebSocket URLs', () => {
-  assert.equal(normalizeCloudBridgeUrl('ws://127.0.0.1:17373/extension'), 'ws://127.0.0.1:17373/extension');
-  assert.equal(normalizeCloudBridgeUrl('ws://localhost:17373/extension'), 'ws://localhost:17373/extension');
-  assert.throws(() => normalizeCloudBridgeUrl('wss://example.com/extension'), /localhost/);
-  assert.throws(() => normalizeCloudBridgeUrl('ws://192.168.1.10/extension'), /localhost/);
-});
-
-function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), closeSynchronously = true } = {}) {
-  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/cloud-bridge.js'), 'utf8');
-  const sockets = [];
-  const timers = [];
-  const runtimeCalls = [];
-  let listener = null;
-  class FakeWebSocket {
-    static CONNECTING = 0;
-    static OPEN = 1;
-    static CLOSING = 2;
-    static CLOSED = 3;
-    constructor(url) {
-      this.url = url;
-      this.readyState = FakeWebSocket.CONNECTING;
-      this.listeners = new Map();
-      this.sent = [];
-      sockets.push(this);
-    }
-    addEventListener(type, callback) { this.listeners.set(type, callback); }
-    send(value) { this.sent.push(JSON.parse(value)); }
-    close() {
-      this.readyState = FakeWebSocket.CLOSING;
-      if (closeSynchronously) this.emit('close');
-    }
-    emit(type, value = {}) {
-      if (type === 'open') this.readyState = FakeWebSocket.OPEN;
-      if (type === 'close') this.readyState = FakeWebSocket.CLOSED;
-      this.listeners.get(type)?.(value);
-    }
-  }
-  vm.runInNewContext(source, {
-    URL,
-    WebSocket: FakeWebSocket,
-    chrome: {
-      runtime: {
-        onMessage: { addListener: callback => { listener = callback; } },
-        sendMessage: async message => {
-          runtimeCalls.push(message);
-          return await sendMessage(message);
-        },
-      },
-    },
-    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
-    clearTimeout: () => {},
-  });
-
-  return { listener: (...args) => listener(...args), runtimeCalls, sockets, timers };
-}
-
-test('offscreen cloud bridge reconnects with backoff and rejects remote control URLs', () => {
-  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness();
-
-  let started;
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, value => { started = value; });
-  assert.equal(started.enabled, true);
-  assert.equal(sockets.length, 1);
-  sockets[0].emit('open');
-  assert.equal(sockets[0].sent[0].type, 'hello');
-  assert.equal(sockets[0].sent[0].protocolVersion, 2);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(sockets[0].sent[0].capabilities)),
-    ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1'],
-  );
-  sockets[0].close();
-  assert.equal(timers[0].delay, 500);
-  timers[0].callback();
-  assert.equal(sockets.length, 2);
-
-  let rejected;
-  listener({ type: 'cloud-bridge-start', url: 'wss://attacker.example/extension' }, null, value => { rejected = value; });
-  assert.match(rejected.error, /localhost/);
-  assert.equal(sockets.length, 2);
-});
-
-test('offscreen cloud bridge preserves failed run envelopes and rejects unauthorized actions', async () => {
-  const failed = { runId: 'run_failed', status: 'failed', error: 'Agent failed.' };
-  const aborting = { runId: 'run_abort', status: 'aborting', error: 'Abort requested.' };
-  const { listener, runtimeCalls, sockets } = createOffscreenCloudBridgeHarness({
-    sendMessage: async message => {
-      if (message.action === 'cloud_status' && message.runId === 'run_failed') return failed;
-      if (message.action === 'cloud_status') return { error: 'Unknown cloud run.' };
-      if (message.action === 'cloud_abort') return aborting;
-      return {};
-    },
-  });
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
-  const socket = sockets[0];
-  socket.emit('open');
-
-  socket.emit('message', {
-    data: JSON.stringify({ id: 'status-1', action: 'cloud_status', payload: { runId: 'run_failed' } }),
-  });
-  await new Promise(resolve => setImmediate(resolve));
-  const statusResponse = socket.sent.find(message => message.id === 'status-1');
-  assert.equal(statusResponse.ok, true, 'failed run snapshots are domain results, not bridge failures');
-  assert.equal(statusResponse.result.status, 'failed');
-  assert.equal(statusResponse.result.error, 'Agent failed.');
-
-  socket.emit('message', {
-    data: JSON.stringify({ id: 'abort-1', action: 'cloud_abort', payload: { runId: 'run_abort' } }),
-  });
-  await new Promise(resolve => setImmediate(resolve));
-  const abortResponse = socket.sent.find(message => message.id === 'abort-1');
-  assert.equal(abortResponse.ok, true, 'aborting snapshots with an error explanation must remain successful protocol responses');
-  assert.equal(abortResponse.result.status, 'aborting');
-
-  socket.emit('message', {
-    data: JSON.stringify({
-      id: 'respond-1',
-      action: 'cloud_respond',
-      payload: { runId: 'run_input', clarifyId: 'clr_1', answer: 'Continue' },
-    }),
-  });
-  await new Promise(resolve => setImmediate(resolve));
-  const respondCall = runtimeCalls.find(message => message.action === 'cloud_respond');
-  assert.deepEqual(JSON.parse(JSON.stringify(respondCall)), {
-    runId: 'run_input',
-    clarifyId: 'clr_1',
-    answer: 'Continue',
-    target: 'background',
-    action: 'cloud_respond',
-  });
-
-  for (const [id, action] of [
-    ['workflow-compile', 'cloud_workflow_compile'],
-    ['workflow-run', 'cloud_workflow_run'],
-    ['scheduled-jobs', 'cloud_scheduled_jobs'],
-  ]) {
-    socket.emit('message', {
-      data: JSON.stringify({ id, action, payload: { runId: 'run_source' } }),
-    });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(runtimeCalls.some(message => message.action === action), true);
-  }
-
-  socket.emit('message', {
-    data: JSON.stringify({ id: 'missing-1', action: 'cloud_status', payload: { runId: 'run_missing' } }),
-  });
-  await new Promise(resolve => setImmediate(resolve));
-  const missing = socket.sent.find(message => message.id === 'missing-1');
-  assert.equal(missing.ok, false, 'background exception envelopes must still reject the bridge request');
-  assert.equal(missing.error, 'Unknown cloud run.');
-
-  const callCount = runtimeCalls.length;
-  for (const [id, action] of [
-    ['forbidden-provider-read', 'get_providers'],
-    ['forbidden-config-write', 'import_config_patch'],
-  ]) {
-    socket.emit('message', {
-      data: JSON.stringify({ id, action, payload: {} }),
-    });
-    await new Promise(resolve => setImmediate(resolve));
-    const forbidden = socket.sent.find(message => message.id === id);
-    assert.equal(forbidden.ok, false);
-    assert.match(forbidden.error, /unsupported cloud bridge action/i);
-  }
-  assert.equal(
-    runtimeCalls.length,
-    callCount,
-    'provider reads and provisioning config writes must not cross the run-only cloud bridge',
-  );
-});
-
-test('offscreen cloud bridge ignores asynchronous close events from replaced sockets', () => {
-  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
-  const first = sockets[0];
-  first.emit('open');
-
-  listener({ type: 'cloud-bridge-start', url: 'ws://localhost:17374/extension' }, null, () => {});
-  const replacement = sockets[1];
-  assert.ok(replacement, 'URL change should create a replacement WebSocket');
-
-  first.emit('close');
-  replacement.emit('open');
-
-  assert.equal(sockets.length, 2, 'stale close must not create a duplicate connection');
-  assert.equal(timers.length, 0, 'stale close must not schedule reconnect for the replacement');
-  assert.equal(replacement.sent.filter(message => message.type === 'hello').length, 1, 'replacement socket should remain current and announce itself');
 });
 
 test('getToolsForMode: `done` outcome is required in every supported Act and Dev prompt tier', () => {
@@ -19502,8 +19250,6 @@ test('selected-text runs carry the Humanizer body into the tool-free request wit
       agent._startTraceRun = async () => null;
       agent._endTraceRun = () => {};
       agent._persist = () => {};
-      agent._checkCostAllowance = async () => null;
-      agent._recordCostUsage = async () => null;
 
       const prompt = buildSelectionPrompt('Circling back to touch base on the deliverable.', 'humanize');
       const runOptions = { sourceGrounding, selectionAction: 'humanize' };
@@ -21666,70 +21412,6 @@ test('packaged Wikipedia skill is opt-in with read-only HTTP tools', () => {
   }
 });
 
-test('Emergency Box maps the OpenStax catalog and resolves compact PDFs on demand', async () => {
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    const requests = [];
-    const fetchImpl = async (url) => {
-      requests.push(String(url));
-      if (String(url).includes('/pages/?')) {
-        return new Response(JSON.stringify({ items: [{
-          id: 38,
-          title: 'Algebra and Trigonometry',
-          meta: {
-            detail_url: 'https://openstax.example/books/38',
-            html_url: 'https://openstax.org/details/books/algebra-and-trigonometry',
-            first_published_at: '2016-03-09T00:00:00Z',
-            locale: 'en',
-          },
-        }] }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return new Response(JSON.stringify({
-        low_resolution_pdf_url: 'https://openstax.example/algebra-low.pdf',
-        high_resolution_pdf_url: 'https://openstax.example/algebra-high.pdf',
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    };
-    const catalog = await runtime.loadOpenStaxCatalog(fetchImpl);
-    assert.equal(catalog.length, 1, `${label}: OpenStax catalog item missing`);
-    assert.equal(catalog[0].id, 'openstax-38', `${label}: OpenStax identity is unstable`);
-    assert.equal(catalog[0].category, 'education', `${label}: OpenStax item is not categorized as education`);
-    const resolved = await runtime.resolveEmergencyResource(catalog[0], fetchImpl);
-    assert.equal(resolved.url, 'https://openstax.example/algebra-low.pdf', `${label}: compact OpenStax PDF should be preferred`);
-    assert.equal(requests.length, 2, `${label}: resolving one book made unexpected catalog requests`);
-    assert.ok(runtime.PREFETCHED_OPENSTAX_CATALOG.length >= 100, `${label}: bundled OpenStax catalog is unexpectedly incomplete`);
-    assert.ok(runtime.PREFETCHED_OPENSTAX_CATALOG.some(item => item.id === 'openstax-38'), `${label}: bundled OpenStax catalog lost a stable book`);
-    assert.match(runtime.OPENSTAX_CATALOG_SNAPSHOT_DATE, /^\d{4}-\d{2}-\d{2}$/, `${label}: bundled OpenStax catalog has no snapshot date`);
-    assert.equal(runtime.PREFETCHED_OPENSTAX_CATALOG.filter(item => item.language === 'en').length, 118,
-      `${label}: bundled OpenStax English count drifted`);
-    assert.equal(runtime.PREFETCHED_OPENSTAX_CATALOG.filter(item => item.language === 'es').length, 11,
-      `${label}: bundled OpenStax Spanish collection is incomplete`);
-
-    const who = await runtime.resolveEmergencyResource({
-      id: 'who-fixture', title: 'WHO Fixture', whoHandle: '10665/371090', sourceUrl: 'https://iris.who.int/handle/10665/371090',
-    }, async (url) => {
-      if (String(url).includes('/handle/')) {
-        return { ok: true, status: 200, url: 'https://iris.who.int/items/0bd7f7b4-0c31-47a4-adb2-69cb4f38c0da' };
-      }
-      return new Response(JSON.stringify({ _embedded: { bundles: { _embedded: { bundles: [{
-        name: 'ORIGINAL',
-        _embedded: { bitstreams: { _embedded: { bitstreams: [
-          { name: 'guide_fra.pdf', _links: { content: { href: 'https://iris.example/french' } } },
-          { name: 'guide_eng.pdf', _links: { content: { href: 'https://iris.example/english' } } },
-        ] } } },
-      }] } } } }), { status: 200, headers: { 'content-type': 'application/json' } });
-    });
-    assert.equal(who.url, 'https://iris.example/english', `${label}: WHO DSpace resolver did not select the English original PDF`);
-
-    const archive = await runtime.resolveEmergencyResource({
-      id: 'archive-fixture', title: 'Archive Fixture', archiveIdentifier: 'field-manual', sourceUrl: 'https://archive.org/details/field-manual',
-    }, async () => new Response(JSON.stringify({ files: [
-      { name: 'manual_text.pdf', size: '99999' },
-      { name: 'manual.pdf', size: '50000' },
-      { name: 'preview.pdf', size: '1000' },
-    ] }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    assert.equal(archive.url, 'https://archive.org/download/field-manual/manual.pdf', `${label}: archive resolver did not select the largest non-derived PDF`);
-  }
-});
-
 test('Emergency communication reader ships a pinned PanLex lexicon across 1,756 languages', () => {
   const generator = fs.readFileSync(path.join(ROOT, 'scripts/build-panlex-emergency-lexicon.mjs'), 'utf8');
   assert.match(generator, /dc028da016ba7d5f9bcc39263b0c3dc27bd56025672b18ccaec4578833fe4dff/,
@@ -21757,3437 +21439,6 @@ test('Emergency communication reader ships a pinned PanLex lexicon across 1,756 
   }
 });
 
-test('Emergency Box bundles the expanded field library and a stable basic health, survival, and communication kit', () => {
-  const expectedBasicIds = [
-    'communication-panlex-basic-lexicon',
-    'health-who-icrc-basic-emergency-care',
-    'health-ifrc-first-aid-guidelines-2020',
-    'health-who-essential-medicines-2023',
-    'health-hesperian-wtnd-03',
-    'health-hesperian-wtnd-04',
-    'health-hesperian-wtnd-10',
-    'health-hesperian-wtnd-13',
-    'health-hesperian-wtnd-14',
-    'health-hesperian-wtnd-23',
-    'health-hesperian-wtnd-gp',
-    'health-msf-clinical-guidelines',
-    'health-msf-essential-drugs',
-    'field-army-survival-fm-3-05-70',
-  ];
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    const resources = runtime.EMERGENCY_BOX_HEALTH_RESOURCES;
-    const communication = runtime.EMERGENCY_BOX_COMMUNICATION_RESOURCES;
-    assert.equal(communication.length, 1, `${label}: built-in communication catalog is incomplete`);
-    assert.equal(communication[0].id, 'communication-panlex-basic-lexicon', `${label}: universal lexicon identity drifted`);
-    assert.equal(communication[0].builtIn, true, `${label}: universal lexicon should ship with WebBrain`);
-    assert.equal(communication[0].rights, 'CC0 1.0 Universal', `${label}: universal lexicon license is not disclosed`);
-    assert.equal(resources.length, 73, `${label}: curated emergency catalog is incomplete`);
-    assert.equal(new Set(resources.map(resource => resource.id)).size, resources.length,
-      `${label}: curated emergency catalog has duplicate identities`);
-    assert.equal(resources.filter(resource => resource.id.startsWith('health-hesperian-')).length, 46,
-      `${label}: official Hesperian chapter set is incomplete`);
-    for (const id of [
-      'health-who-pocket-hospital-care-children',
-      'health-msf-obstetric-newborn-care',
-      'health-icrc-war-surgery-volume-1',
-      'field-who-medical-guide-for-ships',
-      'field-army-special-forces-medical-handbook',
-      'field-army-radio-fm-24-18',
-    ]) {
-      assert.ok(resources.some(resource => resource.id === id), `${label}: expanded catalog lost ${id}`);
-    }
-    const basic = runtime.selectEmergencyBoxBasicResources();
-    assert.deepEqual(basic.map(resource => resource.id), expectedBasicIds,
-      `${label}: the default basic kit no longer represents the agreed communication, health, and survival set`);
-    assert.deepEqual(
-      runtime.selectEmergencyBoxBasicResources([...communication, ...resources]).map(resource => resource.id),
-      expectedBasicIds,
-      `${label}: the explicit catalog basic kit diverged from the default selector`,
-    );
-    assert.ok(basic.every(resource => resource.basic === true), `${label}: basic selector admitted an optional resource`);
-    assert.ok(basic.every(resource => resource.builtIn || resource.url || resource.whoHandle || resource.archiveIdentifier),
-      `${label}: basic kit contains a resource that is neither built in nor a downloadable PDF`);
-    assert.equal(runtime.selectEmergencyBoxBasicResources(runtime.PREFETCHED_OPENSTAX_CATALOG).length, 0,
-      `${label}: the basic kit unexpectedly depends on the current OpenStax catalog`);
-    const survivalManual = resources.find(resource => resource.id === 'field-army-survival-fm-3-05-70');
-    assert.equal(survivalManual.totalBytes, 21_019_230,
-      `${label}: the Basic survival manual lost its measured size`);
-    assert.equal(survivalManual.storageKey, 'field-army-survival-fm-3-05-70-wikimedia-v1',
-      `${label}: the replacement survival manual can resume stale Internet Archive bytes`);
-    assert.match(survivalManual.url, /^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\//,
-      `${label}: the Basic survival manual still depends on the unreliable Internet Archive resolver`);
-    assert.equal(survivalManual.archiveIdentifier, undefined,
-      `${label}: the Basic survival manual can still be redirected through Internet Archive metadata`);
-    assert.equal(runtime.EMERGENCY_BOX_SIZE_ESTIMATES.basicBytes, 59_937_724,
-      `${label}: measured basic-kit estimate drifted`);
-    assert.equal(runtime.EMERGENCY_BOX_SIZE_ESTIMATES.catalogBytes, 12_063_912_733,
-      `${label}: measured full-catalog estimate drifted`);
-    const estimatedCatalogBytes = [...communication, ...resources, ...runtime.PREFETCHED_OPENSTAX_CATALOG]
-      .reduce((sum, resource) => sum + runtime.estimateEmergencyBoxResourceBytes(resource), 0);
-    assert.ok(Math.abs(estimatedCatalogBytes - runtime.EMERGENCY_BOX_SIZE_ESTIMATES.catalogBytes) < 1_000,
-      `${label}: per-resource estimates no longer add up to the documented full-catalog estimate`);
-    const estimatedBasicBytes = basic.reduce(
-      (sum, resource) => sum + runtime.estimateEmergencyBoxResourceBytes(resource), 0,
-    );
-    assert.ok(estimatedBasicBytes >= 59_000_000 && estimatedBasicBytes <= 60_000_000,
-      `${label}: complete basic-kit estimate no longer includes the built-in communication pack`);
-  }
-});
-
-test('Emergency Box All Resources groups communication, health, field manuals, then OpenStax', () => {
-  const resources = [
-    { id: 'communication', category: 'communication', title: 'Universal Basic Lexicon', status: 'ready' },
-    { id: 'education', category: 'education', title: 'OpenStax Biology', status: 'ready' },
-    { id: 'field-b', category: 'field', title: 'Zulu Field Manual' },
-    { id: 'health-b', category: 'health', title: 'Zulu Emergency Health' },
-    { id: 'field-a', category: 'field', title: 'Alpha Field Manual', status: 'ready' },
-    { id: 'health-a', category: 'health', title: 'Alpha Emergency Health', status: 'ready' },
-  ];
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    const allResources = [...resources].sort((left, right) => runtime.compareEmergencyBoxResources(left, right, {
-      groupCategories: true,
-    }));
-    assert.deepEqual(allResources.map(resource => resource.id), [
-      'communication', 'health-a', 'health-b', 'field-a', 'field-b', 'education',
-    ], `${label}: All Resources is not grouped as Communication, Emergency Health, Field Manuals, then OpenStax`);
-
-    const categoryView = [...resources].sort(runtime.compareEmergencyBoxResources);
-    assert.equal(categoryView[0].status, 'ready', `${label}: category filters no longer keep installed resources first`);
-  }
-});
-
-test('Emergency Box streams PDFs to resumable local storage and rejects non-PDF responses', async () => {
-  function memoryAdapters(initial = new Uint8Array()) {
-    const records = new Map();
-    let committed = initial.slice();
-    return {
-      records,
-      store: {
-        async get(id) { return records.get(id); },
-        async put(record) { records.set(record.id, { ...record }); return record; },
-        async delete(id) { records.delete(id); },
-      },
-      storage: {
-        async open() { return new Blob([committed], { type: 'application/pdf' }); },
-        async size() { return committed.byteLength; },
-        async createWriter() {
-          let working = committed.slice();
-          return {
-            async write(position, bytes) {
-              const needed = position + bytes.byteLength;
-              if (working.byteLength < needed) {
-                const expanded = new Uint8Array(needed);
-                expanded.set(working);
-                working = expanded;
-              }
-              working.set(bytes, position);
-            },
-            async truncate(size) { working = working.slice(0, size); },
-            async close() { committed = working; },
-            async abort() {},
-          };
-        },
-        async delete() { committed = new Uint8Array(); },
-      },
-      bytes() { return new TextDecoder().decode(committed); },
-    };
-  }
-
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    const adapters = memoryAdapters();
-    const pdf = '%PDF-1.7\nEmergency Box fixture';
-    const resource = {
-      id: 'fixture-pdf', title: 'Fixture', category: 'health', publisher: 'Fixture Publisher',
-      url: 'https://example.test/fixture.pdf', sourceUrl: 'https://example.test/source',
-    };
-    const ready = await runtime.downloadEmergencyResource(resource, {
-      ...adapters,
-      fetchImpl: async () => new Response(pdf, { status: 200, headers: { 'content-type': 'application/pdf' } }),
-    });
-    assert.equal(ready.status, 'ready', `${label}: valid PDF did not become readable`);
-    assert.equal(adapters.bytes(), pdf, `${label}: streamed PDF bytes were not preserved`);
-    assert.equal(ready.bytesReceived, new TextEncoder().encode(pdf).byteLength, `${label}: installed byte count is wrong`);
-
-    const invalid = memoryAdapters();
-    await assert.rejects(
-      runtime.downloadEmergencyResource({ ...resource, id: 'fixture-html' }, {
-        ...invalid,
-        fetchImpl: async () => new Response('<html>blocked</html>', { status: 200, headers: { 'content-type': 'text/html' } }),
-      }),
-      /not a valid PDF/i,
-      `${label}: HTML error page was accepted as an emergency PDF`,
-    );
-    assert.equal(invalid.records.get('fixture-html')?.status, 'error', `${label}: invalid PDF failure was not actionable`);
-    assert.equal(invalid.bytes(), '', `${label}: invalid PDF bytes were retained`);
-  }
-});
-
-test('Emergency Box verifies replacement PDFs before removing stale source bytes', async () => {
-  const encoder = new TextEncoder();
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    const records = new Map([['replacement-pdf', {
-      id: 'replacement-pdf', title: 'Replacement PDF', status: 'error',
-      storageKey: 'old-source', url: 'https://old.example.test/file.pdf',
-    }]]);
-    const files = new Map([['old-source', encoder.encode('%PDF-old-partial')]]);
-    const deleted = [];
-    const storage = {
-      async size(key) { return files.get(key)?.byteLength || 0; },
-      async open(key) { return new Blob([files.get(key) || new Uint8Array()], { type: 'application/pdf' }); },
-      async createWriter(key) {
-        let working = (files.get(key) || new Uint8Array()).slice();
-        return {
-          async write(position, bytes) {
-            const needed = position + bytes.byteLength;
-            if (working.byteLength < needed) {
-              const expanded = new Uint8Array(needed);
-              expanded.set(working);
-              working = expanded;
-            }
-            working.set(bytes, position);
-          },
-          async truncate(size) { working = working.slice(0, size); },
-          async close() { files.set(key, working); },
-          async abort() {},
-        };
-      },
-      async delete(key) {
-        deleted.push({ key, replacementVerified: new TextDecoder().decode(files.get('new-source') || new Uint8Array()).startsWith('%PDF-') });
-        files.delete(key);
-      },
-    };
-    const store = {
-      async get(id) { return records.get(id); },
-      async put(record) { records.set(record.id, { ...record }); return record; },
-    };
-    const resource = {
-      id: 'replacement-pdf', title: 'Replacement PDF', storageKey: 'new-source',
-      url: 'https://new.example.test/file.pdf', sourceUrl: 'https://new.example.test/source',
-    };
-    const ready = await runtime.downloadEmergencyResource(resource, {
-      store,
-      storage,
-      fetchImpl: async () => new Response('%PDF-new-complete', { status: 200 }),
-    });
-    assert.equal(ready.status, 'ready', `${label}: verified replacement PDF did not become ready`);
-    assert.equal(files.has('old-source'), false, `${label}: stale source bytes survived a verified replacement`);
-    assert.deepEqual(deleted, [{ key: 'old-source', replacementVerified: true }],
-      `${label}: stale source bytes were removed before the replacement verified`);
-
-    records.set('replacement-pdf', {
-      id: 'replacement-pdf', title: 'Replacement PDF', status: 'error',
-      storageKey: 'old-source', url: 'https://old.example.test/file.pdf',
-    });
-    files.set('old-source', encoder.encode('%PDF-old-partial'));
-    await assert.rejects(
-      runtime.downloadEmergencyResource(resource, {
-        store,
-        storage,
-        fetchImpl: async () => new Response('<html>blocked</html>', { status: 200 }),
-      }),
-      /not a valid PDF/i,
-      `${label}: invalid replacement response was accepted`,
-    );
-    assert.equal(files.has('old-source'), true,
-      `${label}: stale source bytes were removed after a failed replacement`);
-  }
-});
-
-test('Emergency Box commits partial PDF bytes before recording a paused download', async () => {
-  for (const [label, runtime] of [['chrome', EmergencyBoxCh], ['firefox', EmergencyBoxFx]]) {
-    let committed = new Uint8Array();
-    const records = new Map();
-    const controller = new AbortController();
-    const chunks = [new TextEncoder().encode('%PDF-partial'), new TextEncoder().encode('-ignored')];
-    const storage = {
-      async size() { return committed.byteLength; },
-      async createWriter() {
-        let working = committed.slice();
-        return {
-          async write(position, bytes) {
-            const expanded = new Uint8Array(position + bytes.byteLength);
-            expanded.set(working);
-            expanded.set(bytes, position);
-            working = expanded;
-          },
-          async truncate(size) { working = working.slice(0, size); },
-          async close() { committed = working; },
-          async abort() {},
-        };
-      },
-    };
-    let readIndex = 0;
-    const result = await runtime.downloadEmergencyResource({
-      id: 'paused-pdf', title: 'Paused PDF', url: 'https://example.test/paused.pdf',
-    }, {
-      signal: controller.signal,
-      storage,
-      store: {
-        async get(id) { return records.get(id); },
-        async put(record) { records.set(record.id, { ...record }); return record; },
-      },
-      fetchImpl: async () => ({
-        ok: true,
-        status: 200,
-        headers: { get() { return null; } },
-        body: { getReader() { return { async read() {
-          if (readIndex === 1) controller.abort();
-          if (readIndex >= chunks.length) return { done: true };
-          return { done: false, value: chunks[readIndex++] };
-        } }; } },
-      }),
-    });
-
-    assert.equal(result.status, 'paused', `${label}: aborted PDF did not become paused`);
-    assert.equal(result.bytesReceived, chunks[0].byteLength, `${label}: paused byte count was rolled back`);
-    assert.equal(committed.byteLength, chunks[0].byteLength, `${label}: partial PDF transaction was not committed`);
-  }
-});
-
-test('Emergency Box UI and PDF reader stay in Chrome and Firefox parity', () => {
-  const files = [
-    'src/agent/apocalypse-mode.js',
-    'src/agent/emergency-box.js',
-    'src/agent/openstax-catalog.js',
-    'src/ui/emergency-box.html',
-    'src/ui/emergency-box.css',
-    'src/ui/emergency-box.js',
-    'src/ui/apocalypse-kit.css',
-    'src/ui/emergency-pdf.html',
-    'src/ui/emergency-pdf.css',
-    'src/ui/emergency-pdf.js',
-    'src/ui/emergency-communication.html',
-    'src/ui/emergency-communication.css',
-    'src/ui/emergency-communication.js',
-    'src/ui/apocalypse-comm.css',
-    'src/ui/apocalypse-comm.js',
-    'src/ui/download-tracker.css',
-    'src/ui/download-tracker.js',
-    'src/ui/data/panlex-swadesh-110.json',
-    'src/ui/locales/emergency-copy.mjs',
-    'src/ui/locales/emergency-translations.mjs',
-    'src/ui/wikipedia-reader.html',
-    'src/ui/wikipedia-reader.css',
-    'src/ui/wikipedia-reader.js',
-    'src/ui/wikipedia-article-renderer.js',
-    'src/ui/wikipedia-image-loader.js',
-    'src/ui/wikipedia-library.html',
-    'src/ui/wikipedia-library.css',
-    'src/ui/wikipedia-library.js',
-  ];
-  for (const relative of files) {
-    const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome', relative), 'utf8');
-    const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox', relative), 'utf8');
-    assert.equal(firefox, chrome, `${relative}: Emergency Box browser implementations diverged`);
-  }
-  for (const browser of ['chrome', 'firefox']) {
-    const uiDir = path.join(ROOT, `src/${browser}/src/ui`);
-    const apocalypse = fs.readFileSync(path.join(uiDir, 'apocalypse-mode.html'), 'utf8');
-    const box = fs.readFileSync(path.join(uiDir, 'emergency-box.html'), 'utf8');
-    const boxCss = fs.readFileSync(path.join(uiDir, 'emergency-box.css'), 'utf8');
-    const boxScript = fs.readFileSync(path.join(uiDir, 'emergency-box.js'), 'utf8');
-    const reader = fs.readFileSync(path.join(uiDir, 'emergency-pdf.html'), 'utf8');
-    const readerCss = fs.readFileSync(path.join(uiDir, 'emergency-pdf.css'), 'utf8');
-    const readerScript = fs.readFileSync(path.join(uiDir, 'emergency-pdf.js'), 'utf8');
-    const communicationReader = fs.readFileSync(path.join(uiDir, 'emergency-communication.html'), 'utf8');
-    const communicationReaderCss = fs.readFileSync(path.join(uiDir, 'emergency-communication.css'), 'utf8');
-    const communicationReaderScript = fs.readFileSync(path.join(uiDir, 'emergency-communication.js'), 'utf8');
-    assert.match(apocalypse, /(?:href|data-href)="emergency-box\.html"/, `${browser}: Apocalypse Mode has no Emergency Box entry point`);
-    assert.match(box, /id="load-openstax"/, `${browser}: OpenStax catalog control missing`);
-    assert.match(box, /id="download-basic"/, `${browser}: basic emergency download control missing`);
-    assert.match(box, /data-download-basic-size/, `${browser}: basic emergency download size is not displayed`);
-    assert.match(box, /id="download-all"/, `${browser}: bulk emergency download control missing`);
-    assert.match(box, /data-download-all-size/, `${browser}: bulk emergency download size is not displayed`);
-    assert.match(box, /<footer class="catalog-footer">[\s\S]*?data-i18n="eb\.size_estimate_note"/,
-      `${browser}: estimated-size caveat is not present in the Emergency Box footer`);
-    assert.match(box, /id="resource-list"/, `${browser}: resource browser missing`);
-    assert.match(box, /data-filter="communication"[\s\S]*?data-i18n="eb\.filter\.communication"/,
-      `${browser}: communication collection filter is missing or hard-coded English`);
-    assert.match(box, /data-i18n-aria-label="eb\.nav_label"/, `${browser}: Emergency Box collection navigation is not localized`);
-    assert.match(box, /data-i18n-title="ap\.title"/, `${browser}: Emergency Box back-button title is not localized`);
-    assert.match(reader, /id="pdf-canvas"/, `${browser}: internal PDF renderer missing`);
-    assert.match(reader, /id="offline-badge"[\s\S]*?data-i18n="ep\.available_offline"[\s\S]*?hidden/,
-      `${browser}: the PDF reader does not identify verified local documents as available offline`);
-    assert.match(reader, /id="save-copy"[\s\S]*?data-i18n="ep\.save_copy"[\s\S]*?data-i18n-title="ep\.export_tooltip"/,
-      `${browser}: PDF export control does not explain that it exports an already-offline file`);
-    assert.match(readerScript, /elements\['offline-badge'\]\.hidden = false;/,
-      `${browser}: the offline badge is shown before stored PDF access is verified`);
-    assert.match(readerScript, /anchor\.click\(\);\s*setStatus\(t\('ep\.exported'\), 'success'\);/,
-      `${browser}: PDF export does not confirm the destination after starting the save`);
-    assert.match(reader, /data-i18n-aria-label="ep\.toolbar"/, `${browser}: PDF toolbar is not localized`);
-    assert.match(reader, /data-i18n-aria-label="ep\.canvas_label"/, `${browser}: PDF canvas is not localized`);
-    assert.match(readerCss, /\[hidden\]\s*\{\s*display:\s*none\s*!important/, `${browser}: reader hidden states can expose a stale canvas`);
-    const wikipediaReader = fs.readFileSync(path.join(uiDir, 'wikipedia-reader.html'), 'utf8');
-    const wikipediaReaderCss = fs.readFileSync(path.join(uiDir, 'wikipedia-reader.css'), 'utf8');
-    const wikipediaReaderScript = fs.readFileSync(path.join(uiDir, 'wikipedia-reader.js'), 'utf8');
-    assert.match(wikipediaReader, /id="article-text"/, `${browser}: Wikipedia reader is missing`);
-    const wikipediaLibrary = fs.readFileSync(path.join(uiDir, 'wikipedia-library.html'), 'utf8');
-    const wikipediaLibraryCss = fs.readFileSync(path.join(uiDir, 'wikipedia-library.css'), 'utf8');
-    const wikipediaLibraryScript = fs.readFileSync(path.join(uiDir, 'wikipedia-library.js'), 'utf8');
-    for (const [pageName, pageHtml, pageCss, pageScript, stylesheet, pageClass] of [
-      ['Emergency Box', box, boxCss, boxScript, 'emergency-box.css', 'emergency-box-page'],
-      ['PDF Reader', reader, readerCss, readerScript, 'emergency-pdf.css', 'emergency-pdf-page'],
-      ['Communication Reader', communicationReader, communicationReaderCss, communicationReaderScript, 'emergency-communication.css', 'emergency-communication-page'],
-      ['Wikipedia Reader', wikipediaReader, wikipediaReaderCss, wikipediaReaderScript, 'wikipedia-reader.css', 'wikipedia-reader-page'],
-      ['Wikipedia Library', wikipediaLibrary, wikipediaLibraryCss, wikipediaLibraryScript, 'wikipedia-library.css', 'wikipedia-library-page'],
-    ]) {
-      assert.match(pageHtml, new RegExp(`<script src="theme-bootstrap\\.js"><\\/script>[\\s\\S]*?<link rel="stylesheet" href="${stylesheet.replace('.', '\\.')}"`),
-        `${browser}: ${pageName} does not apply the saved theme before first paint`);
-      assert.match(pageHtml, /<link rel="stylesheet" href="apocalypse-kit\.css">/,
-        `${browser}: ${pageName} does not use the shared Apocalypse visual system`);
-      assert.match(pageHtml, new RegExp(`<body class="${pageClass}">`),
-        `${browser}: ${pageName} does not expose its Apocalypse page identity`);
-      assert.match(pageCss, /:root\[data-theme="light"\]\s*\{[\s\S]*?color-scheme:\s*light/,
-        `${browser}: ${pageName} does not define the Settings light palette`);
-      assert.match(pageCss, /:root\s*\{[\s\S]*?color-scheme:\s*dark/,
-        `${browser}: ${pageName} does not define the Settings dark palette`);
-      assert.match(pageScript, /from '\.\/theme\.js';[\s\S]*?loadMode\(\)\.then[\s\S]*?applyMode\(mode, \{ syncStorage: false \}\)[\s\S]*?watch\(\(\) => currentThemeMode\)/,
-        `${browser}: ${pageName} does not hydrate and watch the shared Appearance preference`);
-      assert.match(pageScript, /storage\?\.onChanged\?\.addListener\?[\s\S]*?changes\.themeMode[\s\S]*?currentThemeMode = next/,
-        `${browser}: ${pageName} does not track live Appearance changes`);
-    }
-    assert.match(box, /href="wikipedia-library\.html"/, `${browser}: Emergency Box has no Wikipedia edition entry point`);
-    assert.match(boxScript, /EMERGENCY_BOX_COMMUNICATION_RESOURCES/, `${browser}: built-in communication resources are absent from the catalog`);
-    assert.match(boxScript, /const EMERGENCY_READER_PAGES = new Set\(\['emergency-pdf\.html', 'emergency-communication\.html'\]\)[\s\S]*?EMERGENCY_READER_PAGES\.has\(requestedReader\) \? requestedReader : 'emergency-pdf\.html'/,
-      `${browser}: persisted Emergency Box records can select an unapproved extension reader`);
-    assert.match(communicationReader, /id="language-input"[^>]*role="combobox"[^>]*aria-controls="language-options"[\s\S]*?id="language-toggle"[\s\S]*?id="language-options"[^>]*role="listbox"[\s\S]*?id="concept-list"[\s\S]*?id="word-dialog"/,
-      `${browser}: communication reader is missing its accessible language picker, concepts, or show-card mode`);
-    assert.doesNotMatch(communicationReader, /<datalist\b/,
-      `${browser}: communication reader still relies on a native datalist that hides every option except the selected language`);
-    assert.match(communicationReaderScript, /function openLanguagePicker\([\s\S]*?const query = showAll \|\| elements\['language-input'\]\.value === selectedLabel \? ''/,
-      `${browser}: opening the selected language does not reveal the complete language catalog`);
-    assert.match(communicationReaderScript, /Intl\.DisplayNames[\s\S]*?function languageAliases\([\s\S]*?function filterLanguageRows\([\s\S]*?languageMatchScore/,
-      `${browser}: language search does not rank names and ISO or PanLex codes`);
-    assert.match(communicationReaderScript, /function setLanguageHighlight\([\s\S]*?aria-activedescendant[\s\S]*?event\.key === 'ArrowDown'[\s\S]*?setLanguageHighlight/,
-      `${browser}: language picker is not keyboard navigable`);
-    assert.match(communicationReaderCss, /\.language-menu\s*\{[\s\S]*?z-index:[\s\S]*?\.language-options\s*\{[\s\S]*?overflow-y:\s*auto/,
-      `${browser}: language picker does not expose a readable scrollable catalog`);
-    assert.match(communicationReaderScript, /panlex-swadesh-110\.json/,
-      `${browser}: communication reader does not load the bundled PanLex data`);
-    assert.match(communicationReaderScript, /No recorded PanLex term/,
-      `${browser}: missing translations are not disclosed explicitly`);
-    assert.match(wikipediaLibrary, /id="language"/, `${browser}: Wikipedia edition screen has no language choice`);
-    assert.match(wikipediaLibrary, /name="edition" value="text"/, `${browser}: text-only Wikipedia choice is missing`);
-    assert.match(wikipediaLibrary, /name="edition" value="images"/, `${browser}: Wikipedia image choice is missing`);
-    assert.match(wikipediaLibrary, /id="download"/, `${browser}: selected Wikipedia edition cannot be downloaded`);
-    assert.match(wikipediaLibrary, /id="import-file"[^>]*type="file"[^>]*accept="\.zim,application\/x-zim"/,
-      `${browser}: the Wikipedia library cannot select an existing local ZIM archive`);
-    assert.doesNotMatch(wikipediaLibrary, /audio|\.svg/i,
-      `${browser}: focused Wikipedia edition screen exposes an unsupported archive format`);
-    assert.match(wikipediaLibraryScript, /selectWikipediaArchiveVariant\(result\.items, \{\s*language: elements\.language\.value,\s*includeImages,\s*\}\)/,
-      `${browser}: language and image choices do not select a catalog edition`);
-    assert.match(wikipediaLibraryScript, /function matchingReadyRecord\(\)[\s\S]*?wikipediaArchiveMatchesSelection\(record, \{[\s\S]*?language: elements\.language\.value,[\s\S]*?includeImages/,
-      `${browser}: the ready label does not require the exact selected Wikipedia edition`);
-    assert.match(wikipediaLibraryScript, /replacementArchiveIds/,
-      `${browser}: downloading a new Wikipedia edition does not schedule replacement cleanup`);
-    assert.match(wikipediaLibraryScript, /function managedWikipediaRecords\(\)[\s\S]*?return \[\.\.\.wikipediaRecords\(\)\]\.sort/,
-      `${browser}: the Wikipedia library does not retain every installed archive in its management list`);
-    assert.match(wikipediaLibraryScript, /elements\['archive-list'\]\.innerHTML = records\.map\(renderArchiveRecord\)\.join\(''\)/,
-      `${browser}: installed Wikipedia archives are still collapsed to one visible record`);
-    assert.match(wikipediaLibraryScript, /data-id="\$\{escapeHtml\(id\)\}"[\s\S]*?runArchiveAction\(button\.dataset\.action, button\.dataset\.id, button\)/,
-      `${browser}: per-archive controls are not bound to the selected archive`);
-    assert.match(wikipediaLibraryScript, /status === 'ready'[\s\S]*?actionButton\('read'[\s\S]*?actionButton\('delete'/,
-      `${browser}: completed Wikipedia archives cannot be read and removed from the library`);
-    assert.match(wikipediaLibraryScript, /errorKind === 'file-permission-required'[\s\S]*?actionButton\('reauthorize'/,
-      `${browser}: an expired external-file permission is presented as a generic retry`);
-    assert.match(wikipediaLibraryScript, /requestPermission\(\{ mode \}\)[\s\S]*?command\('reauthorize_file'/,
-      `${browser}: the Wikipedia library cannot request and persist renewed file access`);
-    assert.match(wikipediaLibraryScript, /showOpenFilePicker[\s\S]*?registerKiwixArchiveHandle[\s\S]*?importKiwixArchive/,
-      `${browser}: the Wikipedia library does not preserve local-handle and copied-file import paths`);
-    assert.match(wikipediaLibraryScript, /assertWikipediaZimArchive\(inspected\.embeddedMetadata\)[\s\S]*?confirm_import/,
-      `${browser}: local ZIM imports are not identity-checked and reviewed before registration`);
-    assert.match(wikipediaReaderScript, /const requestSequence = \+\+articleRequestSequence;[\s\S]*?await readApocalypseArticle[\s\S]*?if \(requestSequence !== articleRequestSequence\) return;/,
-      `${browser}: stale Wikipedia article reads can still render after navigation`);
-    assert.match(wikipediaReaderScript, /catch \(error\) \{\s*if \(requestSequence !== articleRequestSequence\) return;[\s\S]*?finally \{\s*if \(requestSequence === articleRequestSequence\) articleBusy = false;/,
-      `${browser}: stale Wikipedia article reads can still overwrite status or active-read state`);
-    assert.match(wikipediaReaderScript, /addEventListener\('popstate', \(\) => \{\s*cancelPendingArticleRead\(\);[\s\S]*?historyNavigation: true/,
-      `${browser}: Wikipedia history navigation does not invalidate and supersede an in-flight article read`);
-    assert.match(boxScript, /t\('eb\.enable_downloads_tooltip'\)/,
-      `${browser}: disabled download tooltip is not localized`);
-    assert.match(boxScript, /function downloadBasicKit\(\)[\s\S]*?selectEmergencyBoxBasicResources\(catalogResources\(\)\)[\s\S]*?'basic'/,
-      `${browser}: basic download does not use the global essential kit independently of the current view`);
-    assert.match(boxScript, /function formatEstimatedSize\([\s\S]*?MB[\s\S]*?GB[\s\S]*?function remainingOfTotal\([\s\S]*?remaining:[\s\S]*?total:/,
-      `${browser}: bulk size estimates do not distinguish readable MB values, remaining bytes, and total bytes`);
-    assert.match(boxScript, /const basicResources = selectEmergencyBoxBasicResources\(all\)\.filter\(resource => !resource\.builtIn\)[\s\S]*?remainingOfTotal\(basicResources, basicPending\)/,
-      `${browser}: basic-kit size does not show the remaining and complete downloadable pack`);
-    assert.match(boxScript, /if \(catalogResource && record\.status !== 'ready'\)[\s\S]*?merged\.url = catalogResource\.url;[\s\S]*?merged\.storageKey = catalogResource\.storageKey;/,
-      `${browser}: unfinished downloads can keep retrying an obsolete catalog source and stale partial file`);
-    assert.match(boxScript, /const currentView = activeFilter !== 'all' \|\| elements\['resource-search'\]\.value\.trim\(\) !== ''[\s\S]*?'eb\.download_current_view'[\s\S]*?remainingOfTotal\(downloadable, pending\)/,
-      `${browser}: filtered downloads are not identified as the current view with remaining and total sizes`);
-    assert.match(boxScript, /entry\.promise = \(async \(\) =>[\s\S]*?if \(downloads\.get\(resource\.id\) === entry\) downloads\.delete\(resource\.id\)[\s\S]*?async function stopAndDeleteDownload\(id\)[\s\S]*?await entry\.promise\.catch/,
-      `${browser}: stop-and-delete does not await the exact active download before removing its record and bytes`);
-    assert.doesNotMatch(boxScript, /attempts\s*<\s*200|setTimeout\(resolve,\s*25\)/,
-      `${browser}: stop-and-delete still relies on a time-limited busy-wait`);
-    assert.match(boxScript, /if \(bulkDownloadKind === kind\)[\s\S]*?for \(const entry of downloads\.values\(\)\)[\s\S]*?entry\.kind === kind[\s\S]*?entry\.controller\.abort\(\)[\s\S]*?bulkKind: kind/,
-      `${browser}: stopping a bulk kit can still abort downloads owned by another operation`);
-    assert.doesNotMatch(boxScript, /title="Enable Apocalypse Mode to download resources"/,
-      `${browser}: disabled download tooltip remains hard-coded English`);
-  }
-});
-
-test('Apocalypse download tracker follows every offline transfer from its pages and Settings', () => {
-  const pages = [
-    'apocalypse-mode.html',
-    'wikipedia-library.html',
-    'wikipedia-reader.html',
-    'emergency-box.html',
-    'emergency-pdf.html',
-    'emergency-communication.html',
-    'settings.html',
-  ];
-  for (const browser of ['chrome', 'firefox']) {
-    const uiDir = path.join(ROOT, `src/${browser}/src/ui`);
-    for (const page of pages) {
-      const html = fs.readFileSync(path.join(uiDir, page), 'utf8');
-      assert.match(html, /<link rel="stylesheet" href="download-tracker\.css">/,
-        `${browser}: ${page} does not load the shared download tracker styles`);
-      assert.match(html, /<script type="module" src="download-tracker\.js"><\/script>/,
-        `${browser}: ${page} does not load the shared download tracker`);
-    }
-
-    const script = fs.readFileSync(path.join(uiDir, 'download-tracker.js'), 'utf8');
-    const css = fs.readFileSync(path.join(uiDir, 'download-tracker.css'), 'utf8');
-    assert.match(script, /webgpu-text-download-state/,
-      `${browser}: download tracker does not observe the local text model`);
-    assert.match(script, /webgpuVisionDownloadState/,
-      `${browser}: download tracker does not observe the local vision model`);
-    assert.match(script, /action:\s*'apocalypse_mode',\s*command:\s*'status'/,
-      `${browser}: download tracker does not observe Wikipedia archives`);
-    assert.match(script, /webbrain_emergency_box/,
-      `${browser}: download tracker does not observe Emergency Box PDFs`);
-    assert.match(script, /PDF_STALE_AFTER_MS[\s\S]*?status = 'paused'/,
-      `${browser}: stale page-owned PDF downloads are presented as if they were still active`);
-    assert.match(script, /formatBytes\(item\.loaded\)[\s\S]*?formatBytes\(item\.total\)[\s\S]*?ETA/,
-      `${browser}: large downloads do not show transferred bytes, speed, and estimated time remaining`);
-    assert.match(script, /data-liveness="\$\{livenessFor\(item\)\}"[\s\S]*?wb-dl-state/,
-      `${browser}: download rows have no visible recent-progress signal`);
-    assert.match(script, /data-download-action="\$\{action\}"[\s\S]*?actions\.push\(actionButton\('pause'[\s\S]*?actions\.push\(actionButton\('resume'[\s\S]*?actions\.push\(actionButton\('stop'/,
-      `${browser}: tracker does not expose Pause, Resume, and Stop controls`);
-    assert.match(script, /action === 'stop' && !globalThis\.confirm\(t\('wl\.confirm_stop'\)\)/,
-      `${browser}: destructive tracker Stop action is not confirmed`);
-    assert.match(script, /start_webgpu\$\{suffix\}_download[\s\S]*?\$\{action\}_webgpu\$\{suffix\}_download/,
-      `${browser}: tracker controls do not route text and vision model actions to the background host`);
-    assert.match(script, /action:\s*'apocalypse_mode',[\s\S]*?command,[\s\S]*?id:\s*item\.sourceId/,
-      `${browser}: tracker controls do not route Wikipedia actions to the background archive manager`);
-    assert.match(script, /BroadcastChannel\('webbrain-emergency-download-control'\)[\s\S]*?\?resume=/,
-      `${browser}: page-owned PDF controls cannot hand off safely to Emergency Box`);
-    assert.match(script, /tracker\.hidden = items\.length === 0/,
-      `${browser}: the tracker does not leave the page when there is nothing actionable`);
-    assert.match(css, /position:\s*fixed[\s\S]*?right:\s*max\([^;]*safe-area-inset-right[\s\S]*?bottom:\s*max\([^;]*safe-area-inset-bottom/,
-      `${browser}: download tracker is not implemented as a safe-area-aware lower-right tray`);
-    assert.doesNotMatch(css, /inset-inline-start:\s*50%|translateX\(-50%\)/,
-      `${browser}: download tracker is still centered instead of anchored in the lower-right corner`);
-    assert.match(css, /\.wb-dl-item\s*\{[\s\S]*?grid-template-columns:\s*38px minmax\(0,\s*1fr\) 34px[\s\S]*?\.wb-dl-progress\s*\{[\s\S]*?grid-column:\s*2\s*\/\s*3[\s\S]*?\.wb-dl-actions\s*\{[\s\S]*?grid-column:\s*2\s*\/\s*3/,
-      `${browser}: download details do not stack cleanly in the compact corner tray`);
-    assert.match(css, /prefers-reduced-motion:\s*reduce/,
-      `${browser}: download tracker ignores reduced-motion preferences`);
-    assert.match(css, /@keyframes wb-dl-heartbeat[\s\S]*?\.wb-dl-actions[\s\S]*?\.wb-dl-action\.danger/,
-      `${browser}: tracker lacks its activity beacon or compact destructive-control treatment`);
-    const emergencyScript = fs.readFileSync(path.join(uiDir, 'emergency-box.js'), 'utf8');
-    assert.match(emergencyScript, /BroadcastChannel\('webbrain-emergency-download-control'\)[\s\S]*?handleDownloadControl/,
-      `${browser}: Emergency Box cannot receive tracker controls from another Apocalypse page`);
-    assert.match(emergencyScript, /params\.get\('resume'\)[\s\S]*?startDownload\(resource, \{ confirm: false \}\)/,
-      `${browser}: tracker Resume handoff does not restart a paused PDF`);
-  }
-});
-
-test('Apocalypse communication slot renders only a bounded fetched bulletin', async () => {
-  const productionPath = path.join(ROOT, 'web/apocalypse-comm.html');
-  const placeholderPath = path.join(ROOT, 'web/apocalypse-comm-placeholder.html');
-  const production = fs.readFileSync(productionPath, 'utf8');
-  const placeholder = fs.readFileSync(placeholderPath, 'utf8');
-  assert.ok(Buffer.byteLength(production) <= 128_000,
-    'the published Apocalypse communication exceeds its bounded iframe payload');
-  assert.match(placeholder, /Field bulletin[\s\S]*?Prepare before the network becomes the problem/,
-    'the preview bulletin does not demonstrate the communication surface');
-  assert.doesNotMatch(placeholder, /<script|https?:\/\//i,
-    'the preview bulletin should remain self-contained and script-free');
-
-  const pages = [
-    'apocalypse-mode.html',
-    'wikipedia-library.html',
-    'wikipedia-reader.html',
-    'emergency-box.html',
-    'emergency-pdf.html',
-    'emergency-communication.html',
-    'settings.html',
-  ];
-  for (const browser of ['chrome', 'firefox']) {
-    const uiDir = path.join(ROOT, `src/${browser}/src/ui`);
-    const runtime = await import(`${pathToFileURL(path.join(uiDir, 'apocalypse-comm.js')).href}?test=${browser}`);
-    assert.equal(runtime.communicationUrl().href, 'https://webbrain.one/apocalypse-comm.html',
-      `${browser}: communication slot does not use the published WebBrain endpoint`);
-    assert.equal(runtime.isRenderableMarkup(''), false, `${browser}: empty bulletin is treated as visible`);
-    assert.equal(runtime.isRenderableMarkup(' \n<!-- reserved -->\n<!doctype html>'), false,
-      `${browser}: placeholder-only bulletin is treated as visible`);
-    assert.equal(runtime.isRenderableMarkup(placeholder), true,
-      `${browser}: the sample bulletin cannot pass the publication check`);
-    assert.equal(runtime.isRenderableMarkup('x'.repeat(128_001)), false,
-      `${browser}: oversized remote bulletin is accepted`);
-
-    const script = fs.readFileSync(path.join(uiDir, 'apocalypse-comm.js'), 'utf8');
-    assert.match(script, /params\.get\('apocalypse-comm'\) === 'placeholder'/,
-      `${browser}: the placeholder cannot be selected for an integration preview`);
-    assert.match(script, /cache:\s*'no-store'[\s\S]*?credentials:\s*'omit'[\s\S]*?referrerPolicy:\s*'no-referrer'/,
-      `${browser}: bulletin probe is not private and fresh`);
-    assert.match(script, /sandbox', 'allow-popups allow-popups-to-escape-sandbox'/,
-      `${browser}: remote bulletin iframe is not sandboxed`);
-    const framed = runtime.communicationDocument(placeholder, new URL('https://www.webbrain.one/apocalypse-comm-placeholder.html'));
-    assert.match(framed, /<head><base href="https:\/\/www\.webbrain\.one\/apocalypse-comm-placeholder\.html" target="_blank"><meta name="referrer" content="no-referrer">/,
-      `${browser}: srcdoc bulletin does not preserve safe relative links and no-referrer navigation`);
-    assert.match(script, /frame\.srcdoc = communicationDocument\(markup, url\)/,
-      `${browser}: bulletin still navigates its iframe into the anti-framing response`);
-    assert.doesNotMatch(script, /frame\.src\s*=\s*url\.href/,
-      `${browser}: bulletin still depends on framing webbrain.one directly`);
-    assert.match(script, /\['webbrain\.one', 'www\.webbrain\.one'\]\.includes\(responseUrl\.hostname\)[\s\S]*?if \(!isRenderableMarkup\(markup\)\) return;[\s\S]*?insertAdjacentElement\('afterend', createSlot\(responseUrl, markup\)\)/,
-      `${browser}: communication slot can render before content is checked`);
-
-    for (const page of pages) {
-      const html = fs.readFileSync(path.join(uiDir, page), 'utf8');
-      assert.match(html, /<link rel="stylesheet" href="apocalypse-comm\.css">/,
-        `${browser}: ${page} does not load the bulletin slot styles`);
-      assert.match(html, /<script type="module" src="apocalypse-comm\.js"><\/script>/,
-        `${browser}: ${page} does not check for a published bulletin`);
-    }
-  }
-});
-
-test('Emergency Box localization keeps every canonical key translated with matching placeholders in all 22 locales', async () => {
-  const emergencyCopy = (await import(
-    pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales/emergency-copy.mjs')).href
-  )).default;
-  const emergencyTranslations = (await import(
-    pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales/emergency-translations.mjs')).href
-  )).default;
-  const localeCodes = ['es', 'fr', 'tr', 'zh', 'ru', 'uk', 'ar', 'ja', 'ko', 'id', 'th', 'ms', 'tl', 'pl', 'he', 'hi', 'pt', 'vi', 'bn', 'fa', 'nl', 'de'];
-  const canonicalKeys = Object.keys(emergencyCopy);
-  assert.equal(canonicalKeys.length, 145, 'English emergency copy drifted from the 145-key canonical surface');
-  const placeholdersIn = (value) => [...new Set(String(value).match(/\{[a-z]+\}/g) || [])].sort();
-
-  for (const locale of localeCodes) {
-    const block = emergencyTranslations[locale];
-    assert.ok(block, `${locale}: emergency translation block is missing`);
-    const blockKeys = Object.keys(block);
-    assert.deepEqual(blockKeys.sort(), [...canonicalKeys].sort(),
-      `${locale}: emergency key set diverged (${canonicalKeys.length} canonical, ${blockKeys.length} present)`);
-    for (const key of canonicalKeys) {
-      const translated = block[key];
-      assert.equal(typeof translated, 'string', `${locale}: ${key} is not a string`);
-      assert.ok(translated.trim(), `${locale}: ${key} is empty`);
-      const dropped = placeholdersIn(emergencyCopy[key]).filter(
-        (placeholder) => !placeholdersIn(translated).includes(placeholder),
-      );
-      assert.deepEqual(dropped, [], `${locale}: ${key} dropped placeholder(s): ${dropped.join(', ')}`);
-    }
-  }
-});
-
-test('Apocalypse Mode resolves exact Kiwix archive size and integrity metadata before install', () => {
-  const catalogXml = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/">
-    <entry><id>urn:uuid:test-mini</id><title>Wikipedia 100</title><updated>2026-07-17T00:00:00Z</updated>
-      <summary>Top hundred Wikipedia articles</summary><language>eng</language><name>wikipedia_en_100</name><flavour>mini</flavour>
-      <category>wikipedia</category><tags>wikipedia;_ftindex:yes;_pictures:no</tags><articleCount>5032</articleCount>
-      <author><name>Wikipedia</name></author><publisher><name>openZIM</name></publisher>
-      <link rel="http://opds-spec.org/acquisition/open-access" type="application/x-zim" href="https://lb.download.kiwix.org/zim/wikipedia/example.zim.meta4" length="331961344" />
-      <dc:issued>2026-07-17T00:00:00Z</dc:issued>
-    </entry></feed>`;
-  const metalinkXml = `<?xml version="1.0"?><metalink xmlns="urn:ietf:params:xml:ns:metalink"><file name="example.zim">
-    <size>4621915</size><hash type="sha-256">b3d5db724e2ef884eaf43e3677ba2dc5c4d17619114b3de4602c119ca23dcfcd</hash>
-    <pieces length="4194304" type="sha-1"><hash>f6dc33924096656d9952a6ffe0de101d1b3aa5c6</hash><hash>33534cc215d7a94fba21cf264a64f2ef954dedce</hash></pieces>
-    <url priority="2">https://mirror.example.test/wikipedia/example.zim</url>
-    <url priority="1">https://dumps.wikimedia.org/kiwix/zim/wikipedia/example.zim</url>
-  </file></metalink>`;
-  const libraryXml = `<?xml version="1.0"?><library version="20110515">
-    <book id="static-text" size="324181" articleCount="5918889" title="Wikipedia" description="The free encyclopedia" language="eng"
-      creator="Wikipedia" publisher="openZIM" name="wikipedia_en_all" date="2026-07-17" flavour="nopic"
-      tags="wikipedia;_category:wikipedia;_pictures:no" url="https://lb.download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_2026-07.zim.meta4" />
-    <book id="wrong-language" size="100" articleCount="10" title="Wikipédia" language="fra" creator="Wikipedia" publisher="openZIM"
-      name="wikipedia_fr_all" date="2026-07-17" flavour="mini" url="https://example.test/fr.zim.meta4" />
-    <book id="wrong-category" size="100" articleCount="10" title="Other" language="eng" creator="Other" publisher="openZIM"
-      name="gutenberg_en_all" date="2026-07-17" flavour="mini" url="https://example.test/other.zim.meta4" />
-  </library>`;
-
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const [item] = runtime.parseKiwixCatalog(catalogXml);
-    assert.equal(item.language, 'eng', `${label}: catalog language was not preserved`);
-    assert.equal(item.tier, 'starter', `${label}: small archive tier was not classified`);
-    assert.equal(item.source, 'Wikipedia / openZIM', `${label}: catalog publisher provenance was replaced by a generic label`);
-    assert.equal(item.licenseDeclared, false, `${label}: missing OPDS rights metadata was presented as a publisher-declared license`);
-    assert.match(item.license, /not declared/i, `${label}: missing OPDS rights metadata was not disclosed before confirmation`);
-    assert.equal(item.catalogSize, 331961344, `${label}: catalog-reported size was lost`);
-    const resolved = runtime.resolveKiwixDownload(item, metalinkXml);
-    assert.equal(resolved.size, 4621915, `${label}: install did not use the Metalink exact size`);
-    assert.equal(resolved.pieceLength, 4194304, `${label}: resumable piece size was not preserved`);
-    assert.deepEqual(resolved.pieceHashes, ['f6dc33924096656d9952a6ffe0de101d1b3aa5c6', '33534cc215d7a94fba21cf264a64f2ef954dedce'], `${label}: piece integrity hashes were lost`);
-    assert.equal(resolved.downloadUrl, 'https://dumps.wikimedia.org/kiwix/zim/wikipedia/example.zim', `${label}: mirror URL was not selected`);
-    assert.deepEqual(resolved.mirrors, [
-      'https://dumps.wikimedia.org/kiwix/zim/wikipedia/example.zim',
-      'https://mirror.example.test/wikipedia/example.zim',
-    ], `${label}: priority-ordered Metalink mirrors were not retained`);
-    const [staticItem] = runtime.parseKiwixLibrary(libraryXml, 'eng');
-    assert.equal(staticItem.id, 'static-text', `${label}: static Kiwix catalog fallback did not preserve archive identity`);
-    assert.equal(staticItem.tier, 'text', `${label}: static Kiwix archive flavour was not classified`);
-    assert.equal(staticItem.catalogSize, 324181 * 1024, `${label}: static Kiwix size was not converted from KiB`);
-    assert.equal(runtime.parseKiwixLibrary(libraryXml, 'eng').length, 1, `${label}: static fallback did not filter language and category`);
-    const catalogUrl = new URL(runtime.kiwixCatalogUrl('eng'));
-    assert.equal(catalogUrl.searchParams.get('category'), 'wikipedia', `${label}: OPDS request does not use the supported category filter`);
-  }
-});
-
-test('Apocalypse Mode falls back to the official static Kiwix catalog', async () => {
-  const libraryXml = `<?xml version="1.0"?><library><book id="fallback" size="512" articleCount="100" title="Wikipedia Mini"
-    description="A small archive" language="eng" creator="Wikipedia" publisher="openZIM" name="wikipedia_en_100" date="2026-08-01"
-    flavour="mini" tags="wikipedia;_category:wikipedia" url="https://lb.download.kiwix.org/zim/wikipedia/fallback.zim.meta4" /></library>`;
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const urls = [];
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store: {
-        async getConfig() { return { enabled: true, updatePolicy: 'manual' }; },
-        async listArchives() { return []; },
-      },
-      storage: {},
-      fetchImpl: async (url) => {
-        urls.push(String(url));
-        if (String(url).includes('opds.library.kiwix.org')) return { ok: false, status: 503 };
-        return { ok: true, status: 200, async text() { return libraryXml; } };
-      },
-    });
-
-    const items = await controller.catalog('eng');
-    assert.deepEqual(items.map(item => item.id), ['fallback'], `${label}: static Kiwix fallback did not recover the catalog`);
-    assert.equal(urls.length, 2, `${label}: catalog fallback made an unexpected number of requests`);
-    assert.match(urls[1], /download\.kiwix\.org\/library\/library_zim\.xml/, `${label}: fallback did not use Kiwix's static library catalog`);
-  }
-});
-
-function minimalWikipediaZimFixture(options = {}) {
-  const encoder = new TextEncoder();
-  const language = options.language || 'eng';
-  const sourceLanguage = ({ ben: 'bn', tgl: 'tl' })[language] || language.slice(0, 2);
-  const imageAssets = Array.isArray(options.imageAssets) ? options.imageAssets : [];
-  const mimeTypes = ['text/html', 'text/plain'];
-  for (const asset of imageAssets) {
-    const mimeType = String(asset.mimeType || '').trim().toLowerCase();
-    if (mimeType && !mimeTypes.includes(mimeType)) mimeTypes.push(mimeType);
-  }
-  const metadata = options.wikipedia === false ? {
-    Language: 'eng', Name: 'project_gutenberg_en', Source: 'www.gutenberg.org', Tags: '_category:books',
-  } : {
-    Language: language, Name: `wikipedia_${sourceLanguage}_test`, Source: `https://${sourceLanguage}.wikipedia.org/`,
-    Tags: options.tags ?? 'wikipedia;_category:wikipedia',
-  };
-  const entries = [
-    {
-      namespace: 'C', url: 'Alan_Turing', title: 'Alan Turing', mimeType: 0,
-      contents: options.articleHtml || '<!doctype html><html><body><p>Alan Turing was an English mathematician, computer scientist, logician, and cryptanalyst.</p></body></html>',
-    },
-    ...Object.entries(metadata).map(([url, contents]) => ({ namespace: 'M', url, title: url, mimeType: 1, contents })),
-    ...imageAssets.map(asset => ({
-      namespace: 'C',
-      url: String(asset.url || ''),
-      title: String(asset.title || asset.url || ''),
-      mimeType: mimeTypes.indexOf(String(asset.mimeType || '').trim().toLowerCase()),
-      contents: asset.contents,
-    })),
-  ];
-  if (options.redirectTrap) {
-    entries.push(
-      { namespace: 'C', url: 'Science', title: 'Science', redirectUrl: 'The_New_York_Times' },
-      { namespace: 'C', url: 'Science_article', title: 'Science article', mimeType: 0, contents: '<p>Science is the systematic study of the natural world.</p>' },
-      { namespace: 'C', url: 'The_New_York_Times', title: 'The New York Times', mimeType: 0, contents: '<p>A newspaper based in New York City.</p>' },
-    );
-  }
-  if (options.caseSensitiveTitle) {
-    for (let index = 0; index < 30; index += 1) {
-      entries.push({
-        namespace: 'C', url: `New_Example_${String(index).padStart(2, '0')}`, title: `New Example ${index}`, mimeType: 0,
-        contents: `<p>Prefix decoy ${index}.</p>`,
-      });
-    }
-    entries.push({
-      namespace: 'C', url: 'New_York_City', title: 'New York City', mimeType: 0,
-      contents: '<p>New York City is the most populous city in the United States.</p>',
-    });
-    entries.push({ namespace: 'C', url: 'NYC', title: 'NYC', redirectUrl: 'New_York_City' });
-    entries.push({
-      namespace: 'C', url: 'iPhone', title: 'iPhone', mimeType: 0,
-      contents: '<p>The iPhone is a line of smartphones designed by Apple.</p>',
-    });
-    entries.push({
-      namespace: 'C', url: 'YouTube', title: 'YouTube', mimeType: 0,
-      contents: '<p>YouTube is an online video sharing platform.</p>',
-    });
-    entries.push({
-      namespace: 'C', url: 'YouTube_TV', title: 'YouTube TV', mimeType: 0,
-      contents: '<p>YouTube TV is a streaming television service.</p>',
-    });
-    entries.push({
-      namespace: 'C', url: 'OpenAI', title: 'OpenAI', mimeType: 0,
-      contents: '<p>OpenAI is an artificial intelligence research organization.</p>',
-    });
-    entries.push({
-      namespace: 'C', url: 'United_States', title: 'United States', mimeType: 0,
-      contents: '<p>The United States is a country in North America.</p>',
-    });
-    entries.push({ namespace: 'C', url: 'USA', title: 'USA', redirectUrl: 'United_States' });
-    entries.push({ namespace: 'C', url: 'Big_Apple', title: 'Big Apple', redirectUrl: 'New_York_City' });
-  }
-  entries.sort((left, right) => {
-    const leftKey = `${left.namespace}/${left.url}`;
-    const rightKey = `${right.namespace}/${right.url}`;
-    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-  });
-  const blobs = entries.filter(entry => entry.contents != null);
-  blobs.forEach((entry, index) => { entry.blobIndex = index; });
-  const mime = encoder.encode(`${mimeTypes.join('\0')}\0\0`);
-  const offsetsBytes = (blobs.length + 1) * 4;
-  const encodedBlobs = blobs.map((entry) => {
-    if (entry.contents instanceof Uint8Array) return entry.contents;
-    if (ArrayBuffer.isView(entry.contents)) {
-      return new Uint8Array(entry.contents.buffer, entry.contents.byteOffset, entry.contents.byteLength);
-    }
-    if (entry.contents instanceof ArrayBuffer) return new Uint8Array(entry.contents);
-    return encoder.encode(String(entry.contents));
-  });
-  const cluster = new Uint8Array(1 + offsetsBytes + encodedBlobs.reduce((sum, value) => sum + value.length, 0));
-  cluster[0] = 1;
-  const clusterView = new DataView(cluster.buffer);
-  let blobOffset = offsetsBytes;
-  encodedBlobs.forEach((value, index) => {
-    clusterView.setUint32(1 + index * 4, blobOffset, true);
-    cluster.set(value, 1 + blobOffset);
-    blobOffset += value.length;
-  });
-  clusterView.setUint32(1 + blobs.length * 4, blobOffset, true);
-  const directories = entries.map((entry) => {
-    const url = encoder.encode(entry.url);
-    const title = encoder.encode(entry.title);
-    const redirect = Boolean(entry.redirectUrl);
-    const directory = new Uint8Array((redirect ? 12 : 16) + url.length + 1 + title.length + 1);
-    const directoryView = new DataView(directory.buffer);
-    directoryView.setUint16(0, redirect ? 0xffff : entry.mimeType, true);
-    directory[3] = entry.namespace.charCodeAt(0);
-    directoryView.setUint32(8, redirect ? entries.findIndex(candidate => candidate.url === entry.redirectUrl && candidate.namespace === 'C') : 0, true);
-    if (!redirect) directoryView.setUint32(12, entry.blobIndex, true);
-    directory.set(url, redirect ? 12 : 16);
-    directory.set(title, (redirect ? 13 : 17) + url.length);
-    return directory;
-  });
-  // Use the common ZIM layout where directory entries precede cluster data.
-  // The final cluster therefore ends at checksumPos, not at the first URL
-  // pointer's directory-entry offset.
-  const urlPointerPosition = Math.max(128, Math.ceil((80 + mime.length) / 8) * 8);
-  const clusterPointerPosition = urlPointerPosition + entries.length * 8;
-  const directoryStart = clusterPointerPosition + 8;
-  const directoryPositions = [];
-  let directoryOffset = directoryStart;
-  for (const directory of directories) {
-    directoryPositions.push(directoryOffset);
-    directoryOffset += directory.length;
-  }
-  const clusterStart = directoryOffset;
-  const checksumPosition = clusterStart + cluster.length;
-  const bytes = new Uint8Array(checksumPosition + 16);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, 0x044d495a, true);
-  view.setUint16(4, 6, true);
-  view.setUint16(6, 3, true);
-  view.setUint32(24, entries.length, true);
-  view.setUint32(28, 1, true);
-  view.setBigUint64(32, BigInt(urlPointerPosition), true);
-  view.setBigUint64(40, 0xffffffffffffffffn, true);
-  view.setBigUint64(48, BigInt(clusterPointerPosition), true);
-  view.setBigUint64(56, 80n, true);
-  view.setUint32(64, 0, true);
-  view.setUint32(68, 0xffffffff, true);
-  view.setBigUint64(72, BigInt(checksumPosition), true);
-  bytes.set(mime, 80);
-  bytes.set(cluster, clusterStart);
-  directories.forEach((directory, index) => {
-    bytes.set(directory, directoryPositions[index]);
-    view.setBigUint64(urlPointerPosition + index * 8, BigInt(directoryPositions[index]), true);
-  });
-  view.setBigUint64(clusterPointerPosition, BigInt(clusterStart), true);
-  return new Blob([bytes], { type: 'application/x-zim' });
-}
-
-test('Apocalypse Mode reads Wikipedia passages and attribution from a local ZIM archive', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const archive = await runtime.openKiwixZim(minimalWikipediaZimFixture(), {
-      language: 'eng',
-      archiveDate: '2026-07-17',
-      license: 'CC BY-SA 4.0',
-    });
-    assert.deepEqual(archive.metadata, {
-      language: 'eng', archiveDate: '2026-07-17', source: 'https://en.wikipedia.org/', license: 'CC BY-SA 4.0', licenseDeclared: true,
-    }, `${label}: validated import metadata was unavailable before confirmation`);
-    const [passage] = await archive.search('Alan Turing', { limit: 3 });
-    assert.equal(passage.title, 'Alan Turing', `${label}: local ZIM title was not read`);
-    assert.match(passage.excerpt, /computer scientist/, `${label}: local ZIM article text was not extracted`);
-    assert.equal(passage.url, 'https://en.wikipedia.org/wiki/Alan_Turing', `${label}: canonical Wikipedia attribution was lost`);
-    assert.equal(passage.language, 'eng', `${label}: archive language was lost`);
-    assert.equal(passage.archiveDate, '2026-07-17', `${label}: archive date was lost`);
-    assert.equal(passage.license, 'CC BY-SA 4.0', `${label}: archive license was lost`);
-    assert.equal(passage.path, 'Alan_Turing', `${label}: reader path was not preserved by archive search`);
-    const article = await archive.readArticle(passage.path);
-    assert.equal(article.title, 'Alan Turing', `${label}: text reader opened the wrong article`);
-    assert.match(article.text, /computer scientist/, `${label}: text reader did not extract the complete local article`);
-    assert.match(article.unsafeHtml, /<p>Alan Turing/, `${label}: formatted reader did not receive the original article markup`);
-    assert.equal(article.truncated, false, `${label}: short local article was incorrectly marked truncated`);
-    assert.equal(archive.embeddedMetadata.Name, 'wikipedia_en_test', `${label}: embedded archive identity was not exposed for import validation`);
-  }
-  const corrupt = new Blob([new Uint8Array(96)]);
-  await assert.rejects(ApocalypseModeCh.openKiwixZim(corrupt), /ZIM/i, 'corrupt archives must fail validation');
-});
-
-test('Apocalypse Mode exposes only bounded display images from image-bearing Wikipedia archives', async () => {
-  const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
-  const svgBytes = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><script>alert(1)</script><path d="M2 2L18 18"/></svg>');
-  const fixture = minimalWikipediaZimFixture({
-    tags: 'wikipedia;_category:wikipedia;_pictures:yes',
-    articleHtml: '<p>Portrait</p><img src="./I/alan.png" alt="Alan Turing"><img src="./I/diagram.svg"><audio src="./I/voice.mp3"></audio>',
-    imageAssets: [
-      { url: 'I/alan.png', mimeType: 'image/png', contents: pngBytes },
-      { url: 'I/diagram.svg', mimeType: 'image/svg+xml', contents: svgBytes },
-      { url: 'I/voice.mp3', mimeType: 'audio/mpeg', contents: new Uint8Array([73, 68, 51]) },
-    ],
-  });
-
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.wikipediaArchiveIncludesImages({ flavour: 'maxi' }), true, `${label}: maxi archives were not recognized as image-bearing`);
-    assert.equal(runtime.wikipediaArchiveIncludesImages({ flavour: 'nopic', tags: ['_pictures:yes'] }), false, `${label}: nopic archives were mislabeled as image-bearing`);
-    assert.equal(runtime.wikipediaArchiveIncludesImages({ tags: ['_pictures:no'] }, { Tags: '_pictures:yes' }), false, `${label}: explicit no-picture metadata did not win`);
-    for (const mimeType of ['image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/svg+xml', 'image/webp']) {
-      assert.equal(runtime.isSupportedWikipediaImageMimeType(mimeType), true, `${label}: ${mimeType} was not accepted`);
-    }
-    for (const mimeType of ['audio/mpeg', 'video/mp4', 'text/html']) {
-      assert.equal(runtime.isSupportedWikipediaImageMimeType(mimeType), false, `${label}: ${mimeType} escaped the image boundary`);
-    }
-
-    const archive = await runtime.openKiwixZim(fixture);
-    assert.equal(archive.imagesIncluded, true, `${label}: embedded picture metadata was lost`);
-    assert.equal((await archive.readArticle('Alan_Turing')).imagesIncluded, true, `${label}: the reader did not receive archive image capability`);
-    const image = await archive.readImage('I/alan.png');
-    assert.equal(image.mimeType, 'image/png', `${label}: raster MIME type was lost`);
-    assert.deepEqual(image.bytes, pngBytes, `${label}: raster bytes changed during the local read`);
-    const vector = await archive.readImage('I/diagram.svg');
-    assert.equal(vector.mimeType, 'image/svg+xml', `${label}: the SVG MIME type was lost before UI sanitization`);
-    assert.deepEqual(vector.bytes, svgBytes, `${label}: SVG bytes changed before UI sanitization`);
-    await assert.rejects(archive.readImage('I/voice.mp3'), /supported image/i, `${label}: audio content was exposed to the reader`);
-    await assert.rejects(archive.readImage('I/alan.png', { maxBytes: 8 }), /too large/i, `${label}: per-image memory bounds were ignored`);
-    const readyRecord = { id: 'image-archive', archiveKind: 'wikipedia', status: 'ready' };
-    const bridged = await runtime.readApocalypseImage(readyRecord.id, 'I/alan.png', {
-      record: readyRecord,
-      store: { async listArchives() { throw new Error('ready record should avoid repeated archive listings'); } },
-      providers: [{
-        supports(record) { return record === readyRecord; },
-        async readImage(_record, path, options) { return await archive.readImage(path, options); },
-      }],
-    });
-    assert.deepEqual(bridged.bytes, pngBytes, `${label}: the reader image bridge changed local bytes`);
-  }
-});
-
-test('Wikipedia article links stay local when possible and reject active URLs', () => {
-  for (const [label, renderer] of [['chrome', WikipediaArticleRendererCh], ['firefox', WikipediaArticleRendererFx]]) {
-    assert.deepEqual(renderer.classifyWikipediaHref('#Early_life', 'Alan_Turing'), {
-      kind: 'fragment', fragmentId: 'wb-wiki-Early_life',
-    }, `${label}: same-article citations did not remain local`);
-    assert.deepEqual(renderer.classifyWikipediaHref('./Computer_science#History', 'Alan_Turing'), {
-      kind: 'article', path: 'Computer_science', fragment: 'History', fragmentId: 'wb-wiki-History',
-    }, `${label}: a relative article link did not resolve inside the archive`);
-    assert.equal(renderer.classifyWikipediaHref('/wiki/Computer_science', 'Alan_Turing')?.path, 'Computer_science',
-      `${label}: canonical Wikipedia paths did not map to the local article index`);
-    assert.equal(renderer.classifyWikipediaHref('../I/portrait.png', 'A/Alan_Turing'), null,
-      `${label}: an image asset was misclassified as an article`);
-    assert.equal(renderer.classifyWikipediaHref('javascript:alert(1)', 'Alan_Turing'), null,
-      `${label}: a script URL survived article link sanitization`);
-    assert.equal(renderer.classifyWikipediaHref('data:text/html,<script>alert(1)</script>', 'Alan_Turing'), null,
-      `${label}: an active data URL survived article link sanitization`);
-    assert.equal(renderer.classifyWikipediaHref('http://example.test/', 'Alan_Turing'), null,
-      `${label}: an insecure external article URL survived sanitization`);
-    assert.deepEqual(renderer.classifyWikipediaHref('https://example.test/reference', 'Alan_Turing'), {
-      kind: 'external', href: 'https://example.test/reference',
-    }, `${label}: a safe external citation was removed`);
-    assert.equal(renderer.classifyWikipediaImageSource('../I/portrait.webp', 'A/Alan_Turing'), 'I/portrait.webp',
-      `${label}: a local raster asset did not resolve against the article path`);
-    assert.equal(renderer.classifyWikipediaImageSource('./portrait.jpg?width=640', 'A/Alan_Turing'), 'A/portrait.jpg',
-      `${label}: a local image query was not reduced to its archive path`);
-    assert.equal(renderer.classifyWikipediaImageSource('../I/vector.svg', 'A/Alan_Turing'), 'I/vector.svg',
-      `${label}: a local SVG asset did not resolve against the article path`);
-    for (const source of ['https://example.test/portrait.png', '//example.test/portrait.png', 'data:image/png;base64,AA==', 'blob:test', '../I/vector.svgz', '../I/voice.mp3']) {
-      assert.equal(renderer.classifyWikipediaImageSource(source, 'A/Alan_Turing'), '',
-        `${label}: active or unsupported image source ${source} escaped classification`);
-    }
-  }
-});
-
-test('Wikipedia image loader clears temporary ratios, cancels stale reads, and revokes local Blob URLs', async () => {
-  function fakeSlot(path) {
-    const listeners = new Map();
-    const removedStyleProperties = [];
-    const placeholder = { removed: false, remove() { this.removed = true; } };
-    const image = {
-      hidden: true,
-      addEventListener(type, listener) { listeners.set(type, listener); },
-      set src(value) {
-        this.value = value;
-        queueMicrotask(() => listeners.get('load')?.());
-      },
-    };
-    const slot = {
-      dataset: { wikipediaImagePath: path, state: 'pending' },
-      hidden: false,
-      isConnected: true,
-      attributes: new Map(),
-      style: {
-        aspectRatio: '1 / 1',
-        removeProperty(name) {
-          removedStyleProperties.push(name);
-          if (name === 'aspect-ratio') this.aspectRatio = '';
-        },
-      },
-      querySelector(selector) { return selector === 'img' ? image : selector === '.wiki-image-placeholder' ? placeholder : null; },
-      setAttribute(name, value) { this.attributes.set(name, value); },
-    };
-    return { image, placeholder, removedStyleProperties, slot };
-  }
-
-  for (const [label, runtime] of [['chrome', WikipediaImageLoaderCh], ['firefox', WikipediaImageLoaderFx]]) {
-    const created = [];
-    const revoked = [];
-    const sanitizedVectors = [];
-    const URLApi = {
-      createObjectURL(blob) { const url = `blob:test-${created.length + 1}`; created.push({ blob, url }); return url; },
-      revokeObjectURL(url) { revoked.push(url); },
-    };
-    let releaseOld;
-    const oldRead = new Promise(resolve => { releaseOld = resolve; });
-    const readImage = async (path) => {
-      if (path === 'I/old.png') return await oldRead;
-      if (path === 'I/vector.svg') {
-        const bytes = new TextEncoder().encode('<svg><script>alert(1)</script><path d="M0 0L4 4"/></svg>');
-        return { mimeType: 'image/svg+xml', byteLength: bytes.byteLength, bytes };
-      }
-      return { mimeType: 'image/png', byteLength: 4, bytes: new Uint8Array([1, 2, 3, 4]) };
-    };
-    const loader = runtime.createWikipediaImageLoader({
-      readImage,
-      URLApi,
-      BlobClass: Blob,
-      IntersectionObserverClass: null,
-      sanitizeSvg(unsafeSvg) {
-        sanitizedVectors.push(unsafeSvg);
-        return '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L4 4"/></svg>';
-      },
-    });
-    const old = fakeSlot('I/old.png');
-    loader.start({ querySelectorAll() { return [old.slot]; } });
-    const current = fakeSlot('I/current.png');
-    loader.start({ querySelectorAll() { return [current.slot]; } });
-    releaseOld({ mimeType: 'image/png', byteLength: 4, bytes: new Uint8Array([5, 6, 7, 8]) });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(old.image.value, undefined, `${label}: a cancelled article attached a stale image`);
-    assert.equal(current.image.value, 'blob:test-1', `${label}: the current local image was not displayed`);
-    assert.equal(current.image.hidden, false, `${label}: a loaded image remained hidden`);
-    assert.equal(current.slot.dataset.state, 'loaded', `${label}: the loaded slot state was not exposed`);
-    assert.equal(current.slot.style.aspectRatio, '', `${label}: archived dimensions kept a loaded icon inside an oversized ratio box`);
-    assert.deepEqual(current.removedStyleProperties, ['aspect-ratio'], `${label}: the temporary image ratio was not cleared exactly once`);
-
-    const vector = fakeSlot('I/vector.svg');
-    loader.start({ querySelectorAll() { return [vector.slot]; } });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(vector.image.hidden, false, `${label}: sanitized SVG response was not displayed`);
-    assert.equal(vector.slot.dataset.state, 'loaded', `${label}: sanitized SVG slot was not marked loaded`);
-    assert.equal(sanitizedVectors.length, 1, `${label}: SVG bytes bypassed the sanitizer`);
-    assert.match(sanitizedVectors[0], /<script>alert\(1\)<\/script>/, `${label}: the sanitizer did not receive the untrusted SVG source`);
-    assert.equal(created.length, 2, `${label}: sanitized SVG did not receive its own object URL`);
-    assert.equal(created[1].blob.type, 'image/svg+xml;charset=utf-8', `${label}: sanitized SVG Blob lost its MIME type`);
-    assert.doesNotMatch(await created[1].blob.text(), /script|alert/i, `${label}: active SVG content entered the rendered Blob`);
-    loader.clear();
-    assert.deepEqual(revoked, ['blob:test-1', 'blob:test-2'], `${label}: local image object URLs were not released`);
-  }
-});
-
-test('Wikipedia formatted reader reconstructs a bounded semantic DOM without inserting archive HTML', async () => {
-  const articleHtml = `<!doctype html><html><body><main><div class="mw-parser-output">
-    <h1>Alan Turing</h1><p id="Lead">A <strong>formatted</strong> introduction.</p>
-    <h2 id="Early_life">Early life</h2><ul><li>School</li><li>Research</li></ul>
-    <table><caption>Timeline</caption><tr><th scope="col">Year</th><td>1936</td></tr></table>
-    <a href="./Computer_science">Computer science</a><script>stolen()</script>
-  </div></main></body></html>`;
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const archive = await runtime.openKiwixZim(minimalWikipediaZimFixture({ articleHtml }));
-    const article = await archive.readArticle('Alan_Turing');
-    assert.match(article.unsafeHtml, /<h2 id="Early_life">/, `${label}: semantic article markup was flattened before the reader`);
-    assert.match(article.text, /Early life/, `${label}: the plain-text AI/search representation was lost`);
-    assert.doesNotMatch(article.text, /stolen\(\)/, `${label}: script contents leaked into the plain-text representation`);
-  }
-
-  for (const browser of ['chrome', 'firefox']) {
-    const uiDir = path.join(ROOT, `src/${browser}/src/ui`);
-    const renderer = fs.readFileSync(path.join(uiDir, 'wikipedia-article-renderer.js'), 'utf8');
-    const reader = fs.readFileSync(path.join(uiDir, 'wikipedia-reader.js'), 'utf8');
-    const css = fs.readFileSync(path.join(uiDir, 'wikipedia-reader.css'), 'utf8');
-    assert.match(renderer, /new Parser\(\)\.parseFromString\([\s\S]*?default-src 'none'/,
-      `${browser}: archive markup is parsed without a deny-all resource policy`);
-    assert.match(renderer, /container\.replaceChildren\(output\)/,
-      `${browser}: formatted output is not reconstructed into the article container`);
-    assert.doesNotMatch(renderer, /(?:container|document\.body)\.innerHTML\s*=/,
-      `${browser}: untrusted archive HTML is assigned directly to a live DOM container`);
-    assert.match(renderer, /MATHML_ELEMENTS[\s\S]*?'MATH'[\s\S]*?createElementNS\(MATHML_NAMESPACE/,
-      `${browser}: MathML equations are not reconstructed in their namespace`);
-    assert.match(renderer, /SVG_ELEMENTS[\s\S]*?'SVG'[\s\S]*?SVG_DROP_WITH_CONTENT[\s\S]*?'SCRIPT'[\s\S]*?createElementNS\(SVG_NAMESPACE/,
-      `${browser}: SVG is not allowlisted while active vector elements stay blocked`);
-    assert.match(renderer, /export function sanitizeWikipediaSvg[\s\S]*?parseFromString\(source, 'image\/svg\+xml'\)[\s\S]*?new Serializer\(\)\.serializeToString\(output\)/,
-      `${browser}: archive SVG assets are not rebuilt through the SVG sanitizer`);
-    assert.match(renderer, /dataset\.wikipediaImagePath\s*=\s*path/,
-      `${browser}: archive images are not reconstructed as inert local placeholders`);
-    assert.doesNotMatch(renderer, /image\.src\s*=/,
-      `${browser}: the sanitizer can trigger image loads while parsing archive markup`);
-    assert.match(renderer, /image\.loading\s*=\s*'eager'/,
-      `${browser}: hidden Blob images can deadlock behind native lazy loading`);
-    const imageLoader = fs.readFileSync(path.join(uiDir, 'wikipedia-image-loader.js'), 'utf8');
-    assert.match(imageLoader, /URLApi\.createObjectURL\(new BlobClass/,
-      `${browser}: verified archive bytes are not isolated behind local Blob URLs`);
-    assert.match(imageLoader, /URLApi\.revokeObjectURL/,
-      `${browser}: article image Blob URLs are not released on navigation`);
-    assert.match(imageLoader, /new Observer[\s\S]*?rootMargin: '600px 0px'/,
-      `${browser}: archive image reads are no longer lazy at the loader boundary`);
-    assert.match(imageLoader, /Local archive image did not decode/,
-      `${browser}: corrupt raster assets can hold a loader slot forever`);
-    assert.match(imageLoader, /mimeType === 'image\/svg\+xml'[\s\S]*?sanitizeSvg\([\s\S]*?blobParts = \[safeSvg\]/,
-      `${browser}: SVG bytes are not sanitized before entering the live image Blob`);
-    assert.doesNotMatch(imageLoader, /audio\//i,
-      `${browser}: audio content entered the live image allowlist`);
-    assert.match(reader, /renderWikipediaArticle\(article\.unsafeHtml/,
-      `${browser}: the reader does not use the semantic renderer`);
-    assert.doesNotMatch(reader, /elements\['article-text'\]\.innerHTML\s*=/,
-      `${browser}: the reader directly inserts an archive article`);
-    assert.match(css, /\.article-text h2::before[\s\S]*?var\(--warn\)/,
-      `${browser}: formatted sections are missing the offline archive index marker`);
-    assert.match(css, /\.wiki-table-scroll[\s\S]*?overflow-x:auto/,
-      `${browser}: wide Wikipedia tables are not bounded by the reading column`);
-    assert.match(css, /math\.wiki-math\[display="block"\][\s\S]*?overflow-x:auto/,
-      `${browser}: block equations are not bounded by the reading column`);
-    assert.match(css, /svg\.wiki-inline-svg[\s\S]*?max-width:100%/,
-      `${browser}: inline SVG is not responsive inside the reading column`);
-    assert.match(css, /\.wiki-image-slot\[data-state="loaded"\][^}]*width:fit-content;[^}]*max-width:100%;[^}]*margin-inline:auto/,
-      `${browser}: loaded icons still expand into full-width media slots`);
-  }
-});
-
-test('Apocalypse Mode short-circuits exact ZIM casing probes and bounds directory reads', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const padded = new Blob([minimalWikipediaZimFixture(), new Uint8Array(128 * 1024)]);
-    const reads = [];
-    const source = {
-      size: padded.size,
-      slice(start, end) {
-        reads.push([start, end]);
-        return padded.slice(start, end);
-      },
-    };
-    const archive = await runtime.openKiwixZim(source, {});
-    reads.length = 0;
-
-    const [result] = await archive.search('alan turing', { limit: 1 });
-
-    assert.equal(result?.title, 'Alan Turing', `${label}: exact common-case search lost its result`);
-    assert.ok(reads.length < 20, `${label}: exact common-case search expanded through every casing variant`);
-    assert.ok(reads.every(([start, end]) => end - start <= 4 * 1024),
-      `${label}: ordinary directory lookup still issued a 64 KiB read`);
-  }
-});
-
-test('Apocalypse Mode reuses one random-access ZIM handle for search and text reading', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    let opens = 0;
-    const archiveCache = new Map();
-    const fixture = minimalWikipediaZimFixture({
-      imageAssets: [{ url: 'I/alan.png', mimeType: 'image/png', contents: new Uint8Array([1, 2, 3, 4]) }],
-    });
-    const provider = runtime.createKiwixZimProvider({
-      archiveCache,
-      storage: { async open() { opens += 1; return fixture; } },
-    });
-    const record = {
-      id: 'cached-wikipedia', archiveKind: 'wikipedia', status: 'ready', generation: 1,
-      updatedAt: 100, size: 1024, language: 'eng', archiveDate: '2026-07-17',
-      target: { kind: 'opfs', key: 'wikipedia.zim' },
-    };
-    const [first] = await provider.search(record, 'Alan Turing');
-    await provider.search(record, 'Alan Turing');
-    const article = await provider.read(record, first.path);
-    const image = await provider.readImage(record, 'I/alan.png');
-    assert.equal(opens, 1, `${label}: repeated reads reopened the large ZIM archive`);
-    assert.match(article.text, /computer scientist/, `${label}: cached reader returned the wrong article text`);
-    assert.equal(article.archiveId, record.id, `${label}: cached reader lost archive identity`);
-    assert.equal(image.mimeType, 'image/png', `${label}: cached archive handle did not serve its raster asset`);
-  }
-});
-
-test('Apocalypse Mode maps Bengali and Tagalog ZIM languages to canonical Wikipedia hosts', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    for (const [language, host] of [['ben', 'bn'], ['tgl', 'tl']]) {
-      const archive = await runtime.openKiwixZim(minimalWikipediaZimFixture({ language }));
-      const [passage] = await archive.search('Alan Turing');
-      assert.equal(passage?.url, `https://${host}.wikipedia.org/wiki/Alan_Turing`, `${label}: ${language} used the wrong Wikipedia host`);
-    }
-  }
-});
-
-test('Apocalypse Mode reranks resolved redirect destinations before returning ZIM search results', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const archive = await runtime.openKiwixZim(minimalWikipediaZimFixture({ redirectTrap: true }));
-    const [passage] = await archive.search('Science', { limit: 1 });
-    assert.equal(passage?.title, 'Science article', `${label}: an exact-looking redirect alias displaced the relevant destination`);
-    assert.doesNotMatch(passage?.url || '', /The_New_York_Times/, `${label}: an unrelated redirect destination escaped relevance scoring`);
-  }
-});
-
-test('Apocalypse Mode resolves lowercase multiword queries to case-sensitive ZIM titles', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const archive = await runtime.openKiwixZim(minimalWikipediaZimFixture({ caseSensitiveTitle: true }));
-    const [passage] = await archive.search('new york city', { limit: 1 });
-    assert.equal(passage?.title, 'New York City', `${label}: lowercase proper-name query missed the case-sensitive ZIM path`);
-    assert.match(passage?.excerpt || '', /most populous city/i, `${label}: case-correct lookup returned the wrong prefix match`);
-    const [redirect] = await archive.search('nyc', { limit: 1 });
-    assert.equal(redirect?.title, 'New York City', `${label}: exact redirect alias lost its destination title`);
-    assert.equal(redirect?.url, 'https://en.wikipedia.org/wiki/New_York_City', `${label}: exact redirect alias lost its destination URL`);
-    assert.match(redirect?.excerpt || '', /most populous city/i, `${label}: exact redirect alias lost its destination content`);
-    const [mixedCase] = await archive.search('iphone', { limit: 1 });
-    assert.equal(mixedCase?.title, 'iPhone', `${label}: lowercase query missed a mixed-case ZIM title`);
-    assert.match(mixedCase?.excerpt || '', /smartphones designed by Apple/i, `${label}: mixed-case lookup returned the wrong article`);
-    const [combinedCase] = await archive.search('youtube', { limit: 1 });
-    assert.equal(combinedCase?.title, 'YouTube', `${label}: lowercase query missed combined leading and internal capitals`);
-    assert.match(combinedCase?.excerpt || '', /video sharing platform/i, `${label}: combined-case lookup returned the wrong article`);
-    const [crossTokenCase] = await archive.search('youtube tv', { limit: 1 });
-    assert.equal(crossTokenCase?.title, 'YouTube TV', `${label}: lowercase query missed mixed capitalization across tokens`);
-    assert.match(crossTokenCase?.excerpt || '', /streaming television service/i, `${label}: cross-token mixed-case lookup returned the wrong article`);
-    const [multipleCapitals] = await archive.search('openai', { limit: 1 });
-    assert.equal(multipleCapitals?.title, 'OpenAI', `${label}: lowercase query missed multiple internal capitals`);
-    assert.match(multipleCapitals?.excerpt || '', /research organization/i, `${label}: multi-capital lookup returned the wrong article`);
-    const [broaderAlias] = await archive.search('usa', { limit: 1 });
-    assert.equal(broaderAlias?.title, 'United States', `${label}: exact extended initialism alias lost its destination title`);
-    assert.match(broaderAlias?.excerpt || '', /country in North America/i, `${label}: exact extended initialism alias lost its content`);
-    const [semanticAlias] = await archive.search('big apple', { limit: 1 });
-    assert.equal(semanticAlias?.title, 'New York City', `${label}: exact semantic alias lost its destination title`);
-    assert.match(semanticAlias?.excerpt || '', /most populous city/i, `${label}: exact semantic alias lost its destination content`);
-  }
-});
-
-test('Apocalypse Mode accepts only self-identified Wikipedia ZIM imports', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.assertWikipediaZimArchive({ Source: 'https://fr.wikipedia.org/', Name: 'other', Tags: '' }), true, `${label}: Wikipedia Source metadata was rejected`);
-    assert.equal(runtime.assertWikipediaZimArchive({ Source: '', Name: 'wikipedia_en_all', Tags: '' }), true, `${label}: Wikipedia Name metadata was rejected`);
-    assert.equal(runtime.assertWikipediaZimArchive({ Source: '', Name: 'other', Tags: '_category:wikipedia' }), true, `${label}: Wikipedia Tags metadata was rejected`);
-    assert.throws(() => runtime.assertWikipediaZimArchive({ Source: 'https://www.gutenberg.org/', Name: 'books_en', Tags: '_category:books' }), /Wikipedia archive|Wikipedia ZIM/i, `${label}: a non-Wikipedia archive was accepted`);
-    assert.throws(() => runtime.assertWikipediaZimArchive({ Source: 'https://wikipedia.org.evil.test/', Name: 'books_en', Tags: '' }), /Wikipedia archive|Wikipedia ZIM/i, `${label}: a lookalike Wikipedia hostname was accepted`);
-    const file = minimalWikipediaZimFixture({ wikipedia: false });
-    Object.defineProperty(file, 'name', { value: 'pretend-wikipedia.zim' });
-    await assert.rejects(runtime.importKiwixArchive(file, { source: 'User supplied', filename: file.name }, {
-      store: { async getConfig() { return { enabled: true }; } },
-      storage: { async estimate() { return {}; } },
-      id: 'not-wikipedia',
-    }), /Wikipedia archive|Wikipedia ZIM/i, `${label}: caller-supplied provenance bypassed embedded archive identity`);
-  }
-});
-
-test('Apocalypse Mode ranks multi-word ZIM titles and preserves embedded provenance', () => {
-  const candidates = [
-    { index: 1, url: 'World_Heritage_Site', title: 'World Heritage Site' },
-    { index: 2, url: 'World_War_II', title: 'World War II' },
-    { index: 3, url: 'War', title: 'War' },
-  ];
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const ranked = runtime.rankZimTitleCandidates(candidates, 'World War II', 3);
-    assert.deepEqual(ranked.map(item => item.url), ['World_War_II'], `${label}: one-token title matches displaced the relevant article`);
-    assert.deepEqual(runtime.mergeZimProvenance({
-      language: 'eng', archiveDate: '2024-01-01', source: 'Catalog source', license: 'Catalog license',
-    }, {
-      Language: 'deu', Date: '2026-07-17', Source: 'Embedded source', License: 'Embedded license',
-    }), {
-      language: 'deu', archiveDate: '2026-07-17', source: 'Embedded source', license: 'Embedded license', licenseDeclared: true,
-    }, `${label}: generic catalog provenance overrode archive-embedded metadata`);
-  }
-});
-
-test('Apocalypse Mode ZIM ranking is independent of the browser locale', () => {
-  const originalLocaleLowerCase = String.prototype.toLocaleLowerCase;
-  String.prototype.toLocaleLowerCase = function localeLowerCase() {
-    return originalLocaleLowerCase.call(this, 'tr');
-  };
-  try {
-    for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-      const ranked = runtime.rankZimTitleCandidates([
-        { index: 1, url: 'Istanbul', title: 'Istanbul' },
-      ], 'istanbul', 1);
-      assert.equal(ranked[0]?.url, 'Istanbul', `${label}: Turkish browser locale changed ZIM title matching`);
-    }
-  } finally {
-    String.prototype.toLocaleLowerCase = originalLocaleLowerCase;
-  }
-});
-
-test('Apocalypse Mode selects only a newer matching catalog archive', () => {
-  const installed = { name: 'wikipedia_en_all', flavour: 'nopic', archiveDate: '2026-01-01' };
-  const items = [
-    { id: 'wrong-flavour', name: installed.name, flavour: 'mini', archiveDate: '2026-08-01' },
-    { id: 'older', name: installed.name, flavour: installed.flavour, archiveDate: '2025-12-01' },
-    { id: 'newest', name: installed.name, flavour: installed.flavour, archiveDate: '2026-07-01' },
-    { id: 'newer', name: installed.name, flavour: installed.flavour, archiveDate: '2026-05-01' },
-  ];
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.selectKiwixUpdate(installed, items)?.id, 'newest', `${label}: manual update selected the wrong archive`);
-    assert.equal(runtime.selectKiwixUpdate({ ...installed, archiveDate: '2027-01-01' }, items), null, `${label}: older archives were offered as updates`);
-    assert.deepEqual(runtime.normalizeStorageEstimate({ quota: null, usage: 10 }), {
-      known: false, usage: 10, quota: null, free: null,
-    }, `${label}: null quota was misclassified as exhausted storage`);
-    assert.deepEqual(runtime.normalizeStorageEstimate({ quota: 10, usage: 10 }), {
-      known: true, usage: 10, quota: 10, free: 0,
-    }, `${label}: zero free space was misclassified as an unknown estimate`);
-  }
-});
-
-test('Apocalypse Mode basic setup requires the newest Simple English text-only Wikipedia archive', () => {
-  const items = [
-    { id: 'full-english', language: 'eng', name: 'wikipedia_en_all', flavour: 'nopic', archiveDate: '2026-08-01' },
-    { id: 'simple-images', language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'maxi', archiveDate: '2026-08-01' },
-    { id: 'wrong-language', language: 'fra', name: 'wikipedia_en-simple_all', flavour: 'nopic', archiveDate: '2026-08-01' },
-    { id: 'simple-older', language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'nopic', archiveDate: '2026-02-10' },
-    { id: 'simple-current', language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'nopic', archiveDate: '2026-06-29' },
-  ];
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.selectBasicWikipediaArchive(items)?.id, 'simple-current',
-      `${label}: basic setup selected the wrong Wikipedia archive`);
-    assert.equal(runtime.isBasicWikipediaArchive(items[0]), false,
-      `${label}: full English Wikipedia incorrectly satisfied the Simple English prerequisite`);
-    assert.equal(runtime.isBasicWikipediaArchive(items[1]), false,
-      `${label}: an image archive incorrectly satisfied the text-only prerequisite`);
-    assert.equal(runtime.isSimpleEnglishWikipediaArchive(items[1]), true,
-      `${label}: Simple English with images was not recognized as a Simple English archive`);
-    assert.equal(runtime.isBasicWikipediaArchive(items[4]), true,
-      `${label}: the Simple English text-only archive did not satisfy basic setup`);
-    assert.equal(runtime.isBasicWikipediaArchive({ ...items[4], name: 'wikipedia_en_simple_all' }), true,
-      `${label}: a legacy Simple English archive identity did not satisfy basic setup`);
-    assert.equal(runtime.isSimpleEnglishWikipediaArchive({ ...items[1], name: 'wikipedia_en_simple_all' }), true,
-      `${label}: a legacy Simple English image archive identity was not recognized`);
-  }
-});
-
-test('Emergency Box selects the newest full Wikipedia edition with or without images', () => {
-  const items = [
-    { id: 'simple', language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'nopic', archiveDate: '2026-08-01', articleCount: 500_000 },
-    { id: 'simple-images-newest', language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'maxi', archiveDate: '2026-10-01', articleCount: 500_000 },
-    { id: 'text-older', language: 'eng', name: 'wikipedia_en_all', flavour: 'nopic', archiveDate: '2026-06-01', articleCount: 6_000_000 },
-    { id: 'text-current', language: 'eng', name: 'wikipedia_en_all', flavour: 'nopic', archiveDate: '2026-08-01', articleCount: 6_100_000 },
-    { id: 'images', language: 'eng', name: 'wikipedia_en_all', flavour: 'maxi', archiveDate: '2026-07-01', articleCount: 6_000_000 },
-    { id: 'foreign-images-newer', language: 'fra', name: 'wikipedia_fr_all', flavour: 'maxi', archiveDate: '2026-11-01', articleCount: 2_700_000 },
-    { id: 'introductions-newer', language: 'eng', name: 'wikipedia_en_all', flavour: 'mini', archiveDate: '2026-09-01', articleCount: 6_200_000 },
-    { id: 'mini', language: 'eng', name: 'wikipedia_en_100', flavour: 'mini', archiveDate: '2026-09-01', articleCount: 100 },
-  ];
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.selectWikipediaArchiveVariant(items, { language: 'eng', includeImages: false })?.id, 'text-current',
-      `${label}: text-only choice did not select the newest complete edition`);
-    assert.equal(runtime.selectWikipediaArchiveVariant(items, { language: 'eng', includeImages: true })?.id, 'images',
-      `${label}: image choice did not select the complete edition with images`);
-    assert.equal(runtime.wikipediaArchiveMatchesSelection(items[1], { language: 'eng', includeImages: true }), false,
-      `${label}: Simple English with images counted as full English with images`);
-    assert.equal(runtime.wikipediaArchiveMatchesSelection(items[4], { language: 'eng', includeImages: true }), true,
-      `${label}: the exact full English image edition did not count as ready`);
-    assert.equal(runtime.wikipediaArchiveMatchesSelection(items[4], { language: 'eng', includeImages: false }), false,
-      `${label}: the full English image edition counted as the text-only edition`);
-  }
-});
-
-test('A replacement Wikipedia archive deletes the old edition only after it verifies ready', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    async function exercise(replacementStatus, replacementOverrides = {}, action = 'status') {
-      const records = new Map([
-        ['simple', {
-          id: 'simple', archiveKind: 'wikipedia', status: 'ready', generation: 1, updatedAt: 10,
-          language: 'eng', name: 'wikipedia_en-simple_all', flavour: 'nopic', size: 100,
-          target: { kind: 'opfs', key: 'simple.zim' },
-        }],
-        ['replacement', {
-          id: 'replacement', archiveKind: 'wikipedia', status: replacementStatus, generation: 1, updatedAt: 20,
-          language: 'eng', name: 'wikipedia_en_all', flavour: 'maxi', size: 200,
-          target: { kind: 'opfs', key: 'replacement.zim' }, replacementArchiveIds: ['simple'],
-          ...replacementOverrides,
-        }],
-      ]);
-      const removed = [];
-      const store = {
-        async getConfig() { return { enabled: true, updatePolicy: 'manual' }; },
-        async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-        async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-        async putArchive(record) { records.set(record.id, { ...record }); return record; },
-        async deleteArchive(id) { records.delete(id); },
-      };
-      const storage = {
-        async estimate() { return { usage: 300, quota: 1_000 }; },
-        async remove(target) { removed.push(target.key); },
-        async exists() { return false; },
-      };
-      const controller = runtime.createApocalypseController({ alarms: {} }, { store, storage, now: () => 1_000 });
-      const status = await controller.handle(action, action === 'delete' ? { id: 'replacement' } : {});
-      return { records, removed, status };
-    }
-
-    for (const replacementStatus of ['queued', 'downloading', 'retrying', 'paused', 'error']) {
-      const incomplete = await exercise(replacementStatus);
-      assert.equal(incomplete.records.has('simple'), true,
-        `${label}: ${replacementStatus} replacement deleted the existing Simple English archive`);
-      assert.deepEqual(incomplete.removed, [],
-        `${label}: ${replacementStatus} replacement cleanup touched existing storage before readiness`);
-    }
-
-    const cancelled = await exercise('queued', {}, 'delete');
-    assert.equal(cancelled.records.has('simple'), true,
-      `${label}: cancelling a replacement deleted the existing Simple English archive`);
-    assert.equal(cancelled.records.has('replacement'), false,
-      `${label}: cancelled replacement metadata was retained`);
-    assert.deepEqual(cancelled.removed, ['replacement.zim'],
-      `${label}: cancellation removed the wrong archive bytes`);
-
-    const wrongSimpleEdition = await exercise('ready', { name: 'wikipedia_en-simple_all', flavour: 'maxi' });
-    assert.equal(wrongSimpleEdition.records.has('simple'), true,
-      `${label}: Simple English with images was allowed to replace the existing archive`);
-    assert.deepEqual(wrongSimpleEdition.removed, [],
-      `${label}: Simple English with images removed verified existing storage`);
-    assert.deepEqual(wrongSimpleEdition.records.get('replacement').replacementArchiveIds, [],
-      `${label}: rejected Simple English replacement cleanup remained pending`);
-
-    const ready = await exercise('ready');
-    assert.equal(ready.records.has('simple'), false,
-      `${label}: verified replacement did not remove the old Simple English archive`);
-    assert.deepEqual(ready.removed, ['simple.zim'], `${label}: old archive bytes were not deleted through managed storage`);
-    assert.deepEqual(ready.records.get('replacement').replacementArchiveIds, [],
-      `${label}: completed replacement cleanup remained pending`);
-    assert.deepEqual(ready.status.archives.map(record => record.id), ['replacement'],
-      `${label}: status still exposed the replaced Simple English archive`);
-  }
-});
-
-test('Apocalypse Mode requires opt-in and removal wins an in-flight download race', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: false, updatePolicy: 'manual' };
-    const records = new Map();
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return Array.from(records.values(), record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return { ...record }; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const writes = [];
-    const removals = [];
-    const storage = {
-      async write(ref, offset, bytes) { writes.push([ref, offset, bytes.byteLength]); },
-      async remove(ref) { removals.push(ref); },
-    };
-    let releaseFetch;
-    const fetchImpl = async () => await new Promise(resolve => { releaseFetch = resolve; });
-    const scheduled = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage,
-      fetchImpl,
-      digestHex: async () => 'aa',
-      schedule: delay => scheduled.push(delay),
-      randomId: () => 'archive-1',
-      now: () => 1000,
-    });
-    const download = {
-      id: 'catalog-1', filename: 'example.zim', title: 'Wikipedia', language: 'eng', tier: 'starter', archiveDate: '2026-07-17',
-      size: 2, pieceLength: 2, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'], downloadUrl: 'https://example.test/example.zim',
-      source: 'Kiwix / openZIM', license: 'CC BY-SA 4.0',
-    };
-
-    await assert.rejects(manager.install(download, { kind: 'opfs', key: 'example.zim' }), /disabled/i, `${label}: download started before explicit opt-in`);
-    await manager.setEnabled(true);
-    await manager.install(download, { kind: 'opfs', key: 'example.zim' });
-    const schedulesBeforeRace = scheduled.length;
-    const running = manager.processNext();
-    while (!releaseFetch) await new Promise(resolve => setTimeout(resolve, 0));
-    await manager.remove('archive-1');
-    releaseFetch({ ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1, 2).buffer; } });
-    await running;
-
-    assert.equal(records.has('archive-1'), false, `${label}: removed archive record was repopulated by an in-flight fetch`);
-    assert.equal(writes.length, 0, `${label}: removed archive bytes were written after cancellation`);
-    assert.deepEqual(removals, [{ kind: 'opfs', key: 'archive-1-example.zim' }], `${label}: archive removal did not delete its record-scoped managed storage`);
-    assert.equal(scheduled.length, schedulesBeforeRace, `${label}: cancelled work rescheduled itself after removal`);
-  }
-});
-
-test('Apocalypse Mode rearms queued work after pausing or deleting the active download', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    for (const action of ['pause', 'remove']) {
-      const active = {
-        id: `${action}-active`, status: 'queued', generation: 1, updatedAt: 100,
-        filename: 'active.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'],
-        downloadUrl: 'https://example.test/active.zim', target: { kind: 'opfs', key: 'active.zim' },
-        pieceIndex: 0, bytesDownloaded: 0, retryCount: 0,
-      };
-      const queued = {
-        ...active,
-        id: `${action}-queued`,
-        filename: 'queued.zim',
-        downloadUrl: 'https://example.test/queued.zim',
-        target: { kind: 'opfs', key: 'queued.zim' },
-      };
-      const records = new Map([[active.id, active], [queued.id, queued]]);
-      const store = {
-        async getConfig() { return { enabled: true }; },
-        async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-        async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-        async putArchive(record) { records.set(record.id, { ...record }); return record; },
-        async deleteArchive(id) { records.delete(id); },
-      };
-      let markFetchStarted;
-      const fetchStarted = new Promise(resolve => { markFetchStarted = resolve; });
-      const scheduled = [];
-      const manager = runtime.createApocalypseArchiveManager({
-        store,
-        storage: { async remove() {} },
-        fetchImpl: async (_url, request) => await new Promise((_resolve, reject) => {
-          request.signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true });
-          markFetchStarted();
-        }),
-        digestHex: async () => 'aa',
-        schedule: delay => scheduled.push(delay),
-        randomId: () => `${action}-lease`,
-        now: () => 1000,
-      });
-
-      const running = manager.processNext();
-      await fetchStarted;
-      await manager[action](active.id);
-      const result = await running;
-
-      assert.equal(result.reason, 'cancelled', `${label}: ${action} did not cancel the active download`);
-      assert.deepEqual(scheduled, [0], `${label}: ${action} stranded the next queued archive`);
-      assert.equal(records.get(queued.id)?.status, 'queued', `${label}: ${action} changed the next archive state`);
-      if (action === 'pause') assert.equal(records.get(active.id)?.status, 'paused', `${label}: pause state was lost`);
-      else assert.equal(records.has(active.id), false, `${label}: removed active archive metadata was retained`);
-    }
-  }
-});
-
-test('Apocalypse Mode disabling loses atomically to concurrent archive deletion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'manual' };
-    const record = { id: 'disable-race', status: 'queued', generation: 3, updatedAt: 123 };
-    const records = new Map([[record.id, record]]);
-    let compareAttempts = 0;
-    let expectedState;
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent(_next, expected) {
-        compareAttempts += 1;
-        expectedState = { ...expected };
-        records.delete(record.id);
-        return false;
-      },
-    };
-    const manager = runtime.createApocalypseArchiveManager({ store, storage: {}, now: () => 456 });
-
-    await manager.setEnabled(false);
-
-    assert.equal(config.enabled, false, `${label}: disabling did not persist the configuration`);
-    assert.equal(compareAttempts, 1, `${label}: disabling did not compare-and-swap incomplete metadata`);
-    assert.deepEqual(expectedState, { status: 'queued', generation: 3, updatedAt: 123 },
-      `${label}: disabling did not guard the original record state`);
-    assert.equal(records.has(record.id), false, `${label}: disabling recreated concurrently deleted metadata`);
-  }
-});
-
-test('Apocalypse Mode pause and resume lose atomically to concurrent archive deletion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    for (const [action, status] of [['pause', 'queued'], ['resume', 'paused']]) {
-      const record = { id: `${action}-race`, status, generation: 7, updatedAt: 321 };
-      const records = new Map([[record.id, record]]);
-      let compareAttempts = 0;
-      let expectedState;
-      const scheduled = [];
-      const store = {
-        async getConfig() { return { enabled: true }; },
-        async listArchives() { return [...records.values()]; },
-        async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-        async putArchive(next) { records.set(next.id, { ...next }); return next; },
-        async putArchiveIfCurrent(_next, expected) {
-          compareAttempts += 1;
-          expectedState = { ...expected };
-          records.delete(record.id);
-          return false;
-        },
-      };
-      const manager = runtime.createApocalypseArchiveManager({
-        store, storage: {}, schedule: delay => scheduled.push(delay), now: () => 654,
-      });
-
-      const result = await manager[action](record.id);
-
-      assert.equal(result, null, `${label}: ${action} returned stale metadata after deletion won`);
-      assert.equal(compareAttempts, 1, `${label}: ${action} did not compare-and-swap metadata`);
-      assert.deepEqual(expectedState, { status, generation: 7, updatedAt: 321 },
-        `${label}: ${action} did not guard the original record state`);
-      assert.equal(records.has(record.id), false, `${label}: ${action} recreated concurrently deleted metadata`);
-      assert.deepEqual(scheduled, [], `${label}: cancelled ${action} scheduled stale work`);
-    }
-  }
-});
-
-test('Apocalypse Mode lifecycle actions cannot revive a deleting archive', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    for (const action of ['pause', 'resume', 'disable']) {
-      const record = { id: `${action}-deleting`, status: 'deleting', generation: 9, updatedAt: 321 };
-      const records = new Map([[record.id, record]]);
-      let writes = 0;
-      const config = { enabled: true };
-      const store = {
-        async getConfig() { return { ...config }; },
-        async setConfig(next) { Object.assign(config, next); return { ...config }; },
-        async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-        async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-        async putArchive(next) { writes += 1; records.set(next.id, { ...next }); return next; },
-        async putArchiveIfCurrent() { writes += 1; throw new Error('deleting record was rewritten'); },
-      };
-      const manager = runtime.createApocalypseArchiveManager({ store, storage: {}, schedule() {} });
-
-      const result = action === 'disable' ? await manager.setEnabled(false) : await manager[action](record.id);
-
-      assert.equal(records.get(record.id)?.status, 'deleting', `${label}: ${action} revived a deleting archive`);
-      assert.equal(records.get(record.id)?.generation, 9, `${label}: ${action} changed deletion ownership`);
-      assert.equal(writes, 0, `${label}: ${action} wrote stale metadata over deletion`);
-      if (action === 'disable') assert.equal(result.enabled, false, `${label}: disabling did not persist the global setting`);
-      else assert.equal(result?.status, 'deleting', `${label}: ${action} did not return the current deleting state`);
-    }
-  }
-});
-
-test('Apocalypse Mode schedules the next archive after completing another download', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const ids = ['first-archive', 'second-archive', 'download-lease'];
-    const store = {
-      async getConfig() { return { enabled: true, updatePolicy: 'manual' }; },
-      async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-    };
-    const scheduled = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: { async write() {} },
-      fetchImpl: async () => ({ ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1).buffer; } }),
-      digestHex: async () => 'valid',
-      schedule: delay => scheduled.push(delay),
-      randomId: () => ids.shift(),
-      now: () => 1000,
-    });
-    const download = {
-      filename: 'archive.zim', size: 1, pieceLength: 1,
-      pieceHashAlgorithm: 'sha-1', pieceHashes: ['valid'], downloadUrl: 'https://example.test/archive.zim',
-    };
-    await manager.install(download, { kind: 'opfs', key: 'first.zim' });
-    await manager.install(download, { kind: 'opfs', key: 'second.zim' });
-    scheduled.length = 0;
-
-    await manager.processNext();
-
-    assert.equal(records.get('first-archive')?.status, 'ready', `${label}: first archive did not complete`);
-    assert.equal(records.get('second-archive')?.status, 'queued', `${label}: second archive did not remain eligible`);
-    assert.deepEqual(scheduled, [0], `${label}: finishing one archive stranded the next queued archive`);
-  }
-});
-
-test('Apocalypse Mode rearms a pending retry after another archive completes', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const retrying = {
-      id: 'retry-later', status: 'retrying', generation: 1, updatedAt: 100,
-      nextRetryAt: 1500, pieceIndex: 0, retryCount: 1,
-      filename: 'retry.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['valid'],
-      downloadUrl: 'https://example.test/retry.zim', target: { kind: 'opfs', key: 'retry.zim' },
-    };
-    const queued = {
-      ...retrying, id: 'finish-now', status: 'queued', nextRetryAt: 0, retryCount: 0,
-      filename: 'finish.zim', downloadUrl: 'https://example.test/finish.zim', target: { kind: 'opfs', key: 'finish.zim' },
-    };
-    const records = new Map([[retrying.id, retrying], [queued.id, queued]]);
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-    };
-    const scheduled = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: { async write() {} },
-      fetchImpl: async () => ({ ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1).buffer; } }),
-      digestHex: async () => 'valid',
-      schedule: delay => scheduled.push(delay),
-      randomId: () => 'finish-lease',
-      now: () => 1000,
-    });
-
-    await manager.processNext();
-
-    assert.equal(records.get(queued.id)?.status, 'ready', `${label}: eligible archive did not complete before the pending retry`);
-    assert.equal(records.get(retrying.id)?.status, 'retrying', `${label}: future retry state was lost`);
-    assert.deepEqual(scheduled, [500], `${label}: completing another archive lost the pending retry alarm`);
-  }
-});
-
-test('Apocalypse Mode removal wins while a completed download is being validated', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'manual' };
-    const records = new Map();
-    let compareAttempts = 0;
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return Array.from(records.values(), record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return { ...record }; },
-      async putArchiveIfCurrent(next, expected) {
-        compareAttempts += 1;
-        const current = records.get(next.id);
-        const matches = Boolean(current)
-          && current.status === expected.status
-          && (Number(current.generation) || 0) === (Number(expected.generation) || 0)
-          && current.leaseToken === expected.leaseToken
-          && Number(current.updatedAt) === Number(expected.updatedAt);
-        if (matches) records.set(next.id, { ...next });
-        return matches;
-      },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const fixture = minimalWikipediaZimFixture();
-    let releaseValidation;
-    let markValidationStarted;
-    const validationStarted = new Promise(resolve => { markValidationStarted = resolve; });
-    const validatingBlob = {
-      size: fixture.size,
-      slice(start, end) {
-        const bytes = fixture.slice(start, end);
-        return {
-          async arrayBuffer() {
-            if (start === 0 && end === 80) {
-              markValidationStarted();
-              await new Promise(resolve => { releaseValidation = resolve; });
-            }
-            return await bytes.arrayBuffer();
-          },
-        };
-      },
-    };
-    const storage = {
-      async write() {}, async truncate() {}, async open() { return validatingBlob; }, async remove() {},
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage,
-      fetchImpl: async () => ({ ok: true, status: 206, async arrayBuffer() { return fixture.arrayBuffer(); } }),
-      digestHex: async () => 'valid',
-      schedule() {},
-      randomId: () => 'validation-race',
-      now: () => 1000,
-    });
-    await manager.install({
-      filename: 'wikipedia.zim', size: fixture.size, pieceLength: fixture.size,
-      pieceHashAlgorithm: 'sha-1', pieceHashes: ['valid'], downloadUrl: 'https://example.test/wikipedia.zim',
-    }, { kind: 'opfs', key: 'wikipedia.zim' });
-
-    const running = manager.processNext();
-    await validationStarted;
-    await manager.remove('validation-race');
-    releaseValidation();
-    const result = await running;
-
-    assert.equal(result.reason, 'cancelled', `${label}: deleted final-piece validation was reported as complete`);
-    assert.equal(compareAttempts, 1, `${label}: final download state did not use compare-and-swap storage`);
-    assert.equal(records.has('validation-race'), false, `${label}: completed validation recreated a deleted archive`);
-  }
-});
-
-test('Apocalypse Mode gives repeated catalog installs independent OPFS targets', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const removed = [];
-    const ids = ['install-one', 'install-two'];
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()]; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: { async remove(target) { removed.push(target); }, async exists() { return false; } },
-      randomId: () => ids.shift(),
-      schedule() {},
-    });
-    const download = {
-      id: 'catalog-entry', filename: 'wikipedia.zim', size: 2, pieceLength: 2,
-      pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'], downloadUrl: 'https://example.test/wikipedia.zim',
-    };
-    const first = await manager.install(download, { kind: 'opfs', key: 'catalog-entry-wikipedia.zim' });
-    const second = await manager.install(download, { kind: 'opfs', key: 'catalog-entry-wikipedia.zim' });
-    assert.notEqual(first.id, second.id, `${label}: duplicate installs reused one archive record`);
-    assert.notEqual(first.target.key, second.target.key, `${label}: duplicate installs still share one OPFS file`);
-    assert.match(first.target.key, /^install-one-/, `${label}: first OPFS target is not record-scoped`);
-    assert.match(second.target.key, /^install-two-/, `${label}: second OPFS target is not record-scoped`);
-    await manager.remove(first.id);
-    assert.equal(records.has(first.id), false, `${label}: removed duplicate record was retained`);
-    assert.equal(records.has(second.id), true, `${label}: removing one duplicate deleted the other record`);
-    assert.deepEqual(removed, [first.target], `${label}: removal targeted bytes owned by another record`);
-  }
-});
-
-test('Apocalypse Mode catalog and Metalink network access require opt-in', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: false };
-    let fetches = 0;
-    const store = {
-      async getConfig() { return { ...config }; }, async setConfig(next) { Object.assign(config, next); return config; },
-      async listArchives() { return []; }, async getArchive() { return null; }, async putArchive(record) { return record; },
-    };
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store,
-      storage: { async estimate() { return {}; } },
-      fetchImpl: async () => {
-        fetches += 1;
-        return { ok: true, async text() {
-          return '<feed><entry><id>urn:uuid:enabled</id><title>Wikipedia</title><language>eng</language><name>wikipedia_en_all</name><flavour>nopic</flavour><link rel="http://opds-spec.org/acquisition/open-access" href="https://example.test/archive.meta4" /></entry></feed>';
-        } };
-      },
-      clearUpdateChecks() {},
-    });
-    await assert.rejects(controller.handle('catalog', { language: 'eng' }), /disabled/i, `${label}: catalog fetch was allowed before opt-in`);
-    await assert.rejects(controller.handle('resolve', { item: { name: 'wikipedia_en_all', metaUrl: 'https://example.test/archive.meta4' } }), /disabled/i, `${label}: Metalink fetch was allowed before opt-in`);
-    assert.equal(fetches, 0, `${label}: archive network activity occurred before opt-in`);
-    config.enabled = true;
-    const result = await controller.handle('catalog', { language: 'eng' });
-    assert.deepEqual(result.items.map(item => item.id), ['enabled'], `${label}: enabled catalog request failed`);
-    assert.equal(fetches, 1, `${label}: enabled catalog request did not use the network exactly once`);
-  }
-});
-
-test('Apocalypse Mode retains actionable metadata when managed-byte deletion fails', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = { id: 'delete-me', status: 'ready', generation: 2, target: { kind: 'opfs', key: 'delete-me.zim' }, size: 4096 };
-    const records = new Map([[record.id, record]]);
-    const store = {
-      async getConfig() { return { enabled: true, updatePolicy: 'manual' }; },
-      async listArchives() { return [...records.values()]; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    let failRemoval = true;
-    const storage = {
-      async remove() { if (failRemoval) throw new Error('OPFS file is locked'); },
-      async exists() { return failRemoval; },
-    };
-    const manager = runtime.createApocalypseArchiveManager({ store, storage, now: () => 1234 });
-    await assert.rejects(manager.remove(record.id), /deletion failed.*locked/i, `${label}: storage deletion failure was reported as success`);
-    assert.equal(records.get(record.id)?.status, 'error', `${label}: failed deletion discarded its archive record`);
-    assert.equal(records.get(record.id)?.errorKind, 'delete-failed', `${label}: failed deletion was not actionable`);
-    assert.match(records.get(record.id)?.error || '', /Retry deletion/i, `${label}: failed deletion omitted recovery guidance`);
-    failRemoval = false;
-    assert.equal(await manager.remove(record.id), true, `${label}: a recoverable deletion could not be retried`);
-    assert.equal(records.has(record.id), false, `${label}: successful retry retained archive metadata`);
-  }
-});
-
-test('Apocalypse Mode OPFS deletion verifies removal and treats an absent file as deleted', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const entries = new Set(['archive.zim']);
-    const directory = {
-      async getFileHandle(key) {
-        if (!entries.has(key)) throw new DOMException('missing', 'NotFoundError');
-        return { kind: 'file', name: key };
-      },
-      async removeEntry(key) {
-        if (!entries.delete(key)) throw new DOMException('missing', 'NotFoundError');
-      },
-    };
-    const storage = runtime.createOpfsArchiveStorage({
-      async getDirectory() { return { async getDirectoryHandle() { return directory; } }; },
-    });
-    const target = { kind: 'opfs', key: 'archive.zim' };
-    assert.equal(await storage.exists(target), true, `${label}: existing OPFS archive was not detected`);
-    await storage.remove(target);
-    assert.equal(await storage.exists(target), false, `${label}: OPFS archive remained after removal`);
-    await storage.remove(target);
-    assert.equal(await storage.exists(target), false, `${label}: retrying deletion of absent bytes was not idempotent`);
-  }
-});
-
-test('Apocalypse Mode OPFS storage reuses one writable for a multi-piece batch', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const operations = [];
-    let writableCount = 0;
-    const handle = {
-      async createWritable(options) {
-        writableCount += 1;
-        operations.push(['open', options]);
-        return {
-          async seek(offset) { operations.push(['seek', offset]); },
-          async write(bytes) { operations.push(['write', ...bytes]); },
-          async truncate(size) { operations.push(['truncate', size]); },
-          async close() { operations.push(['close']); },
-          async abort() { operations.push(['abort']); },
-        };
-      },
-    };
-    const storage = runtime.createOpfsArchiveStorage({
-      async getDirectory() {
-        return { async getDirectoryHandle() { return { async getFileHandle() { return handle; } }; } };
-      },
-    });
-    const writer = await storage.createWriter({ kind: 'opfs', key: 'archive.zim' });
-    await writer.write(0, Uint8Array.of(1, 2));
-    await writer.write(2, Uint8Array.of(3, 4));
-    await writer.truncate(4);
-    await writer.close();
-
-    assert.equal(writableCount, 1, `${label}: OPFS reopened its temporary writable between pieces`);
-    assert.deepEqual(operations, [
-      ['open', { keepExistingData: true }],
-      ['seek', 0], ['write', 1, 2],
-      ['seek', 2], ['write', 3, 4],
-      ['truncate', 4], ['close'],
-    ], `${label}: OPFS batch writes were not committed through one random-access stream`);
-  }
-});
-
-test('Apocalypse Mode automatic policy checks daily but still requires confirmation before download', async () => {
-  const catalogXml = `<?xml version="1.0"?><feed><entry><id>urn:uuid:new</id><title>Wikipedia update</title>
-    <language>eng</language><name>wikipedia_en_all</name><flavour>nopic</flavour><dc:issued>2026-08-01</dc:issued>
-    <link rel="http://opds-spec.org/acquisition/open-access" href="https://example.test/new.zim.meta4" length="100" /></entry></feed>`;
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'manual' };
-    const record = { id: 'installed', status: 'ready', name: 'wikipedia_en_all', flavour: 'nopic', language: 'eng', archiveDate: '2026-07-01', target: { kind: 'opfs', key: 'old.zim' } };
-    const records = new Map([[record.id, record]]);
-    const store = {
-      async getConfig() { return { ...config }; }, async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return [...records.values()]; }, async getArchive(id) { return records.get(id) || null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; }, async deleteArchive(id) { records.delete(id); },
-    };
-    const scheduled = [];
-    let cleared = 0;
-    let fetches = 0;
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store,
-      storage: { async estimate() { return {}; }, async remove() {} },
-      fetchImpl: async () => { fetches += 1; return { ok: true, async text() { return catalogXml; } }; },
-      scheduleUpdateChecks: () => scheduled.push('daily'),
-      clearUpdateChecks: () => { cleared += 1; },
-    });
-    let snapshot = await controller.setUpdatePolicy('automatic');
-    assert.equal(snapshot.updatePolicy, 'automatic', `${label}: automatic update policy was not persisted`);
-    assert.deepEqual(scheduled, ['daily'], `${label}: automatic policy did not schedule periodic checks`);
-    snapshot = await controller.checkForUpdates();
-    assert.equal(fetches, 1, `${label}: automatic update check did not consult the catalog`);
-    assert.equal(snapshot.archives[0].updateAvailable?.id, 'new', `${label}: newer matching archive was not surfaced`);
-    assert.equal(snapshot.archives.length, 1, `${label}: update check downloaded or installed before confirmation`);
-    await controller.setUpdatePolicy('manual');
-    assert.equal(cleared, 1, `${label}: manual policy did not clear automatic checks`);
-  }
-});
-
-test('Apocalypse Mode startup preserves update alarms and rearms persisted downloads', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'automatic' };
-    let records = [{ id: 'queued', status: 'queued' }];
-    let existingUpdateAlarm = { name: runtime.APOCALYPSE_UPDATE_ALARM, scheduledTime: 50_000 };
-    const updateSchedules = [];
-    const downloadSchedules = [];
-    const store = {
-      async getConfig() { return { ...config }; },
-      async listArchives() { return records.map(record => ({ ...record })); },
-    };
-    const controller = runtime.createApocalypseController({
-      alarms: {
-        async get(name) {
-          assert.equal(name, runtime.APOCALYPSE_UPDATE_ALARM, `${label}: startup queried the wrong update alarm`);
-          return existingUpdateAlarm;
-        },
-        create(name, details) { updateSchedules.push([name, details]); },
-        async clear() {},
-      },
-    }, {
-      store,
-      storage: {},
-      schedule: delay => downloadSchedules.push(delay),
-      now: () => 10_000,
-    });
-
-    await controller.syncUpdateSchedule();
-    assert.deepEqual(updateSchedules, [], `${label}: startup replaced an existing daily update alarm`);
-    existingUpdateAlarm = null;
-    await controller.syncUpdateSchedule();
-    assert.equal(updateSchedules.length, 1, `${label}: a missing daily update alarm was not restored`);
-
-    assert.equal(await controller.syncDownloadSchedule(), 0, `${label}: queued startup work was not due immediately`);
-    assert.deepEqual(downloadSchedules, [0], `${label}: queued startup work was not rearmed`);
-    records = [
-      { id: 'leased', status: 'downloading', leaseUntil: 12_000 },
-      { id: 'retry', status: 'retrying', nextRetryAt: 16_000 },
-      { id: 'ready', status: 'ready' },
-    ];
-    assert.equal(await controller.syncDownloadSchedule(), 2_000, `${label}: startup did not schedule the earliest persisted attempt`);
-    assert.deepEqual(downloadSchedules, [0, 2_000], `${label}: an unexpired lease was not rearmed for its expiry`);
-    config.enabled = false;
-    assert.equal(await controller.syncDownloadSchedule(), null, `${label}: disabled Apocalypse Mode rearmed downloads`);
-    assert.deepEqual(downloadSchedules, [0, 2_000], `${label}: disabled startup created a download alarm`);
-  }
-});
-
-test('Apocalypse Mode status snapshots omit private download metadata', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'large-archive', status: 'ready', filename: 'wikipedia.zim', size: 100, bytesDownloaded: 100,
-      downloadUrl: 'https://primary.example.test/wikipedia.zim',
-      pieceHashes: Array.from({ length: 10_000 }, (_, index) => `hash-${index}`),
-      pieceLength: 4_194_304, pieceHashAlgorithm: 'sha-1', sha256: 'private-integrity-value',
-      mirrors: ['https://primary.example.test/wikipedia.zim', 'https://backup.example.test/wikipedia.zim'],
-      mirrorIndex: 1, leaseToken: 'private-lease', leaseUntil: 50_000,
-      target: { kind: 'opfs', key: 'large-archive.zim' },
-    };
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store: {
-        async getConfig() { return { enabled: true, updatePolicy: 'manual' }; },
-        async listArchives() { return [{ ...record }]; },
-      },
-      storage: { async estimate() { return {}; } },
-    });
-    const [visible] = (await controller.snapshot()).archives;
-
-    for (const field of ['pieceHashes', 'pieceLength', 'pieceHashAlgorithm', 'sha256', 'mirrors', 'mirrorIndex', 'leaseToken', 'leaseUntil']) {
-      assert.equal(Object.hasOwn(visible, field), false, `${label}: status snapshot exposed ${field}`);
-    }
-    assert.equal(visible.downloadUrl, record.downloadUrl, `${label}: lifecycle UI lost its managed-download marker`);
-    assert.equal(visible.bytesDownloaded, record.bytesDownloaded, `${label}: status snapshot lost visible progress`);
-  }
-});
-
-test('Apocalypse Mode update checks cannot recreate a concurrently deleted archive', async () => {
-  const catalogXml = `<?xml version="1.0"?><feed><entry><id>urn:uuid:new</id><title>Wikipedia update</title>
-    <language>eng</language><name>wikipedia_en_all</name><flavour>nopic</flavour><dc:issued>2026-08-01</dc:issued>
-    <link rel="http://opds-spec.org/acquisition/open-access" href="https://example.test/new.zim.meta4" length="100" /></entry></feed>`;
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'automatic' };
-    const record = {
-      id: 'deleted-during-check',
-      status: 'ready',
-      generation: 7,
-      updatedAt: 100,
-      name: 'wikipedia_en_all',
-      flavour: 'nopic',
-      language: 'eng',
-      archiveDate: '2026-07-01',
-      target: { kind: 'opfs', key: 'old.zim' },
-    };
-    const records = new Map([[record.id, record]]);
-    let compareAttempts = 0;
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent(next, expected) {
-        compareAttempts += 1;
-        const current = records.get(next.id);
-        const matches = Boolean(current)
-          && current.status === expected.status
-          && (Number(current.generation) || 0) === (Number(expected.generation) || 0)
-          && Number(current.updatedAt) === Number(expected.updatedAt);
-        if (matches) records.set(next.id, { ...next });
-        return matches;
-      },
-    };
-    let markCatalogStarted;
-    let releaseCatalog;
-    const catalogStarted = new Promise(resolve => { markCatalogStarted = resolve; });
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store,
-      storage: { async estimate() { return {}; } },
-      fetchImpl: async () => {
-        const response = new Promise(resolve => { releaseCatalog = resolve; });
-        markCatalogStarted();
-        return await response;
-      },
-      now: () => 200,
-    });
-
-    const checking = controller.checkForUpdates();
-    await catalogStarted;
-    records.delete(record.id);
-    releaseCatalog({ ok: true, async text() { return catalogXml; } });
-    const snapshot = await checking;
-
-    assert.equal(compareAttempts, 1, `${label}: update metadata did not use compare-and-swap storage`);
-    assert.equal(records.has(record.id), false, `${label}: update check recreated a deleted archive record`);
-    assert.equal(snapshot.archives.length, 0, `${label}: deleted archive reappeared in the update snapshot`);
-  }
-});
-
-test('Apocalypse Mode resumes verified pieces after a background restart', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true, updatePolicy: 'manual' };
-    const records = new Map();
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return Array.from(records.values(), value => ({ ...value })); },
-      async getArchive(id) { return records.has(id) ? { ...records.get(id) } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const writes = [];
-    const storage = { async write(target, offset, value) { writes.push([offset, ...value]); }, async remove() {} };
-    const ranges = [];
-    const fetchImpl = async (_url, request) => {
-      ranges.push(request.headers.Range);
-      const second = request.headers.Range === 'bytes=2-3';
-      return { ok: true, status: 206, async arrayBuffer() { return Uint8Array.from(second ? [3, 4] : [1, 2]).buffer; } };
-    };
-    const managerOptions = {
-      store, storage, fetchImpl, digestHex: async bytesValue => bytesValue[0] < 3 ? 'first' : 'second',
-      schedule() {}, randomId: () => 'archive-restart', now: () => 5000, maxPiecesPerWake: 1,
-    };
-    const firstWorker = runtime.createApocalypseArchiveManager(managerOptions);
-    await firstWorker.install({
-      id: 'catalog-entry', title: 'Wikipedia', filename: 'wikipedia.zim', language: 'eng', size: 4,
-      pieceLength: 2, pieceHashAlgorithm: 'sha-1', pieceHashes: ['first', 'second'], downloadUrl: 'https://example.test/wikipedia.zim',
-    }, { kind: 'opfs', key: 'wikipedia.zim' });
-    await firstWorker.processNext();
-    assert.equal(records.get('archive-restart').pieceIndex, 1, `${label}: first verified cursor was not persisted`);
-
-    const restartedWorker = runtime.createApocalypseArchiveManager(managerOptions);
-    await restartedWorker.processNext();
-    assert.equal(records.get('archive-restart').status, 'ready', `${label}: restarted worker did not finish the archive`);
-    assert.deepEqual(ranges, ['bytes=0-1', 'bytes=2-3'], `${label}: restart repeated or skipped a byte range`);
-    assert.deepEqual(writes, [[0, 1, 2], [2, 3, 4]], `${label}: verified pieces were written at the wrong offsets`);
-  }
-});
-
-test('Apocalypse Mode processes every verified piece in one background wake', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const ranges = [];
-    const writes = [];
-    const scheduled = [];
-    let writersOpened = 0;
-    let writersClosed = 0;
-    let writersAborted = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: {
-        async createWriter() {
-          writersOpened += 1;
-          return {
-            async write(offset, bytes) { writes.push([offset, ...bytes]); },
-            async truncate() {},
-            async close() { writersClosed += 1; },
-            async abort() { writersAborted += 1; },
-          };
-        },
-      },
-      fetchImpl: async (_url, request) => {
-        ranges.push(request.headers.Range);
-        const offset = Number(request.headers.Range.match(/bytes=(\d+)-/)[1]);
-        return { ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(offset + 1).buffer; } };
-      },
-      digestHex: async bytes => `hash-${bytes[0]}`,
-      schedule: delay => scheduled.push(delay),
-      randomId: () => 'continuous-download',
-      now: () => 1000,
-    });
-    await manager.install({
-      filename: 'archive.zim', size: 3, pieceLength: 1, pieceHashAlgorithm: 'sha-1',
-      pieceHashes: ['hash-1', 'hash-2', 'hash-3'], downloadUrl: 'https://example.test/archive.zim',
-    }, { kind: 'opfs', key: 'archive.zim' });
-    scheduled.length = 0;
-
-    const result = await manager.processNext();
-
-    assert.equal(result.archive?.status, 'ready', `${label}: one wake did not finish all available pieces`);
-    assert.deepEqual(ranges, ['bytes=0-0', 'bytes=1-1', 'bytes=2-2'], `${label}: one wake skipped or repeated a piece`);
-    assert.deepEqual(writes, [[0, 1], [1, 2], [2, 3]], `${label}: continuous pieces were written at the wrong offsets`);
-    assert.equal(writersOpened, 1, `${label}: one writable was not reused for the complete piece batch`);
-    assert.equal(writersClosed, 1, `${label}: the successful write batch was not committed exactly once`);
-    assert.equal(writersAborted, 0, `${label}: the successful write batch was unexpectedly aborted`);
-    assert.deepEqual(scheduled, [], `${label}: continuous download paid an alarm delay between pieces`);
-  }
-});
-
-test('Apocalypse Mode rolls back an interrupted OPFS write session before resuming', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'interrupted-write', status: 'queued', generation: 1, updatedAt: 100,
-      filename: 'archive.zim', size: 3, pieceLength: 1, pieceHashAlgorithm: 'sha-1',
-      pieceHashes: ['hash-1', 'hash-2', 'hash-3'], downloadUrl: 'https://example.test/archive.zim',
-      target: { kind: 'opfs', key: 'archive.zim' }, pieceIndex: 2, bytesDownloaded: 2,
-      writeSessionStartPiece: 0, writeSessionStartBytes: 0,
-    };
-    const records = new Map([[record.id, record]]);
-    const ranges = [];
-    const writes = [];
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: {
-        async createWriter() {
-          return {
-            async write(offset, bytes) { writes.push([offset, ...bytes]); },
-            async close() {},
-            async abort() {},
-          };
-        },
-      },
-      fetchImpl: async (_url, request) => {
-        ranges.push(request.headers.Range);
-        return { ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1).buffer; } };
-      },
-      digestHex: async () => 'hash-1',
-      schedule() {},
-      randomId: () => 'recovery-lease',
-      now: () => 1000,
-      maxPiecesPerWake: 1,
-    });
-
-    const result = await manager.processNext();
-
-    assert.equal(result.archive?.pieceIndex, 1, `${label}: interrupted cursor was not rolled back before resuming`);
-    assert.deepEqual(ranges, ['bytes=0-0'], `${label}: resume trusted bytes from an uncommitted write session`);
-    assert.deepEqual(writes, [[0, 1]], `${label}: resumed write used the wrong durable offset`);
-    assert.equal(records.get(record.id).writeSessionStartPiece, null, `${label}: committed batch left a recovery marker behind`);
-  }
-});
-
-test('Apocalypse Mode bounds production OPFS write sessions', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'bounded-session', status: 'queued', generation: 1, updatedAt: 1,
-      filename: 'archive.zim', size: 10, pieceLength: 1, pieceHashAlgorithm: 'sha-1',
-      pieceHashes: Array(10).fill('valid'), downloadUrl: 'https://example.test/archive.zim',
-      target: { kind: 'opfs', key: 'archive.zim' }, pieceIndex: 0, bytesDownloaded: 0, retryCount: 0,
-    };
-    const records = new Map([[record.id, record]]);
-    let closes = 0;
-    const manager = runtime.createApocalypseArchiveManager({
-      store: {
-        async getConfig() { return { enabled: true }; },
-        async listArchives() { return [...records.values()].map(value => ({ ...value })); },
-        async getArchive(id) { const value = records.get(id); return value ? { ...value } : null; },
-        async putArchive(value) { records.set(value.id, { ...value }); return value; },
-      },
-      storage: { async createWriter() { return { async write() {}, async close() { closes += 1; }, async abort() {} }; } },
-      fetchImpl: async () => ({ ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1).buffer; } }),
-      digestHex: async () => 'valid', schedule() {}, randomId: () => 'bounded-lease', now: () => 100,
-    });
-
-    const result = await manager.processNext();
-
-    assert.equal(result.archive.status, 'queued', `${label}: default wake consumed the entire archive`);
-    assert.equal(result.archive.pieceIndex, 8, `${label}: default write batch was not bounded`);
-    assert.equal(closes, 1, `${label}: bounded write batch was not committed`);
-  }
-});
-
-test('Apocalypse Mode rejects a corrupt piece before storage and backs off', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true };
-    const records = new Map();
-    const store = {
-      async getConfig() { return { ...config }; }, async setConfig(next) { Object.assign(config, next); return config; },
-      async listArchives() { return [...records.values()]; }, async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; }, async deleteArchive(id) { records.delete(id); },
-    };
-    let writes = 0;
-    const scheduled = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store, storage: { async write() { writes += 1; }, async remove() {} },
-      fetchImpl: async () => ({ ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(9, 9).buffer; } }),
-      digestHex: async () => 'wrong', schedule: delay => scheduled.push(delay), randomId: () => 'corrupt', now: () => 10_000,
-    });
-    await manager.install({ filename: 'bad.zim', size: 2, pieceLength: 2, pieceHashAlgorithm: 'sha-1', pieceHashes: ['expected'], downloadUrl: 'https://example.test/bad.zim' }, { kind: 'opfs', key: 'bad.zim' });
-    await manager.processNext();
-    assert.equal(writes, 0, `${label}: corrupt bytes reached durable storage`);
-    assert.equal(records.get('corrupt').status, 'retrying', `${label}: corruption did not enter bounded retry state`);
-    assert.equal(records.get('corrupt').nextRetryAt, 70_000, `${label}: first retry did not use exponential backoff`);
-    assert.deepEqual(scheduled.slice(-1), [60_000], `${label}: retry alarm delay was not bounded`);
-  }
-});
-
-test('Apocalypse Mode rotates Metalink mirrors across automatic and manual retries', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true };
-    const records = new Map();
-    let timestamp = 1_000;
-    const store = {
-      async getConfig() { return { ...config }; },
-      async setConfig(next) { Object.assign(config, next); return { ...config }; },
-      async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const urls = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: {},
-      fetchImpl: async (url) => { urls.push(url); return { ok: false, status: 503 }; },
-      schedule() {},
-      randomId: () => 'mirror-rotation',
-      now: () => timestamp,
-    });
-    const primary = 'https://primary.example.test/archive.zim';
-    const backup = 'https://backup.example.test/archive.zim';
-    await manager.install({
-      filename: 'archive.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'],
-      mirrors: [primary, backup], downloadUrl: primary,
-    }, { kind: 'opfs', key: 'archive.zim' });
-
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      await manager.processNext();
-      const current = records.get('mirror-rotation');
-      if (current.status === 'retrying') timestamp = current.nextRetryAt;
-    }
-    assert.equal(records.get('mirror-rotation').status, 'error', `${label}: retry exhaustion did not become actionable`);
-    await manager.retry('mirror-rotation');
-    await manager.processNext();
-
-    assert.deepEqual(urls, [primary, backup, primary, backup, primary, backup, primary],
-      `${label}: automatic or manual retry reused a failed mirror`);
-  }
-});
-
-test('Apocalypse Mode failed-piece state loses atomically to concurrent deletion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'failed-piece-race', status: 'queued', generation: 1, updatedAt: 100,
-      filename: 'archive.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'],
-      downloadUrl: 'https://example.test/archive.zim', target: { kind: 'opfs', key: 'archive.zim' },
-      pieceIndex: 0, retryCount: 0,
-    };
-    const records = new Map([[record.id, record]]);
-    let compareAttempts = 0;
-    const schedules = [];
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent() {
-        compareAttempts += 1;
-        records.delete(record.id);
-        return false;
-      },
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: {},
-      fetchImpl: async () => ({ ok: false, status: 503 }),
-      schedule: delay => schedules.push(delay),
-      randomId: () => 'failure-lease',
-      now: () => 100,
-    });
-    const result = await manager.processNext();
-
-    assert.equal(result.reason, 'cancelled', `${label}: stale failed-piece state was reported as current`);
-    assert.equal(compareAttempts, 1, `${label}: failed-piece state did not use compare-and-swap storage`);
-    assert.equal(records.has(record.id), false, `${label}: failed-piece state recreated deleted metadata`);
-    assert.deepEqual(schedules, [], `${label}: cancelled failure scheduled a retry`);
-  }
-});
-
-test('Apocalypse Mode schedules another archive after a terminal download failure', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const failed = {
-      id: 'terminal-failure', status: 'queued', generation: 1, updatedAt: 100,
-      filename: 'failed.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'],
-      downloadUrl: 'https://example.test/failed.zim', target: { kind: 'opfs', key: 'failed.zim' },
-      pieceIndex: 0, retryCount: 5,
-    };
-    const queued = {
-      ...failed, id: 'queued-next', filename: 'next.zim', downloadUrl: 'https://example.test/next.zim',
-      target: { kind: 'opfs', key: 'next.zim' }, retryCount: 0,
-    };
-    const records = new Map([[failed.id, failed], [queued.id, queued]]);
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(record => ({ ...record })); },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-    };
-    const scheduled = [];
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage: {},
-      fetchImpl: async () => ({ ok: false, status: 503 }),
-      schedule: delay => scheduled.push(delay),
-      randomId: () => 'terminal-lease',
-      now: () => 100,
-    });
-
-    const result = await manager.processNext();
-
-    assert.equal(result.reason, 'error', `${label}: exhausted download did not reach a terminal failure`);
-    assert.equal(records.get(failed.id)?.status, 'error', `${label}: exhausted archive did not persist its error`);
-    assert.equal(records.get(queued.id)?.status, 'queued', `${label}: next archive lost eligibility`);
-    assert.deepEqual(scheduled, [0], `${label}: terminal failure stranded the next queued archive`);
-  }
-});
-
-test('Apocalypse Mode cancellation removes a partial imported archive', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const config = { enabled: true };
-    const records = new Map();
-    const store = {
-      async getConfig() { return config; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const writes = [];
-    const removals = [];
-    const storage = {
-      async write(target, offset, bytesValue) { writes.push([target, offset, bytesValue.byteLength]); },
-      async remove(target) { removals.push(target); },
-    };
-    const controller = new AbortController();
-    const padded = new Blob([minimalWikipediaZimFixture(), new Uint8Array(2 * 1024 * 1024)]);
-    await assert.rejects(runtime.importKiwixArchive(padded, { filename: 'import.zim' }, {
-      store, storage, id: 'import-1', chunkSize: 1024 * 1024, signal: controller.signal,
-      onProgress: () => controller.abort(),
-    }), /cancel/i, `${label}: cancelled import should reject`);
-    assert.equal(records.has('import-1'), false, `${label}: cancelled import metadata was retained`);
-    assert.equal(writes.length, 1, `${label}: import continued writing after cancellation`);
-    assert.equal(removals.length, 1, `${label}: partial imported bytes were not removed`);
-  }
-});
-
-test('Apocalypse Mode imports every chunk through one OPFS writable', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const writes = [];
-    let writersOpened = 0;
-    let writersClosed = 0;
-    let writersAborted = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const storage = {
-      async estimate() { return {}; },
-      async createWriter() {
-        writersOpened += 1;
-        return {
-          async write(offset, bytes) { writes.push([offset, bytes.byteLength]); },
-          async truncate() {},
-          async close() { writersClosed += 1; },
-          async abort() { writersAborted += 1; },
-        };
-      },
-      async remove() {},
-    };
-    const source = new Blob([minimalWikipediaZimFixture(), new Uint8Array(2 * 1024 * 1024)]);
-
-    const result = await runtime.importKiwixArchive(source, { filename: 'batched-import.zim' }, {
-      store, storage, id: 'batched-import', chunkSize: 1024 * 1024,
-    });
-
-    assert.equal(result.status, 'ready', `${label}: batched import did not complete`);
-    assert.ok(writes.length > 1, `${label}: fixture did not exercise multiple import chunks`);
-    assert.equal(writersOpened, 1, `${label}: import reopened its OPFS writable between chunks`);
-    assert.equal(writersClosed, 1, `${label}: import did not commit its OPFS writable exactly once`);
-    assert.equal(writersAborted, 0, `${label}: successful import aborted its OPFS writable`);
-  }
-});
-
-test('Apocalypse Mode preflights import capacity and removes partial bytes after write failure', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; },
-      async deleteArchive(id) { records.delete(id); },
-    };
-    const archive = minimalWikipediaZimFixture();
-    let writes = 0;
-    await assert.rejects(runtime.importKiwixArchive(archive, {}, {
-      store,
-      storage: { async estimate() { return { quota: archive.size - 1, usage: 0 }; }, async write() { writes += 1; }, async remove() {} },
-      id: 'no-space',
-    }), /space|storage/i, `${label}: insufficient extension storage was not rejected`);
-    assert.equal(writes, 0, `${label}: capacity preflight happened after writing bytes`);
-    assert.equal(records.has('no-space'), false, `${label}: rejected capacity preflight created an archive record`);
-
-    const removals = [];
-    await assert.rejects(runtime.importKiwixArchive(archive, {}, {
-      store,
-      storage: {
-        async estimate() { return {}; },
-        async write() { throw new Error('quota exhausted during write'); },
-        async remove(target) { removals.push(target); },
-      },
-      id: 'write-failure',
-    }), /quota exhausted/i, `${label}: write failure was hidden`);
-    assert.equal(records.get('write-failure')?.status, 'error', `${label}: failed import did not remain actionable`);
-    assert.equal(records.get('write-failure')?.bytesDownloaded, 0, `${label}: failed import retained partial progress`);
-    assert.equal(removals.length, 1, `${label}: failed import retained partial extension-owned bytes`);
-  }
-});
-
-test('Apocalypse Mode keeps partial-import metadata when cleanup itself fails', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const store = {
-      async getConfig() { return { enabled: true }; }, async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; }, async deleteArchive(id) { records.delete(id); },
-    };
-    await assert.rejects(runtime.importKiwixArchive(minimalWikipediaZimFixture(), {}, {
-      store,
-      storage: {
-        async estimate() { return {}; }, async write() { throw new Error('write failed'); },
-        async remove() { throw new Error('OPFS cleanup denied'); },
-      },
-      id: 'cleanup-failure',
-    }), /cleanup failed.*denied/i, `${label}: cleanup failure was swallowed`);
-    assert.equal(records.get('cleanup-failure')?.status, 'error', `${label}: cleanup failure discarded the recovery record`);
-    assert.equal(records.get('cleanup-failure')?.errorKind, 'delete-failed', `${label}: cleanup failure was not classified for retry`);
-  }
-});
-
-test('Apocalypse Mode import failure loses atomically to concurrent deletion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    let importingSnapshot;
-    let expectedState;
-    let compareAttempts = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async getArchive(id) { const record = records.get(id); return record ? { ...record } : null; },
-      async putArchive(record) {
-        records.set(record.id, { ...record });
-        if (record.status === 'importing' && !importingSnapshot) importingSnapshot = { ...record };
-        return record;
-      },
-      async putArchiveIfCurrent(next, expected) {
-        compareAttempts += 1;
-        expectedState = { ...expected };
-        const current = records.get(next.id);
-        const matches = Boolean(current)
-          && current.status === expected.status
-          && current.generation === expected.generation
-          && Number(current.updatedAt) === Number(expected.updatedAt);
-        if (matches) records.set(next.id, { ...next });
-        return matches;
-      },
-    };
-    const archive = minimalWikipediaZimFixture();
-    await assert.rejects(runtime.importKiwixArchive(archive, {}, {
-      store,
-      storage: {
-        async estimate() { return {}; },
-        async write() {
-          const current = records.get('import-delete-race');
-          records.set(current.id, {
-            ...current, status: 'deleting', generation: current.generation + 1, updatedAt: current.updatedAt + 1,
-          });
-          throw new Error('write failed while deletion started');
-        },
-        async remove() {},
-      },
-      id: 'import-delete-race',
-    }), /write failed while deletion started/i, `${label}: concurrent import failure was hidden`);
-
-    assert.equal(compareAttempts, 1, `${label}: import failure did not compare-and-swap its state`);
-    assert.deepEqual(expectedState, {
-      status: 'importing', generation: importingSnapshot.generation, updatedAt: importingSnapshot.updatedAt,
-    }, `${label}: import failure did not guard the original importing state`);
-    assert.equal(records.get('import-delete-race')?.status, 'deleting', `${label}: import failure overwrote concurrent deletion`);
-    assert.equal(records.get('import-delete-race')?.generation, importingSnapshot.generation + 1,
-      `${label}: import failure restored a stale generation`);
-  }
-});
-
-test('Apocalypse Mode respects quota-limited adapters without imposing navigator estimates on extension OPFS', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    assert.equal(runtime.createOpfsArchiveStorage({}).quotaLimited, false,
-      `${label}: extension OPFS did not inherit the manifest unlimitedStorage contract`);
-    let installs = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; }, async setConfig(value) { return value; },
-      async listArchives() { return []; }, async putArchive() { installs += 1; }, async getArchive() { return null; }, async deleteArchive() {},
-    };
-    const controller = runtime.createApocalypseController({ alarms: { create() {} } }, {
-      store,
-      storage: { async estimate() { return { quota: 1024, usage: 1024 }; }, async remove() {} },
-    });
-    await assert.rejects(controller.handle('install', { download: {
-      id: 'no-room', filename: 'archive.zim', size: 1, pieceLength: 1, pieceHashes: ['aa'], downloadUrl: 'https://example.test/archive.zim',
-    } }), /not enough|storage/i, `${label}: exhausted quota still admitted a managed download`);
-    assert.equal(installs, 0, `${label}: rejected managed download persisted metadata`);
-
-    const unlimitedController = runtime.createApocalypseController({ alarms: { create() {} } }, {
-      store,
-      storage: { quotaLimited: false, async estimate() { return { quota: 1024, usage: 1024 }; }, async remove() {} },
-    });
-    await unlimitedController.handle('install', { download: {
-      id: 'extension-opfs', filename: 'archive.zim', name: 'wikipedia_en-simple_all', flavour: 'nopic',
-      size: 1, pieceLength: 1, pieceHashes: ['aa'], downloadUrl: 'https://example.test/archive.zim',
-    } });
-    assert.equal(installs, 1, `${label}: unlimited extension OPFS was blocked by an informational storage estimate`);
-  }
-});
-
-test('Apocalypse Mode exposes a pluggable archive provider seam', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = { id: 'archive-1', status: 'ready', archiveDate: '2026-07-17', target: { kind: 'future-provider' } };
-    let searched = 0;
-    const results = await runtime.searchApocalypseArchives('Alan Turing', {
-      store: { async getConfig() { return { enabled: true }; }, async listArchives() { return [record]; } },
-      storage: {},
-      providers: [{
-        id: 'test-provider',
-        supports(candidate) { return candidate.target.kind === 'future-provider'; },
-        async search(candidate, query) { searched += 1; return [{ title: query, archiveId: candidate.id }]; },
-      }],
-    });
-    assert.equal(searched, 1, `${label}: selected provider did not receive the archive query`);
-    assert.deepEqual(results, [{ title: 'Alan Turing', archiveId: 'archive-1' }], `${label}: provider result was not preserved`);
-  }
-});
-
-test('Apocalypse Mode marks unreadable ready archives as actionable errors', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = { id: 'corrupt-ready', status: 'ready', archiveDate: '2026-07-17', target: { kind: 'opfs', key: 'corrupt.zim' } };
-    const records = new Map([[record.id, record]]);
-    const store = {
-      async getConfig() { return { enabled: true }; }, async listArchives() { return [...records.values()]; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(next) { records.set(next.id, next); return next; },
-    };
-    await assert.rejects(runtime.searchApocalypseArchives('Alan Turing', {
-      store,
-      storage: {},
-      providers: [{ supports() { return true; }, async search() { throw new Error('ZIM checksum is corrupt'); } }],
-    }), /could not be read|corrupt/i, `${label}: unreadable ready archive was silently treated as no match`);
-    assert.equal(records.get(record.id)?.status, 'error', `${label}: corrupt ready archive remained ready`);
-    assert.equal(records.get(record.id)?.errorKind, 'archive-unreadable', `${label}: corruption did not receive an actionable lifecycle classification`);
-  }
-});
-
-test('Apocalypse Mode failed searches cannot recreate a concurrently deleted archive', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'deleted-during-search', status: 'ready', generation: 3, updatedAt: 100,
-      archiveDate: '2026-07-17', target: { kind: 'opfs', key: 'deleted.zim' },
-    };
-    const records = new Map([[record.id, record]]);
-    let compareAttempts = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()].map(item => ({ ...item })); },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent(next, expected) {
-        compareAttempts += 1;
-        const current = records.get(next.id);
-        const matches = Boolean(current)
-          && current.status === expected.status
-          && (Number(current.generation) || 0) === (Number(expected.generation) || 0)
-          && Number(current.updatedAt) === Number(expected.updatedAt);
-        if (matches) records.set(next.id, { ...next });
-        return matches;
-      },
-    };
-    let releaseSearch;
-    let markSearchStarted;
-    const searchStarted = new Promise(resolve => { markSearchStarted = resolve; });
-    const searching = runtime.searchApocalypseArchives('Alan Turing', {
-      store,
-      storage: {},
-      providers: [{
-        supports() { return true; },
-        async search() {
-          markSearchStarted();
-          await new Promise(resolve => { releaseSearch = resolve; });
-          throw new Error('ZIM read failed after deletion');
-        },
-      }],
-    });
-
-    await searchStarted;
-    records.delete(record.id);
-    releaseSearch();
-    await assert.rejects(searching, /could not be read|deletion/i, `${label}: failed archive search was hidden`);
-
-    assert.equal(compareAttempts, 1, `${label}: failed search metadata did not use compare-and-swap storage`);
-    assert.equal(records.has(record.id), false, `${label}: failed search recreated a deleted archive record`);
-  }
-});
-
-test('Apocalypse Mode can register a user-selected ZIM handle without copying bytes', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map();
-    const file = minimalWikipediaZimFixture();
-    Object.defineProperty(file, 'name', { value: 'wikipedia_en_test.zim' });
-    const handle = { name: file.name, async getFile() { return file; } };
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async putArchive(record) { records.set(record.id, record); return record; },
-    };
-    const record = await runtime.registerKiwixArchiveHandle(handle, { language: 'eng' }, { store, id: 'external-1' });
-    assert.equal(record.status, 'ready', `${label}: validated file handle was not ready`);
-    assert.equal(record.target.kind, 'file-handle', `${label}: external storage target was not preserved`);
-    assert.equal(record.target.handle, handle, `${label}: persistent handle was replaced or copied`);
-    assert.equal(record.bytesDownloaded, file.size, `${label}: external archive size was not recorded`);
-  }
-});
-
-test('Apocalypse Mode marks a stale interrupted import without racing its bytes', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const records = new Map([['stale-import', {
-      id: 'stale-import', status: 'importing', updatedAt: 0, bytesDownloaded: 1024,
-      target: { kind: 'opfs', key: 'stale.zim' }, size: 2048,
-    }]]);
-    const removals = [];
-    const store = {
-      async getConfig() { return { enabled: true }; }, async setConfig(value) { return value; },
-      async listArchives() { return [...records.values()]; }, async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; }, async deleteArchive(id) { records.delete(id); },
-    };
-    const storage = {
-      async remove(target) { removals.push(target); }, async estimate() { return {}; },
-      async write() { throw new Error('unexpected write'); },
-    };
-    const controller = runtime.createApocalypseController({ alarms: { create() {} } }, { store, storage, importStaleMs: 30_000 });
-    const snapshot = await controller.snapshot();
-    const recovered = snapshot.archives.find(record => record.id === 'stale-import');
-    assert.equal(recovered.status, 'error', `${label}: stale import did not become an actionable error`);
-    assert.equal(recovered.bytesDownloaded, 1024, `${label}: stale import hid the retained partial bytes`);
-    assert.equal(recovered.generation, 1, `${label}: stale import recovery did not invalidate the old writer`);
-    assert.equal(recovered.errorKind, 'import-interrupted', `${label}: stale import did not receive an actionable classification`);
-    assert.match(recovered.error, /interrupted/i, `${label}: stale import recovery omitted its reason`);
-    assert.match(recovered.error, /partial archive bytes were retained/i, `${label}: stale import did not disclose retained bytes`);
-    assert.deepEqual(removals, [], `${label}: background recovery deleted bytes that may still have an active writer`);
-  }
-});
-
-test('Apocalypse Mode stale-import recovery loses safely to a concurrent completion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'active-import', status: 'importing', generation: 4, updatedAt: 0, bytesDownloaded: 1024,
-      target: { kind: 'opfs', key: 'active.zim' }, size: 2048,
-    };
-    const records = new Map([[record.id, record]]);
-    let compareAttempts = 0;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()]; },
-      async getArchive(id) { return records.get(id) || null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent() {
-        compareAttempts += 1;
-        records.set(record.id, { ...record, status: 'ready', bytesDownloaded: record.size, updatedAt: 90_000 });
-        return false;
-      },
-    };
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store,
-      storage: { async estimate() { return {}; }, async remove() { throw new Error('recovery must not remove bytes'); } },
-      importStaleMs: 30_000,
-      now: () => 90_000,
-    });
-    assert.equal(await controller.recoverInterruptedImports(), 0, `${label}: a completed import was claimed as interrupted`);
-    assert.equal(compareAttempts, 1, `${label}: stale recovery did not use compare-and-swap state`);
-    assert.equal(records.get(record.id).status, 'ready', `${label}: stale recovery overwrote a concurrent completion`);
-    assert.equal(records.get(record.id).bytesDownloaded, record.size, `${label}: stale recovery corrupted completed progress`);
-  }
-});
-
-test('Apocalypse Mode file-handle permission expiry stops retries until reauthorization', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    let permission = 'prompt';
-    let writableCalls = 0;
-    let fetches = 0;
-    const queriedModes = [];
-    const handle = {
-      name: 'wikipedia.zim',
-      async queryPermission({ mode }) {
-        queriedModes.push(mode);
-        return permission;
-      },
-      async createWritable() { writableCalls += 1; throw new Error('permission preflight was skipped'); },
-    };
-    const storage = runtime.createOpfsArchiveStorage();
-    const target = { kind: 'file-handle', handle, access: 'readwrite' };
-    await assert.rejects(storage.write(target, 0, Uint8Array.of(1)), (error) => {
-      assert.equal(error.code, runtime.APOCALYPSE_FILE_PERMISSION_REQUIRED, `${label}: expired handle lacked a stable error classification`);
-      return true;
-    });
-    assert.equal(writableCalls, 0, `${label}: browser write was attempted before permission was granted`);
-
-    const config = { enabled: true };
-    const records = new Map();
-    const scheduled = [];
-    const store = {
-      async getConfig() { return { ...config }; }, async setConfig(next) { Object.assign(config, next); return config; },
-      async listArchives() { return [...records.values()]; }, async getArchive(id) { return records.get(id) || null; },
-      async putArchive(record) { records.set(record.id, { ...record }); return record; }, async deleteArchive(id) { records.delete(id); },
-    };
-    const manager = runtime.createApocalypseArchiveManager({
-      store,
-      storage,
-      fetchImpl: async () => { fetches += 1; return { ok: true, status: 206, async arrayBuffer() { return Uint8Array.of(1).buffer; } }; },
-      digestHex: async () => 'aa',
-      randomId: () => 'external-download',
-      schedule: delay => scheduled.push(delay),
-      now: () => 1000,
-    });
-    await manager.install({
-      filename: 'wikipedia.zim', size: 1, pieceLength: 1, pieceHashAlgorithm: 'sha-1', pieceHashes: ['aa'],
-      downloadUrl: 'https://example.test/wikipedia.zim',
-    }, target);
-    const result = await manager.processNext();
-    assert.equal(result.reason, 'error', `${label}: expired handle entered an automatic retry state`);
-    assert.equal(fetches, 0, `${label}: expired file permission was detected only after downloading another piece`);
-    assert.equal(records.get('external-download').errorKind, runtime.APOCALYPSE_FILE_PERMISSION_REQUIRED, `${label}: expired handle was not marked for reauthorization`);
-    assert.deepEqual(scheduled, [0], `${label}: expired handle scheduled an automatic retry`);
-    assert.deepEqual(queriedModes, ['readwrite', 'readwrite'], `${label}: external download did not consistently preflight write permission`);
-
-    permission = 'granted';
-    const controller = runtime.createApocalypseController({ alarms: {} }, {
-      store, storage, schedule: delay => scheduled.push(delay), now: () => 2000,
-    });
-    await controller.reauthorizeFile('external-download');
-    assert.equal(records.get('external-download').status, 'queued', `${label}: granted file permission did not resume the download`);
-    assert.equal(records.get('external-download').errorKind, '', `${label}: successful reauthorization retained the permission error`);
-    assert.deepEqual(scheduled, [0, 0], `${label}: successful reauthorization did not schedule one resumed attempt`);
-
-    records.set('external-download', {
-      ...records.get('external-download'), status: 'error', errorKind: runtime.APOCALYPSE_FILE_PERMISSION_REQUIRED,
-      bytesDownloaded: 1, size: 1,
-    });
-    await controller.reauthorizeFile('external-download');
-    assert.equal(records.get('external-download').status, 'ready', `${label}: completed external archive was incorrectly queued for redownload`);
-    assert.deepEqual(scheduled, [0, 0], `${label}: completed external archive scheduled a redownload after reauthorization`);
-    assert.equal(queriedModes.at(-1), 'read', `${label}: completed external archive requested unnecessary write permission`);
-  }
-});
-
-test('Apocalypse Mode completed-file reauthorization loses atomically to deletion', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const record = {
-      id: 'reauthorize-race', status: 'error', generation: 4, updatedAt: 500,
-      errorKind: runtime.APOCALYPSE_FILE_PERMISSION_REQUIRED, error: 'permission required',
-      downloadUrl: 'https://example.test/archive.zim', size: 10, bytesDownloaded: 10,
-    };
-    const records = new Map();
-    const handle = {
-      async queryPermission() {
-        records.delete(record.id);
-        return 'granted';
-      },
-    };
-    records.set(record.id, { ...record, target: { kind: 'file-handle', handle } });
-    let compareAttempts = 0;
-    let expectedState;
-    const store = {
-      async getConfig() { return { enabled: true }; },
-      async listArchives() { return [...records.values()]; },
-      async getArchive(id) { const item = records.get(id); return item ? { ...item } : null; },
-      async putArchive(next) { records.set(next.id, { ...next }); return next; },
-      async putArchiveIfCurrent(_next, expected) {
-        compareAttempts += 1;
-        expectedState = { ...expected };
-        return false;
-      },
-    };
-    const controller = runtime.createApocalypseController({ alarms: {} }, { store, storage: {}, now: () => 600 });
-
-    const result = await controller.reauthorizeFile(record.id);
-
-    assert.equal(result, null, `${label}: reauthorization returned stale metadata after deletion`);
-    assert.equal(compareAttempts, 1, `${label}: reauthorization did not compare-and-swap completed metadata`);
-    assert.deepEqual(expectedState, { status: 'error', generation: 4, updatedAt: 500 },
-      `${label}: reauthorization did not guard the original record state`);
-    assert.equal(records.has(record.id), false, `${label}: reauthorization recreated concurrently deleted metadata`);
-  }
-});
-
-test('Apocalypse Mode alarm listeners do not recreate unbounded outer retries', () => {
-  for (const [label, prefix] of [['chrome', 'src/chrome'], ['firefox', 'src/firefox']]) {
-    const source = fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8');
-    const start = source.indexOf("if (alarm?.name === APOCALYPSE_DOWNLOAD_ALARM)");
-    const end = source.indexOf('} else if (alarm?.name === APOCALYPSE_UPDATE_ALARM)', start);
-    assert.notEqual(start, -1, `${label}: Apocalypse download alarm listener is missing`);
-    assert.notEqual(end, -1, `${label}: Apocalypse update alarm boundary is missing`);
-    const downloadAlarm = source.slice(start, end);
-    assert.match(downloadAlarm, /processNext\(\)\.catch/, `${label}: unexpected download failures are not logged`);
-    assert.doesNotMatch(downloadAlarm, /alarms\.create/, `${label}: unexpected download failures still recreate an unbounded alarm`);
-    if (label === 'chrome') {
-      assert.match(downloadAlarm, /const releaseKeepalive = acquireRunKeepalive\(\)/,
-        'chrome: archive download alarm does not acquire the MV3 keepalive');
-      assert.match(downloadAlarm, /processNext\(\)\.catch\([\s\S]*?\.finally\(releaseKeepalive\)/,
-        'chrome: archive download alarm does not hold the keepalive until processing settles');
-    }
-  }
-});
-
-test('Apocalypse Mode keeps summary stats in its header and optional Wikipedia in Emergency Box', () => {
-  for (const prefix of ['src/chrome', 'src/firefox']) {
-    const settingsHtml = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.html'), 'utf8');
-    const pageHtml = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/apocalypse-mode.html'), 'utf8');
-    const pageScript = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/apocalypse-mode.js'), 'utf8');
-    const backgroundScript = fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8');
-    const apocalypseCopy = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/locales/apocalypse-copy.mjs'), 'utf8');
-    const pageHeader = pageHtml.slice(pageHtml.indexOf('<header>'), pageHtml.indexOf('</header>') + 9);
-    assert.match(pageHtml, /<script src="theme-bootstrap\.js"><\/script>[\s\S]*?<style>/,
-      `${prefix}: Apocalypse Mode does not apply the saved theme before first paint`);
-    assert.match(pageHtml, /<link rel="stylesheet" href="apocalypse-kit\.css">[\s\S]*?<\/head>\s*<body class="ap-page">/,
-      `${prefix}: Apocalypse Mode does not use the shared Apocalypse visual system`);
-    assert.match(pageHtml, /:root\[data-theme="light"\]\s*\{[\s\S]*?color-scheme:light/,
-      `${prefix}: Apocalypse Mode does not define the Settings light palette`);
-    assert.match(pageHtml, /:root\s*\{[\s\S]*?color-scheme:dark/,
-      `${prefix}: Apocalypse Mode does not define the Settings dark palette`);
-    assert.match(pageScript, /from '\.\/theme\.js';[\s\S]*?loadMode\(\)\.then[\s\S]*?applyMode\(mode, \{ syncStorage: false \}\)[\s\S]*?watch\(\(\) => currentThemeMode\)/,
-      `${prefix}: Apocalypse Mode does not hydrate and watch the shared Appearance preference`);
-    assert.match(pageScript, /storage\?\.onChanged\?\.addListener\?[\s\S]*?changes\.themeMode[\s\S]*?currentThemeMode = next/,
-      `${prefix}: Apocalypse Mode does not track live Appearance changes`);
-    for (const id of ['installed-count', 'archive-bytes', 'storage-usage']) {
-      assert.match(pageHeader, new RegExp(`id="${id}"`), `${prefix}: ${id} is not in the Apocalypse header`);
-    }
-    assert.match(pageHeader, /class="header-stats"/, `${prefix}: archive stats are not grouped in the header`);
-    assert.doesNotMatch(pageHtml, /id="(?:installed|catalog|catalog-status|load-catalog|import-file|import-button|update-policy|storage-target)"/,
-      `${prefix}: optional Wikipedia management is still duplicated on Apocalypse Mode`);
-    assert.doesNotMatch(pageScript, /loadCatalog|reviewInstall|reviewImport|elements\.installed/,
-      `${prefix}: removed Wikipedia catalog or import machinery is still active on Apocalypse Mode`);
-    const wikipediaLibraryCalloutStart = pageHtml.indexOf('id="wikipedia-library-callout"');
-    const wikipediaLibraryCallout = pageHtml.slice(
-      wikipediaLibraryCalloutStart,
-      pageHtml.indexOf('</section>', wikipediaLibraryCalloutStart) + 10,
-    );
-    assert.match(wikipediaLibraryCallout, /id="wikipedia-library-link"[^>]*href="wikipedia-library\.html"/,
-      `${prefix}: Offline Wikipedia library is not directly reachable during basic setup`);
-    assert.doesNotMatch(wikipediaLibraryCallout, /(?:\shidden(?:\s|>)|aria-disabled="true"|data-locked="true")/,
-      `${prefix}: Offline Wikipedia library is incorrectly gated by basic setup readiness`);
-    const emergencyBoxCalloutStart = pageHtml.indexOf('id="emergency-box-callout"');
-    if (emergencyBoxCalloutStart >= 0) {
-      assert.ok(wikipediaLibraryCalloutStart < emergencyBoxCalloutStart,
-        `${prefix}: independent Wikipedia library route must appear before the gated Emergency Box`);
-    }
-    assert.doesNotMatch(pageScript, /await command\('process'\)/,
-      `${prefix}: status polling blocks behind the long-running download loop`);
-    assert.match(pageScript, /command\('process'\)\.catch\([\s\S]*?(?:await refresh\(\)|Promise\.all\(\[refresh\(\))/,
-      `${prefix}: status polling does not refresh independently of download processing`);
-    if (prefix === 'src/chrome') {
-      assert.match(backgroundScript, /enableAndPreloadWebgpuVision/, 'chrome: enabling Apocalypse Mode does not start the local vision download');
-      const enableStart = backgroundScript.indexOf('if (msg.enabled === true)');
-      const textDownloadStart = backgroundScript.indexOf('enableAndStartWebgpuTextDownload()', enableStart);
-      const visionDownloadStart = backgroundScript.indexOf('enableApocalypseVisionModel()', textDownloadStart);
-      assert.ok(enableStart >= 0 && textDownloadStart > enableStart && visionDownloadStart > textDownloadStart,
-        'chrome: enabling Apocalypse Mode must start local chat before queueing local vision');
-      assert.match(pageHtml, /id="webgpu-provider-card"[^>]*hidden/, 'chrome: the WebGPU provider block is missing from Apocalypse Mode');
-      const heroStart = pageHtml.indexOf('<section class="card hero">');
-      const textModel = pageHtml.indexOf('id="webgpu-provider-card"', heroStart);
-      const visionModel = pageHtml.indexOf('id="vision-model-card"', heroStart);
-      const basicWikipedia = pageHtml.indexOf('id="basic-wikipedia-card"', heroStart);
-      const heroEnd = pageHtml.indexOf('</section>', basicWikipedia);
-      assert.ok(heroStart >= 0 && textModel > heroStart && visionModel > textModel && basicWikipedia > visionModel && heroEnd > basicWikipedia,
-        'chrome: the three basic downloads must be stacked text, vision, then Simple English Wikipedia inside the hero');
-      assert.match(pageHtml, /data-model-kind="text"[\s\S]*?<svg[\s\S]*?data-webgpu-download-panel/,
-        'chrome: the text model is missing its icon or download box');
-      assert.match(pageHtml, /\.local-models\s*\{[^}]*grid-column:1\s*\/\s*-1[^}]*width:100%/,
-        'chrome: the three basic download cards do not use the full setup row');
-      assert.match(pageHtml, /<section class="card hero">[\s\S]*?<div class="hero-overview">[\s\S]*?<div class="hero-copy">[\s\S]*?<\/div>\s*<label class="toggle"[\s\S]*?<\/div>\s*<div class="local-models">[\s\S]*?id="basic-wikipedia-card"/,
-        'chrome: the setup overview and three basic download cards do not share one enclosing box');
-      assert.match(pageScript, /const track = panel\.querySelector\('\[data-webgpu-download-track\]'\);\s*track\.hidden = state\.status === 'ready';/,
-        'chrome: the completed Text Model still shows its download progress track');
-      assert.doesNotMatch(pageHtml, /id="webgpu-test"/,
-        'chrome: the local text model should not expose a Test action');
-      assert.match(pageHtml, /data-i18n="ap\.webgpu\.rag"/, 'chrome: local Wikipedia RAG is not explained beside the WebGPU model');
-      assert.match(pageHtml, /data-model-kind="vision"[\s\S]*?<svg[\s\S]*?id="vision-model-test"/,
-        'chrome: the vision model is missing its icon or Test action');
-      assert.match(pageScript, /function confirmCompletedModelRemoval\(action, status, modelTitleKey\)[\s\S]*?action !== 'stop' \|\| status !== 'ready'[\s\S]*?globalThis\.confirm\(t\('ap\.models\.confirm_remove'/,
-        'chrome: completed model removal is missing its confirmation guard');
-      assert.match(pageScript, /confirmCompletedModelRemoval\(action, webgpuDownloadState\.status, 'ap\.models\.text\.title'\)/,
-        'chrome: completed Text Model removal is not confirmed');
-      assert.match(pageScript, /confirmCompletedModelRemoval\(action, visionDownloadState\?\.status, 'ap\.models\.vision\.title'\)/,
-        'chrome: completed Vision Model removal is not confirmed');
-      assert.match(pageScript, /actions\.stop\.textContent = t\(state\.status === 'ready' \? 'ap\.models\.remove' : 'st\.providers\.webgpu_download\.stop'\)/,
-        'chrome: the completed Text Model action is not labeled Remove');
-      assert.match(pageScript, /actions\.stop\.textContent = t\(status === 'ready' \? 'ap\.models\.remove' : 'st\.providers\.webgpu_download\.stop'\)/,
-        'chrome: completed Vision Model and Wikipedia actions are not labeled Remove');
-      assert.match(apocalypseCopy, /'ap\.models\.remove': 'Remove'/,
-        'chrome: the completed-download Remove label is missing');
-      assert.match(apocalypseCopy, /'ap\.models\.confirm_remove': 'Remove the \{model\} and its cached files\?/,
-        'chrome: the completed model removal confirmation is missing');
-      assert.match(pageHtml, /data-model-kind="knowledge"[\s\S]*?data-i18n="ap\.models\.wikipedia\.title"[\s\S]*?id="basic-wikipedia-start"[\s\S]*?data-basic-wikipedia-action="pause"[\s\S]*?data-basic-wikipedia-action="resume"[\s\S]*?data-basic-wikipedia-action="stop"/,
-        'chrome: the required Simple English Wikipedia download is missing from basic setup');
-      assert.match(pageScript, /function maybeAutoStartBasicWikipediaDownload\(\)[\s\S]*?startBasicWikipediaDownload\(\{ automatic: true \}\)/,
-        'chrome: enabling basic setup does not automatically start Simple English Wikipedia');
-      assert.match(pageScript, /startBasicWikipediaDownload[\s\S]*?command\('resolve'[\s\S]*?command\('install'/,
-        'chrome: the basic Wikipedia Start action does not resolve and queue the managed archive');
-      const basicWikipediaStart = pageScript.slice(
-        pageScript.indexOf('async function startBasicWikipediaDownload'),
-        pageScript.indexOf('function maybeAutoStartBasicWikipediaDownload'),
-      );
-      assert.doesNotMatch(basicWikipediaStart, /normalizeStorageEstimate|ap\.space\.insufficient/,
-        'chrome: automatic Wikipedia incorrectly treats navigator.storage.estimate() as a hard cap despite unlimitedStorage');
-      assert.match(fs.readFileSync(path.join(ROOT, 'src/chrome/manifest.json'), 'utf8'), /"unlimitedStorage"/,
-        'chrome: managed model and archive storage is missing its unlimitedStorage permission');
-      assert.match(pageScript, /BASIC_WIKIPEDIA_AUTO_START_SUPPRESSED_KEY[\s\S]*?action === 'stop'[\s\S]*?setBasicWikipediaAutoStartSuppressed\(true\)/,
-        'chrome: Stop & remove does not prevent a silent automatic redownload');
-      assert.match(pageHtml, /id="emergency-box-callout"[^>]*data-locked="true"[^>]*aria-disabled="true"/,
-        'chrome: Emergency Box must render locked until basic setup is ready');
-      assert.match(pageScript, /function updateEmergencyBoxGate\(readinessKind\)[\s\S]*?const locked = readinessKind !== 'ready'/,
-        'chrome: Emergency Box is not gated by aggregate readiness');
-      assert.match(pageScript, /update_provider[\s\S]*?providerId: 'webgpu'[\s\S]*?model: WEBGPU_MODEL_ID/, 'chrome: Apocalypse Mode does not configure the fixed WebGPU download');
-      assert.doesNotMatch(pageScript, /testWebgpuTextModel|providerCommand\('test_provider', \{ providerId: 'webgpu' \}\)/,
-        'chrome: the removed local text Test action is still wired');
-      assert.match(pageScript, /testWebgpuVisionModel[\s\S]*?providerCommand\('test_vision_provider'\)/,
-        'chrome: the local vision Test action does not exercise the fallback');
-      assert.doesNotMatch(pageScript, /set_active_provider/, 'chrome: Apocalypse Mode must not change the global chat provider');
-    } else {
-      assert.doesNotMatch(backgroundScript, /enableAndPreloadWebgpuVision/, 'firefox: Chromium-only local vision download leaked into Firefox');
-      assert.doesNotMatch(pageHtml, /id="webgpu-provider-card"/, 'firefox: Chromium-only WebGPU provider block leaked into Apocalypse Mode');
-    }
-    const libraryScript = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/wikipedia-library.js'), 'utf8');
-    for (const language of ['eng', 'zho', 'ara', 'ben', 'nld', 'tgl', 'fra', 'deu', 'heb', 'hin', 'ind', 'jpn', 'kor', 'msa', 'fas', 'pol', 'por', 'rus', 'spa', 'tha', 'tur', 'ukr', 'vie']) {
-      assert.match(libraryScript, new RegExp(`\\['${language}',`), `${prefix}: Wikipedia language ${language} is missing from Emergency Box`);
-    }
-    assert.match(libraryScript, /BASIC_WIKIPEDIA_AUTO_START_SUPPRESSED_KEY[\s\S]*?suppressBasicWikipediaAutoStart[\s\S]*?storage\.local\.set/,
-      `${prefix}: the Wikipedia library cannot persist basic auto-start suppression`);
-    assert.match(libraryScript, /const removesArchive = action === 'stop' \|\| action === 'delete';[\s\S]*?isBasicWikipediaArchive\(record\)[\s\S]*?await suppressBasicWikipediaAutoStart\(\)[\s\S]*?command\(removesArchive \? 'delete' : action/,
-      `${prefix}: deleting the basic Wikipedia archive can silently auto-download it again`);
-    const headerStart = settingsHtml.indexOf('<div class="header-row">');
-    const apocalypseLink = settingsHtml.indexOf('id="apocalypse-mode-link"', headerStart);
-    const supportLink = settingsHtml.indexOf('href="https://webbrain.one/docs"', headerStart);
-    const tabsStart = settingsHtml.indexOf('<nav class="tabs"', headerStart);
-    assert.ok(headerStart >= 0 && apocalypseLink > headerStart && supportLink > apocalypseLink && tabsStart > supportLink,
-      `${prefix}: Apocalypse Mode must appear beside and before Support in the top header`);
-    assert.match(settingsHtml.slice(apocalypseLink, supportLink), /☢/, `${prefix}: Apocalypse Mode header link is missing its radioactive icon`);
-    assert.match(pageHtml, /<header><span class="apocalypse-icon" aria-hidden="true">☢<\/span>/,
-      `${prefix}: Apocalypse Mode page header does not match the radioactive settings gateway icon`);
-    assert.match(pageHtml, /class="header-copy"[\s\S]*?data-i18n="ap\.title"[\s\S]*?data-i18n="ap\.subtitle"/,
-      `${prefix}: Apocalypse Mode title and offline slogan are not grouped in the page header`);
-    assert.match(apocalypseCopy, /'ap\.subtitle': 'WebBrain, ready when the internet isn’t\.'/,
-      `${prefix}: Apocalypse Mode header does not advertise offline access`);
-    assert.match(apocalypseCopy, /'ap\.metric\.summary': 'Wikipedia archive statistics'/,
-      `${prefix}: header archive stats have no accessible label`);
-    assert.match(apocalypseCopy, /'ap\.metric\.storage': 'Extension storage used'/,
-      `${prefix}: the storage metric does not identify its number as used space`);
-    assert.doesNotMatch(pageScript, /\$\{bytes\(usage\)\}\s*\/\s*\$\{bytes\(quota\)\}/,
-      `${prefix}: storage usage is still presented as an ambiguous used/quota fraction`);
-    assert.match(pageHtml, /\.apocalypse-icon \{[^}]*font-size:48px/,
-      `${prefix}: Apocalypse Mode page icon is too small for the page header`);
-    assert.match(settingsHtml, /id="apocalypse-mode-status"[^>]*class="visually-hidden"/, `${prefix}: header gateway status is not accessible`);
-    const advancedStart = settingsHtml.indexOf('<details class="advanced-settings">');
-    const advancedEnd = settingsHtml.indexOf('</details>', advancedStart);
-    assert.doesNotMatch(settingsHtml.slice(advancedStart, advancedEnd), /apocalypse-mode/, `${prefix}: Apocalypse Mode is still listed under General > Advanced`);
-    assert.match(fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.js'), 'utf8'), /apocalypseModeLink\.dataset\.enabled/, `${prefix}: header gateway does not reflect the enabled state`);
-    assert.match(pageScript, /elements\['installed-count'\]\.textContent[\s\S]*?elements\['archive-bytes'\]\.textContent[\s\S]*?elements\['storage-usage'\]\.textContent/,
-      `${prefix}: header stats are not populated from the current archive snapshot`);
-    assert.match(fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.js'), 'utf8'), /installedCount[\s\S]*?totalBytes[\s\S]*?updatePolicy/, `${prefix}: Advanced settings does not summarize live archive state`);
-    assert.match(fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8'), /APOCALYPSE_UPDATE_ALARM[\s\S]*?checkForUpdates/, `${prefix}: automatic update checks are not wired to a background alarm`);
-    assert.match(backgroundScript, /syncUpdateSchedule\(\)[\s\S]*?syncDownloadSchedule\(\)/,
-      `${prefix}: startup does not restore both Apocalypse schedules`);
-    assert.match(pageHtml, /data-i18n="ap\.hero\.consent"/, `${prefix}: localized opt-in boundary is not visible`);
-  }
-});
-
-test('Wikipedia tools use installed Apocalypse Mode archives only after online failure', async () => {
-  for (const [label, runtime] of [['chrome', WikipediaOfflineCh], ['firefox', WikipediaOfflineFx]]) {
-    const tool = {
-      name: 'search_wikipedia', skillId: 'wikipedia', skillName: 'Wikipedia',
-      sourceType: 'built-in', sourceUrl: 'skills/wikipedia.md',
-    };
-    const result = await runtime.executeWikipediaSkillTool(tool, { q: 'Alan Turing', limit: 3 }, {
-      executeOnline: async () => ({ success: false, error: 'network unavailable' }),
-      apocalypseSearch: async () => [{
-        title: 'Alan Turing', excerpt: 'Alan Turing was an English computer scientist and cryptanalyst.',
-        url: 'https://en.wikipedia.org/wiki/Alan_Turing', language: 'eng',
-        archiveDate: '2026-07-17', source: 'Kiwix / openZIM', license: 'CC BY-SA 4.0',
-      }],
-    });
-    assert.equal(result.success, true, `${label}: installed ZIM should recover an offline search`);
-    assert.equal(result.provider, 'local Kiwix/ZIM archive', `${label}: local provider was not identified`);
-    assert.equal(result.resultPolicy, 'untrusted', `${label}: local archive bytes must remain untrusted`);
-    assert.equal(result.data.pages[0].archiveDate, '2026-07-17', `${label}: archive provenance was lost`);
-  }
-});
-
-test('standalone WebGPU local RAG retrieves compact attributed Wikipedia passages', async () => {
-  for (const [label, runtime] of [['chrome', WikipediaOfflineCh], ['firefox', WikipediaOfflineFx]]) {
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('Who was Alan Turing?'), true, `${label}: factual question did not trigger local retrieval`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('Alan Turing'), true, `${label}: short encyclopedia topic did not trigger local retrieval`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('Write an email to Alan'), false, `${label}: writing request triggered local retrieval`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('What is the weather today?'), false, `${label}: current-data question triggered a stale archive lookup`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('are you high?'), false, `${label}: assistant banter triggered local retrieval`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia("how can i patch my dog's yara"), false, `${label}: first-person practical advice triggered encyclopedia retrieval`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia("it's a cut"), false, `${label}: a conversational follow-up triggered a title search`);
-    assert.equal(runtime.shouldRetrieveLocalWikipedia('and?'), false, `${label}: a context-only continuation triggered an archive search`);
-    assert.equal(runtime.localWikipediaSearchQuery("who's sokollu"), 'sokollu', `${label}: contracted identity question was not reduced to its subject`);
-    assert.equal(
-      runtime.localWikipediaSearchQuery("what's his zodiac sign?", { fallbackTopic: 'sokollu' }),
-      'sokollu',
-      `${label}: pronoun follow-up did not reuse the prior factual subject`,
-    );
-    assert.equal(runtime.localWikipediaSearchQuery('What is photosynthesis?'), 'photosynthesis', `${label}: factual question was not reduced to a searchable article topic`);
-    assert.equal(runtime.localWikipediaSearchQuery('what is a chocolate made of'), 'chocolate', `${label}: composition question was not reduced to its article topic`);
-    assert.equal(runtime.localWikipediaSearchQuery('who founded ottoman empire?'), 'ottoman empire', `${label}: founder question was not reduced to its entity topic`);
-    assert.equal(
-      runtime.localWikipediaSearchQuery('tell me more about sokullu mehmed pasha when was he born?'),
-      'sokullu mehmed pasha',
-      `${label}: compound biography question was not reduced to the article subject`,
-    );
-    let limit = 0;
-    let searchQuery = '';
-    const records = await runtime.retrieveLocalWikipediaForStandalone('Who was Alan Turing?', {
-      apocalypseSearch: async (_query, options) => {
-        searchQuery = _query;
-        limit = options.limit;
-        return [{
-          title: 'Alan Turing', excerpt: 'Alan Turing was an English mathematician and computer scientist.',
-          url: 'https://en.wikipedia.org/wiki/Alan_Turing', language: 'eng', archiveDate: '2026-07-17',
-          archiveTitle: 'Wikipedia English full text', source: 'Kiwix / openZIM',
-        }];
-      },
-    });
-    assert.equal(searchQuery, 'Alan Turing', `${label}: standalone RAG searched the whole question instead of its topic`);
-    assert.equal(limit, 6, `${label}: local RAG did not inspect a bounded candidate set before relevance filtering`);
-    assert.deepEqual(runtime.formatLocalWikipediaRag(records), [{
-      title: 'Alan Turing', passage: 'Alan Turing was an English mathematician and computer scientist.',
-      url: 'https://en.wikipedia.org/wiki/Alan_Turing', language: 'eng', archiveDate: '2026-07-17',
-      archiveTitle: 'Wikipedia English full text', source: 'Kiwix / openZIM',
-    }], `${label}: local RAG lost archive attribution`);
-    const strictRecords = runtime.rankLocalWikipediaRagRecords([
-      { title: 'Ottoman Empire', excerpt: 'A general history of the empire.' },
-      { title: 'Sokollu Mehmed Pasha', excerpt: 'Sokollu Mehmed Pasha was born around 1505.' },
-    ], 'Sokollu Mehmed Pasha Ottoman Empire biography');
-    assert.deepEqual(strictRecords.map(record => record.title), ['Sokollu Mehmed Pasha'],
-      `${label}: generic contextual titles outranked the requested person`);
-    assert.deepEqual(
-      runtime.rankLocalWikipediaRagRecords(
-        [{ title: 'Ottoman Empire', excerpt: 'A general history of the empire.' }],
-        'Sokollu Mehmed Pasha Ottoman Empire biography',
-      ),
-      [],
-      `${label}: a generic Ottoman Empire page passed strict entity relevance`,
-    );
-    assert.deepEqual(
-      runtime.rankLocalWikipediaRagRecords([
-        { title: 'Chocolate (color)', excerpt: 'A color resembling chocolate.' },
-        { title: 'Chocolate', excerpt: 'A food made from cacao beans.' },
-      ], 'chocolate').map(record => record.title),
-      ['Chocolate'],
-      `${label}: an exact article title did not suppress weaker related titles`,
-    );
-    const notInstalled = await runtime.retrieveLocalWikipediaResultForStandalone('Who was Ada Lovelace?', {
-      apocalypseSearch: async (_query, options) => {
-        options.onSearchStatus({ status: 'not_installed' });
-        return [];
-      },
-    });
-    assert.equal(notInstalled.status, 'not_installed', `${label}: missing archives collapsed into no_match`);
-    const readError = await runtime.retrieveLocalWikipediaResultForStandalone('Who was Ada Lovelace?', {
-      apocalypseSearch: async () => { throw new Error('archive unreadable'); },
-    });
-    assert.equal(readError.status, 'read_error', `${label}: archive read failure collapsed into no_match`);
-    const noMatch = await runtime.retrieveLocalWikipediaResultForStandalone('Who was Ada Lovelace?', {
-      apocalypseSearch: async () => [],
-    });
-    assert.equal(noMatch.status, 'no_match', `${label}: genuine zero-result search was mislabeled`);
-  }
-  const agentSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
-  assert.match(agentSource, /_isStandaloneWebgpuRun\(runOptions = \{\}\)[\s\S]*?_isStandaloneChatRun\(runOptions\)[\s\S]*?providerId \|\| ''\) === 'webgpu'/,
-    'chrome: local Wikipedia RAG is not guarded to standalone WebGPU runs');
-  assert.match(agentSource, /_wrapUntrusted\('local_wikipedia_archive'/,
-    'chrome: local Wikipedia RAG passages are not marked as untrusted data');
-  assert.equal((agentSource.match(/_applyStandaloneWikipediaRag\(enriched, userMessage, runOptions,/g) || []).length, 2,
-    'chrome: local Wikipedia RAG is not applied to both standalone message entry paths');
-  assert.equal((agentSource.match(/const standaloneWikipediaFailure = this\._standaloneWikipediaFailureMessage\(localWikipediaRag, runOptions\)/g) || []).length, 2,
-    'chrome: a factual Wikipedia failure does not fail closed on both agent entry paths');
-  assert.equal((agentSource.match(/standaloneIncompleteAnswerRecoveryAttempted = true;/g) || []).length, 2,
-    'chrome: incomplete local answers do not receive one bounded recovery on both agent entry paths');
-});
-
-test('Apocalypse archive search reports disabled, missing, and not-ready states separately', async () => {
-  for (const [label, runtime] of [['chrome', ApocalypseModeCh], ['firefox', ApocalypseModeFx]]) {
-    const statusFor = async (enabled, archives) => {
-      let status = '';
-      const records = await runtime.searchApocalypseArchives('Ada Lovelace', {
-        store: {
-          async getConfig() { return { enabled }; },
-          async listArchives() { return archives; },
-        },
-        onSearchStatus(value) { status = value.status; },
-      });
-      assert.deepEqual(records, [], `${label}: unavailable archive state returned records`);
-      return status;
-    };
-    assert.equal(await statusFor(false, []), 'disabled', `${label}: disabled Apocalypse Mode was mislabeled`);
-    assert.equal(await statusFor(true, []), 'not_installed', `${label}: missing Wikipedia archive was mislabeled`);
-    assert.equal(await statusFor(true, [{ id: 'wiki', status: 'downloading' }]), 'not_ready', `${label}: downloading archive was mislabeled`);
-  }
-});
-
-test('standalone WebGPU uses a compact tool-free chat profile with no browser context', async () => {
-  const agent = new AgentCh({
-    getActive() { throw new Error('standalone prompt must not consult the globally selected provider'); },
-  });
-  const tabId = 1701;
-  agent._standaloneWebgpuRunTabs.add(tabId);
-  const prompt = agent._buildSystemPrompt('ask', tabId);
-  assert.match(prompt, /private on-device chat assistant/);
-  assert.match(prompt, /no browser, page, network, file, API, skill, or tool access/);
-  assert.match(prompt, /Offline Wikipedia/);
-  assert.ok(prompt.length < 1400, `standalone WebGPU system prompt is unexpectedly large (${prompt.length} chars)`);
-  assert.doesNotMatch(prompt, /cookie|paywall|click_ax|get_accessibility_tree|CAPTCHA|User profile/i);
-  assert.match(
-    agent._wrapUntrusted('local_wikipedia_archive', '{"reference":"quoted data"}'),
-    /^<untrusted_page_content id="[a-z0-9]+">[\s\S]*<\/untrusted_page_content id="[a-z0-9]+">$/,
-    'local Wikipedia passages must be enclosed in the real untrusted-content boundary',
-  );
-
-  agent.alwaysAllowApiMutations = true;
-  const question = 'tell me more about sokullu mehmed pasha when was he born?';
-  const enriched = await agent._enrichUserMessageWithCurrentPage(tabId, [], question, null, {
-    standaloneChat: true,
-    providerId: 'webgpu',
-  });
-  assert.deepEqual(enriched, { role: 'user', content: question },
-    'standalone WebGPU must not receive runtime, page, recording, API, adapter, or screenshot context');
-
-  const provenance = buildPromptTraceProvenanceCh([
-    { role: 'system', content: prompt },
-    { role: 'user', content: question },
-  ], [], 'ask');
-  assert.equal(provenance.systemPromptVariant, 'standalone_webgpu');
-  assert.equal(provenance.systemPromptMode, 'ask');
-  assert.equal(provenance.toolCount, 0);
-  assert.equal(provenance.systemPromptMatchesRuntime, true);
-  assert.equal(provenance.runtimeEnvelopeRequired, false);
-  assert.equal(provenance.runtimeEnvelopeMatches, null);
-  for (const [label, serialize] of [['chrome', tracesToMarkdown], ['firefox', tracesToMarkdownFx]]) {
-    const { markdown } = serialize([{
-      run: { runId: `standalone-envelope-${label}`, userMessage: question, model: 'LFM2.5', status: 'done' },
-      events: [{
-        runId: `standalone-envelope-${label}`, seq: 1, kind: 'llm_request',
-        data: { messageCount: 2, toolsCount: 0, promptProvenance: provenance },
-      }],
-    }]);
-    assert.match(markdown, /runtime envelope not required.*system mode aligned/,
-      `${label}: standalone trace did not explain the intentionally absent runtime envelope`);
-    assert.doesNotMatch(markdown, /envelope mismatch/,
-      `${label}: standalone trace reported a false-positive envelope mismatch`);
-  }
-
-  const apocalypseHistory = [
-    { role: 'system', content: prompt },
-    { role: 'user', content: "who's sokollu", webbrainStandaloneChat: true },
-    { role: 'assistant', content: 'Sokollu Mehmed Pasha was an Ottoman statesman.' },
-    { role: 'user', content: 'and?', webbrainStandaloneChat: true },
-    { role: 'assistant', content: 'He served as grand vizier.' },
-  ];
-  assert.equal(agent._standaloneWikipediaPriorTopic(apocalypseHistory), 'sokollu',
-    'context-only continuation displaced the last factual subject');
-  let followUpSearchQuery = '';
-  const followUpEnriched = { role: 'user', content: "what's his zodiac sign?" };
-  const followUpRag = await agent._applyStandaloneWikipediaRag(
-    followUpEnriched,
-    "what's his zodiac sign?",
-    { standaloneChat: true, providerId: 'webgpu' },
-    {
-      messages: apocalypseHistory,
-      apocalypseSearch: async query => {
-        followUpSearchQuery = query;
-        return [{
-          title: 'Sokollu Mehmed Pasha',
-          excerpt: 'Sokollu Mehmed Pasha was born around 1505; an exact birth date is not known.',
-          url: 'https://en.wikipedia.org/wiki/Sokollu_Mehmed_Pasha',
-          language: 'eng',
-          archiveDate: '2026-07-17',
-          archiveTitle: 'Wikipedia English full text',
-          source: 'Kiwix / openZIM',
-        }];
-      },
-    },
-  );
-  assert.equal(followUpSearchQuery, 'sokollu', 'pronoun follow-up did not search the prior factual subject');
-  assert.deepEqual(
-    { status: followUpRag.status, matchCount: followUpRag.matchCount, resolvedFromHistory: followUpRag.resolvedFromHistory },
-    { status: 'matched', matchCount: 1, resolvedFromHistory: true },
-    'pronoun follow-up was not grounded in the prior subject',
-  );
-  assert.match(
-    agent._standaloneWikipediaFailureMessage({ attempted: true, status: 'no_match' }, { standaloneChat: true, providerId: 'webgpu' }),
-    /will not guess/,
-    'a factual no-match did not fail closed',
-  );
-  assert.equal(
-    agent._isClearlyIncompleteStandaloneAnswer('Based on Offline Wikipedia, Sokollu Mehmed Pasha was a', { standaloneChat: true, providerId: 'webgpu' }),
-    true,
-    'mid-sentence WebGPU answer was accepted as complete',
-  );
-  assert.equal(
-    agent._isClearlyIncompleteStandaloneAnswer('Sokollu Mehmed Pasha was an Ottoman statesman.', { standaloneChat: true, providerId: 'webgpu' }),
-    false,
-    'complete WebGPU answer was rejected',
-  );
-
-  const standaloneRun = { standaloneChat: true, providerId: 'webgpu' };
-  const inventedGoogleCalls = "<|tool_call_start|>[google(query='Sokollu Mehmed Pasha birth date biography'), google(query='Sokollu Mehmed Pasha Ottoman Empire biography')]<|tool_call_end|>";
-  const inventedOfflineWikipediaCall = "<|tool_call_start|>[offline_wikipedia(query='Sokollu Mehmed Pasha', limit=5)]<|tool_call_end|>";
-  assert.deepEqual(
-    agent._standaloneWikipediaSearchQueriesFromModelText(inventedGoogleCalls, standaloneRun),
-    ['Sokollu Mehmed Pasha birth date biography', 'Sokollu Mehmed Pasha Ottoman Empire biography'],
-    'standalone WebGPU must reinterpret the native Google markup as bounded local search queries',
-  );
-  assert.deepEqual(
-    agent._standaloneWikipediaSearchQueriesFromModelText(inventedOfflineWikipediaCall, standaloneRun),
-    ['Sokollu Mehmed Pasha'],
-    'standalone WebGPU must reinterpret native offline_wikipedia markup as a local search query',
-  );
-  for (const alias of [
-    'local_wikipedia', 'local_wikipedia_search', 'offline_wikipedia_search',
-    'search_local_wikipedia', 'search_offline_wikipedia', 'search_wiki',
-    'search_wikipedia', 'wiki_search', 'wikipedia', 'wikipedia_search',
-  ]) {
-    const markup = `<|tool_call_start|>[${alias}(query='Sokollu Mehmed Pasha')]<|tool_call_end|>`;
-    assert.deepEqual(
-      agent._standaloneWikipediaSearchQueriesFromModelText(markup, standaloneRun),
-      ['Sokollu Mehmed Pasha'],
-      `standalone WebGPU did not reinterpret the ${alias} alias as local retrieval`,
-    );
-  }
-  assert.deepEqual(
-    agent._standaloneWikipediaSearchQueriesFromModelText(
-      "<|tool_call_start|>[browse_web(query='Sokollu Mehmed Pasha')]<|tool_call_end|>",
-      standaloneRun,
-    ),
-    [],
-    'unknown invented tools must remain rejected instead of becoming local retrieval aliases',
-  );
-  assert.deepEqual(
-    agent._standaloneWikipediaSearchQueriesFromModelText(inventedGoogleCalls, { standaloneChat: false, providerId: 'webgpu' }),
-    [],
-    'Google markup translation must not escape the standalone WebGPU profile',
-  );
-  const fallbackEnriched = { role: 'user', content: question };
-  const fallbackRag = await agent._applyStandaloneWikipediaModelSearch(
-    fallbackEnriched,
-    inventedOfflineWikipediaCall,
-    standaloneRun,
-    {
-      apocalypseSearch: async query => query.includes('Sokollu') ? [{
-        title: 'Sokollu Mehmed Pasha',
-        excerpt: 'Sokollu Mehmed Pasha was born in 1505.',
-        url: 'https://en.wikipedia.org/wiki/Sokollu_Mehmed_Pasha',
-        language: 'eng',
-        archiveDate: '2026-07-17',
-        archiveTitle: 'Wikipedia English full text',
-        source: 'Kiwix / openZIM',
-      }] : [],
-    },
-  );
-  assert.deepEqual(
-    { status: fallbackRag.status, matchCount: fallbackRag.matchCount, modelSearchFallback: fallbackRag.modelSearchFallback },
-    { status: 'matched', matchCount: 1, modelSearchFallback: true },
-    'invented Google calls must produce local RAG metadata without becoming executable tools',
-  );
-  const fallbackModelContent = JSON.stringify(fallbackEnriched.content);
-  assert.match(fallbackModelContent, /Local Wikipedia archive references found for the requested local search:/);
-  assert.match(fallbackModelContent, /<untrusted_page_content id=/);
-  assert.match(fallbackModelContent, /Sokollu Mehmed Pasha was born in 1505/);
-  const persistedFallback = agent._standalonePersistedUserMessage(fallbackEnriched, standaloneRun);
-  assert.equal(persistedFallback.content, question,
-    'local Wikipedia passages must be removed from the durable conversation turn');
-  assert.doesNotMatch(JSON.stringify(persistedFallback), /Wikipedia|Sokollu Mehmed Pasha was born/,
-    'durable conversation history retained ephemeral RAG content');
-  const legacyHistory = [{
-    role: 'user',
-    content: `${question}\n\nLocal Wikipedia archive references found for the requested local search:\n<untrusted_page_content id="legacy1">{"references":[{"passage":"stale Ottoman context"}]}</untrusted_page_content id="legacy1">`,
-  }];
-  assert.equal(agent._stripPersistedStandaloneWikipediaContext(legacyHistory), true,
-    'legacy persisted RAG context was not detected');
-  assert.equal(legacyHistory[0].content, question,
-    'legacy persisted RAG context was not removed from conversation history');
-  const attributed = agent._withStandaloneWikipediaAttribution('He was born around 1505.', [{
-    title: 'Sokollu Mehmed Pasha',
-    archiveDate: '2026-07-17',
-    url: 'https://en.wikipedia.org/wiki/Sokollu_Mehmed_Pasha',
-  }], standaloneRun);
-  assert.match(attributed, /Offline Wikipedia — Sokollu Mehmed Pasha \(archive 2026-07-17\): https:\/\/en\.wikipedia\.org\/wiki\/Sokollu_Mehmed_Pasha/,
-    'standalone RAG answers must receive deterministic archive attribution');
-  assert.deepEqual(
-    agent._mergeStandaloneWikipediaReferences(
-      [{ title: 'Initial match', url: 'https://en.wikipedia.org/wiki/Initial', archiveDate: '2026-07-17' }],
-      [
-        { title: 'Initial duplicate', url: 'https://en.wikipedia.org/wiki/Initial', archiveDate: '2026-07-17' },
-        { title: 'Fallback match', url: 'https://en.wikipedia.org/wiki/Fallback', archiveDate: '2026-07-17' },
-      ],
-    ).map(reference => reference.title),
-    ['Initial match', 'Fallback match'],
-    'fallback retrieval must preserve initial attribution sources while deduplicating repeats',
-  );
-
-  const agentSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
-  assert.equal(
-    (agentSource.match(/if \(selectionOnly \|\| standaloneChatRun\) tools = \[\];/g) || []).length,
-    4,
-    'both initial and repeated requests on both agent entry paths must suppress tools',
-  );
-  assert.equal(
-    (agentSource.match(/steps > 0 && !selectionOnly && !standaloneChatRun/g) || []).length,
-    2,
-    'standalone chat must not re-inject page adapters on a follow-up generation step',
-  );
-  assert.match(agentSource, /_beginReadCompleteness[\s\S]*?_isStandaloneChatRun\(runOptions\)[\s\S]*?createReadCompletenessState\(token, false, false, ''\)/,
-    'standalone chat must not inspect the current page for thread-read classification');
-  assert.equal(
-    (agentSource.match(/standaloneWikipediaModelSearchAttempted = true;/g) || []).length,
-    2,
-    'both standalone agent entry paths must bound model-requested local RAG to one retry',
-  );
-  assert.match(agentSource, /standalone_wikipedia_search_requested[\s\S]*?lfm_native_search_markup/,
-    'intercepted local search markup is not reclassified in traces');
-});
-
 test('standalone chat isolates browser context and inherited sidepanel history for every provider', async () => {
   for (const [label, AgentClass, provenanceBuilder] of [
     ['chrome', AgentCh, buildPromptTraceProvenanceCh],
@@ -25204,12 +21455,12 @@ test('standalone chat isolates browser context and inherited sidepanel history f
     assert.doesNotMatch(prompt, /click_ax|get_accessibility_tree|User profile|cookie|paywall/i);
 
     const question = 'What year was Ada Lovelace born?';
-    const enriched = await agent._enrichUserMessageWithCurrentPage(tabId, [], question, null, {
+    const enriched = await agent._enrichUserMessageWithCurrentPage(tabId, [], question, {
       standaloneChat: true,
       providerId: 'openai',
     });
     assert.deepEqual(enriched, { role: 'user', content: question },
-      `${label}: non-WebGPU standalone chat received browser/runtime context`);
+      `${label}: standalone chat received browser/runtime context`);
 
     const persisted = agent._standalonePersistedUserMessage(enriched, { standaloneChat: true });
     const inherited = [
@@ -25238,98 +21489,6 @@ test('standalone chat isolates browser context and inherited sidepanel history f
   }
 });
 
-test('trace export reports local Wikipedia RAG without passage text', () => {
-  const runs = [{
-    run: { runId: 'local-rag', userMessage: 'Who was Sokullu Mehmed Pasha?', model: 'LFM2.5', status: 'done' },
-    events: [{
-      runId: 'local-rag', seq: 1, kind: 'llm_request', data: {
-        messageCount: 2,
-        toolsCount: 0,
-        localWikipediaRag: {
-          attempted: true,
-          status: 'matched',
-          matchCount: 2,
-          archiveDates: ['2026-07-17'],
-          queryNormalized: true,
-        },
-      },
-    }, {
-      runId: 'local-rag', seq: 2, kind: 'note', data: {
-        step: 1,
-        note: 'standalone_wikipedia_search_requested',
-        extra: { queryCount: 2, source: 'lfm_native_search_markup' },
-      },
-    }],
-  }, {
-    run: { runId: 'local-rag-error', userMessage: 'Who was Sokullu Mehmed Pasha?', model: 'LFM2.5', status: 'grounding_unavailable' },
-    events: [{
-      runId: 'local-rag-error', seq: 1, kind: 'note', data: {
-        step: null,
-        note: 'standalone_wikipedia_rag',
-        extra: { attempted: true, status: 'read_error', matchCount: 0, archiveDates: [] },
-      },
-    }],
-  }];
-  for (const [label, serialize] of [['chrome', tracesToMarkdown], ['firefox', tracesToMarkdownFx]]) {
-    const { markdown } = serialize(runs);
-    assert.match(markdown, /0 tools · local Wikipedia RAG matched · 2 matches · archive 2026-07-17/,
-      `${label}: RAG activation and archive date are missing from the trace export`);
-    assert.doesNotMatch(markdown, /passage|Sokullu was born/,
-      `${label}: trace metadata must not persist retrieved passage text`);
-    assert.match(markdown, /On-device model requested local Wikipedia retrieval · 2 queries/,
-      `${label}: intercepted search was not represented as local retrieval`);
-    assert.match(markdown, /local Wikipedia RAG read_error · 0 matches/,
-      `${label}: archive read failure disappeared from the trace export`);
-    assert.doesNotMatch(markdown, /tool_call_start|google\(/,
-      `${label}: intercepted native search markup leaked into the conversation export`);
-  }
-});
-
-test('Wikipedia online success neither populates nor consults offline storage', async () => {
-  for (const [label, runtime] of [['chrome', WikipediaOfflineCh], ['firefox', WikipediaOfflineFx]]) {
-    const online = { success: true, status: 200, data: { pages: [{ title: 'Alan Turing' }] } };
-    let offlineCalls = 0;
-    const result = await runtime.executeWikipediaSkillTool({
-      name: 'search_wikipedia', skillId: 'wikipedia', skillName: 'Wikipedia',
-      sourceType: 'built-in', sourceUrl: 'skills/wikipedia.md',
-    }, { q: 'Alan Turing' }, {
-      executeOnline: async () => online,
-      apocalypseSearch: async () => { offlineCalls += 1; return []; },
-    });
-    assert.equal(result, online, `${label}: online response shape should remain unchanged`);
-    assert.equal(offlineCalls, 0, `${label}: online success should not touch offline archives`);
-  }
-});
-
-test('Wikipedia offline routing surfaces an unreadable archive instead of a false no-match', async () => {
-  for (const [label, runtime] of [['chrome', WikipediaOfflineCh], ['firefox', WikipediaOfflineFx]]) {
-    const result = await runtime.executeWikipediaSkillTool({
-      name: 'search_wikipedia', skillId: 'wikipedia', skillName: 'Wikipedia', sourceType: 'built-in', sourceUrl: 'skills/wikipedia.md',
-    }, { q: 'Alan Turing' }, {
-      executeOnline: async () => ({ success: false, error: 'network unavailable' }),
-      apocalypseSearch: async () => { throw new Error('Installed archive could not be read; re-import it.'); },
-    });
-    assert.equal(result.success, false, `${label}: unreadable archive produced a successful result`);
-    assert.match(result.error, /could not be read/i, `${label}: archive corruption reason was hidden`);
-    assert.doesNotMatch(result.error, /No matching/i, `${label}: archive corruption was misreported as no match`);
-  }
-});
-
-test('Wikipedia offline routing requires exact built-in provenance', async () => {
-  for (const [label, runtime] of [['chrome', WikipediaOfflineCh], ['firefox', WikipediaOfflineFx]]) {
-    let onlineCalls = 0;
-    let offlineCalls = 0;
-    const result = await runtime.executeWikipediaSkillTool({
-      name: 'search_wikipedia', skillId: 'wikipedia', sourceType: 'url', sourceUrl: 'https://example.test/skill.md',
-    }, { q: 'Alan Turing' }, {
-      executeOnline: async () => { onlineCalls += 1; return { success: false, error: 'spoof rejected' }; },
-      apocalypseSearch: async () => { offlineCalls += 1; return []; },
-    });
-    assert.equal(result.error, 'spoof rejected', `${label}: spoofed skill should remain on its declared online path`);
-    assert.equal(onlineCalls, 1, `${label}: spoofed skill was not delegated exactly once`);
-    assert.equal(offlineCalls, 0, `${label}: spoofed skill reached privileged local archives`);
-  }
-});
 test('packaged Open-Meteo and Open Library skills are opt-in with read-only HTTP tools', () => {
   for (const [label, prefix, normalizeSkills, buildPrompt, buildDefs] of [
     ['chrome', 'src/chrome', normalizeCustomSkillsCh, buildCustomSkillsPromptCh, buildSkillToolDefinitionsCh],
@@ -26295,35 +22454,6 @@ test('all locales cover English keys and preserve interpolation placeholders', a
    }
 });
 
-test('Apocalypse Mode translation blocks cover every canonical key with matching placeholders in all 22 locales', async () => {
-  const apocalypseCopy = (await import(
-    pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales/apocalypse-copy.mjs')).href
-  )).default;
-  const apocalypseTranslations = (await import(
-    pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales/apocalypse-translations.mjs')).href
-  )).default;
-  const localeCodes = ['es', 'fr', 'tr', 'zh', 'ru', 'uk', 'ar', 'ja', 'ko', 'id', 'th', 'ms', 'tl', 'pl', 'he', 'hi', 'pt', 'vi', 'bn', 'fa', 'nl', 'de'];
-  const canonicalKeys = Object.keys(apocalypseCopy);
-  const placeholdersIn = (value) => [...new Set(String(value).match(/\{[a-z]+\}/g) || [])].sort();
-
-  for (const locale of localeCodes) {
-    const block = apocalypseTranslations[locale];
-    assert.ok(block, `${locale}: Apocalypse Mode translation block is missing`);
-    const blockKeys = Object.keys(block);
-    assert.deepEqual(blockKeys.sort(), [...canonicalKeys].sort(),
-      `${locale}: Apocalypse Mode key set diverged (${canonicalKeys.length} canonical, ${blockKeys.length} present)`);
-    for (const key of canonicalKeys) {
-      const translated = block[key];
-      assert.equal(typeof translated, 'string', `${locale}: ${key} is not a string`);
-      assert.ok(translated.trim(), `${locale}: ${key} is empty`);
-      const dropped = placeholdersIn(apocalypseCopy[key]).filter(
-        (placeholder) => !placeholdersIn(translated).includes(placeholder),
-      );
-      assert.deepEqual(dropped, [], `${locale}: ${key} dropped placeholder(s): ${dropped.join(', ')}`);
-    }
-  }
-});
-
 test('every permission-gate capability has an English verb and a sidepanel fallback', () => {
   for (const [label, Cap, LABEL, prefix] of [
     ['chrome', CapabilityCh, CAPABILITY_LABEL_CH, 'src/chrome'],
@@ -26339,60 +22469,6 @@ test('every permission-gate capability has an English verb and a sidepanel fallb
     // can never render its raw key on the consent prompt.
     const sidepanel = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.js'), 'utf8');
     assert.match(sidepanel, /CAPABILITY_LABEL\[cap\] \|\| cap/, `${label}: sidepanel permission prompt must fall back to CAPABILITY_LABEL`);
-  }
-});
-
-test('Apocalypse Mode copy is translated instead of inherited from English in every locale', async () => {
-  const requiredTranslatedKeys = [
-    'st.display.apocalypse_mode.desc',
-    'st.display.apocalypse_mode.status.off',
-    'ap.subtitle',
-    'ap.hero.desc',
-    'ap.hero.consent',
-    'ap.vision.auto',
-    'ap.vision.waiting',
-    'ap.models.text.title',
-    'ap.models.vision.title',
-    'ap.models.wikipedia.title',
-    'ap.models.wikipedia.desc',
-    'ap.models.wikipedia.active_desc',
-    'ap.models.wikipedia.finding',
-    'ap.models.wikipedia.starting',
-    'ap.models.wikipedia.required',
-    'ap.models.wikipedia.stopped',
-    'ap.models.wikipedia.unavailable',
-    'ap.models.wikipedia.waiting',
-    'ap.models.wikipedia.started',
-    'ap.models.status.ready',
-    'ap.models.status.downloading',
-    'ap.models.status.paused',
-    'ap.models.status.incomplete',
-    'ap.models.status.disabled',
-    'ap.metric.summary',
-    'ap.catalog.enable',
-    'ap.review_loading',
-    'ap.catalog.desc',
-    'ap.download_background',
-    'ap.include_images',
-    'ap.import.title',
-    'ap.import.desc',
-    'ap.import.button',
-    'ap.file_description',
-    'ap.confirm_install',
-    'ap.confirm_import',
-    'ap.update_policy.automatic_notice',
-  ];
-  for (const browser of ['chrome', 'firefox']) {
-    const localeDir = path.join(ROOT, `src/${browser}/src/ui/locales`);
-    const englishCopy = (await import(pathToFileURL(path.join(localeDir, 'apocalypse-copy.mjs')).href)).default;
-    for (const filename of fs.readdirSync(localeDir).filter(name => name.endsWith('.js') && name !== 'en.js').sort()) {
-      const locale = (await import(pathToFileURL(path.join(localeDir, filename)).href)).default;
-      const changed = Object.keys(englishCopy).filter(key => locale[key] !== englishCopy[key]);
-      assert.ok(changed.length >= Object.keys(englishCopy).length * 0.95, `${browser}/${filename}: Apocalypse Mode still relies on English fallback copy`);
-      for (const key of requiredTranslatedKeys) {
-        assert.notEqual(locale[key], englishCopy[key], `${browser}/${filename}: ${key} is still English fallback copy`);
-      }
-    }
   }
 });
 
@@ -26613,98 +22689,6 @@ test('web landing language picker mirrors the extension flag listbox', () => {
       `web assets: ${flagCode}.svg should be bundled`,
     );
   }
-});
-
-test('webbrain.one homepage showcases a localized Apocalypse Mode readiness stack', () => {
-  const template = fs.readFileSync(path.join(ROOT, 'web/build/template.html'), 'utf8');
-  const generated = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
-  const featuresIndex = template.indexOf('<!-- FEATURES -->');
-  const providersIndex = template.indexOf('<!-- PROVIDERS -->');
-  const apocalypseIndex = template.indexOf('<!-- APOCALYPSE MODE -->');
-  const mcpIndex = template.indexOf('<!-- MCP SERVER -->');
-  const compareIndex = template.indexOf('<!-- COMPARISON TABLE -->');
-  const downloadIndex = template.indexOf('<!-- DOWNLOAD -->');
-  const shareIndex = template.indexOf('<!-- SPREAD THE WORD / OPEN SOURCE -->');
-
-  assert.ok(featuresIndex >= 0
-    && providersIndex > featuresIndex
-    && apocalypseIndex > providersIndex
-    && mcpIndex > apocalypseIndex
-    && compareIndex > mcpIndex
-    && downloadIndex > compareIndex
-    && shareIndex > downloadIndex,
-  'web: homepage should flow from provider choice through offline, WebMCP, comparison, download, and sharing');
-  assert.match(template, /<section class="section apocalypse-section" id="apocalypse" aria-labelledby="apocalypse-title">/,
-    'web: Apocalypse Mode should be a named homepage section');
-  assert.match(template, /\{\{t:apocalypse\.label\}\}[\s\S]*?id="apocalypse-title">\{\{t:apocalypse\.title\}\}[\s\S]*?\{\{t:apocalypse\.heading\}\}[\s\S]*?\{\{t:apocalypse\.description\}\}/,
-    'web: Apocalypse Mode marketing copy should come from locale sources');
-  assert.match(template, /WebGPU powered local LLM[\s\S]*?TEXT MODEL · ON DEVICE[\s\S]*?Vision Model[\s\S]*?Wikipedia/,
-    'web: the offline readiness stack should show text, vision, and knowledge layers');
-  assert.doesNotMatch(template, /LFM2\.5 2\.6B|TEXT · WEBGPU · Q4F16/,
-    'web: homepage readiness copy should describe the capability without model-build jargon');
-  assert.match(template, /\.apocalypse-shell \{[\s\S]*?grid-template-columns:[\s\S]*?\.apocalypse-module\.is-vision[\s\S]*?margin-inline-start:[\s\S]*?\.apocalypse-module\.is-knowledge[\s\S]*?margin-inline-start:/,
-    'web: the readiness stack should keep its asymmetric stepped composition');
-  assert.match(template, /\[dir="rtl"\] \.apocalypse-copy[\s\S]*?\[dir="rtl"\] \.apocalypse-module::before/,
-    'web: Apocalypse Mode spacing and accents should adapt to RTL locales');
-  assert.match(template, /@media \(max-width: 600px\) \{[\s\S]*?\.apocalypse-module-status \{ display: none; \}/,
-    'web: the Apocalypse stack should simplify on small screens');
-  assert.match(template, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.apocalypse-kicker-mark \{ animation: none; \}/,
-    'web: the Apocalypse status signal should honor reduced motion');
-  assert.doesNotMatch(template.match(/\/\* ={64}\n       APOCALYPSE MODE[\s\S]*?\/\* ={64}\n       PROVIDERS/)?.[0] || '', /(?:linear|radial)-gradient\(/,
-    'web: the Apocalypse showcase should use solid surfaces rather than decorative gradients');
-
-  const localeFiles = fs.readdirSync(path.join(ROOT, 'web/build/locales')).filter(file => file.endsWith('.json'));
-  for (const file of localeFiles) {
-    const locale = JSON.parse(fs.readFileSync(path.join(ROOT, 'web/build/locales', file), 'utf8'));
-    for (const key of ['apocalypse.label', 'apocalypse.title', 'apocalypse.heading', 'apocalypse.description']) {
-      assert.equal(typeof locale[key], 'string', `web/${file}: missing ${key}`);
-      assert.ok(locale[key].trim(), `web/${file}: empty ${key}`);
-    }
-  }
-  assert.match(generated, /<section class="section apocalypse-section" id="apocalypse"[\s\S]*?WebBrain, ready when the internet isn’t\.[\s\S]*?WebGPU powered local LLM[\s\S]*?TEXT MODEL · ON DEVICE/,
-    'web build: generated English homepage should contain the complete Apocalypse Mode showcase');
-});
-
-test('public Apocalypse Mode guide and launch essay document the offline boundary', () => {
-  const guide = fs.readFileSync(path.join(ROOT, 'web/docs/apocalypse-mode/index.html'), 'utf8');
-  const chineseGuide = fs.readFileSync(path.join(ROOT, 'web/docs/zh/apocalypse-mode/index.html'), 'utf8');
-  const overview = fs.readFileSync(path.join(ROOT, 'web/docs/index.html'), 'utf8');
-  const blogSource = fs.readFileSync(path.join(ROOT, 'web/blog/posts/why-we-built-apocalypse-mode.md'), 'utf8');
-  const blogPage = fs.readFileSync(path.join(ROOT, 'web/blog/why-we-built-apocalypse-mode/index.html'), 'utf8');
-  const sitemap = fs.readFileSync(path.join(ROOT, 'web/sitemap.xml'), 'utf8');
-
-  assert.match(guide, /What “offline” means[\s\S]*?You need an internet connection for the first download[\s\S]*?run locally from the browser profile/,
-    'docs: the guide should distinguish preparation downloads from offline operation');
-  assert.match(guide, /Chromium, with compatible WebGPU hardware[\s\S]*?Firefox[\s\S]*?Chromium-only WebGPU text and vision download stack is not shown/,
-    'docs: the guide should state the browser-specific WebGPU boundary');
-  assert.match(guide, /LiquidAI\/LFM2\.5-2\.6B-ONNX[\s\S]*?does not silently change the provider/,
-    'docs: the local text model should be named without implying global provider selection');
-  assert.match(guide, /Wikipedia reader[\s\S]*?Emergency Box[\s\S]*?Medical guidance becomes outdated/,
-    'docs: the offline readers and medical-content warning should be covered');
-  assert.match(guide, /Universal Basic Lexicon[\s\S]*?13 essential health[\s\S]*?0\.004 GB built in \+ ≈ 0\.06 GB download[\s\S]*?203-resource catalog[\s\S]*?≈ 12\.1 GB download[\s\S]*?storage figures are estimates/i,
-    'docs: the English Emergency Box guide should document basic and full estimated sizes');
-  assert.match(chineseGuide, /通用基础词汇表[\s\S]*?13 份最重要[\s\S]*?内置 0\.004 GB \+ 下载约 0\.06 GB[\s\S]*?203 项资源[\s\S]*?下载约 12\.1 GB[\s\S]*?存储数字是估算值/,
-    'docs: the Chinese Emergency Box guide should document basic and full estimated sizes');
-  assert.match(guide, /1,756 ISO languages[\s\S]*?2,064 language varieties[\s\S]*?Kiwix Wiktionary[\s\S]*?FreeDict[\s\S]*?118 English and 11 Spanish textbooks/,
-    'docs: the English guide should document communication coverage, multilingual OpenStax, and deeper sources');
-  assert.match(chineseGuide, /1,756 种 ISO 语言[\s\S]*?2,064 个语言变体[\s\S]*?Kiwix Wiktionary[\s\S]*?FreeDict[\s\S]*?118 本英文和 11 本西班牙文/,
-    'docs: the Chinese guide should document communication coverage, multilingual OpenStax, and deeper sources');
-  assert.match(overview, /href="\/docs\/apocalypse-mode\/"[\s\S]*?Build your offline kit/,
-    'docs: the overview should link to the Apocalypse Mode guide');
-  for (const page of ['index.html', 'settings/index.html', 'providers/index.html', 'safety/index.html', 'formats/index.html', 'mcp/index.html', 'lm-studio/index.html', 'ollama/index.html']) {
-    const html = fs.readFileSync(path.join(ROOT, 'web/docs', page), 'utf8');
-    assert.match(html, /<a href="\/docs\/apocalypse-mode\/"[^>]*>Apocalypse Mode<\/a>/,
-      `docs/${page}: shared guide navigation should expose Apocalypse Mode`);
-  }
-  assert.match(sitemap, /<loc>https:\/\/webbrain\.one\/docs\/apocalypse-mode\/<\/loc>/,
-    'web: the Apocalypse Mode guide should be in the generated sitemap');
-
-  assert.match(blogSource, /disaster[\s\S]*?war[\s\S]*?WebGPU[\s\S]*?Once those resources are downloaded, the core is self-contained/,
-    'blog: the essay should connect resilience to the self-contained local stack');
-  assert.match(blogSource, /Offline does not mean invulnerable[\s\S]*?Download it while you can[\s\S]*?Keep WebBrain in your browser\. Keep it ready\./,
-    'blog: the essay should pair its call to action with honest limitations');
-  assert.match(blogPage, /<link rel="canonical" href="https:\/\/webbrain\.one\/blog\/why-we-built-apocalypse-mode">/,
-    'blog: the generator should publish the Apocalypse Mode essay with canonical metadata');
 });
 
 test('homepage does not promote the unmerged Ollama launch handoff', () => {
@@ -29433,98 +25417,9 @@ test('sidepanel subscribe error card clears DOM without HTML reinterpretation', 
     assert.notEqual(runCompleteStart, -1, `${label}: run_complete handler missing`);
     assert.notEqual(runCompleteEnd, -1, `${label}: run_complete boundary missing`);
     const runCompleteBody = panel.slice(runCompleteStart, runCompleteEnd);
-    assert.match(runCompleteBody, /else if \(!renderCostAllowanceError\(textEl, data\.finalContent,[\s\S]*?submittedTurnDurable: data\.submittedTurnDurable,[\s\S]*?&& !renderSubscribeError\(textEl, data\.finalContent\)\) textEl\.innerHTML = formatMarkdown\(data\.finalContent\);/, `${label}: restored run finals should render durability-aware allowance cards before markdown fallback`);
+    assert.match(runCompleteBody, /else if \(!renderSubscribeError\(textEl, data\.finalContent\)\) textEl\.innerHTML = formatMarkdown\(data\.finalContent\);/, `${label}: restored run finals should render subscribe cards before markdown fallback`);
     assert.match(styles, /\.subscribe-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/, `${label}: subscribe actions should wrap in narrow panels`);
     assert.match(styles, /\.subscribe-resume-btn\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*1px solid var\(--accent\);/, `${label}: resume action should use secondary styling`);
-  }
-});
-
-test('sidepanel cloud cost allowance stop offers a persisted one-click $10 bump', () => {
-  const totalError = 'Error: Cloud cost allowance reached: total cloud/router usage is $10.02 against the $10.00 limit. Stopping before further cloud/router model calls. Increase or reset the allowance in Settings.';
-  const sessionError = 'Cloud cost allowance reached: this session is $4.25 against the $4.00 limit. Stopping before further cloud/router model calls. Increase or reset the allowance in Settings.';
-
-  for (const [label, panelRel, styleRel, settingsRel, backgroundRel, reconnectRel, storageApi] of [
-    ['chrome', 'src/chrome/src/ui/sidepanel.js', 'src/chrome/styles/sidepanel.css', 'src/chrome/src/ui/settings.js', 'src/chrome/src/background.js', 'src/chrome/src/run-reconnect.js', 'chrome'],
-    ['firefox', 'src/firefox/src/ui/sidepanel.js', 'src/firefox/styles/sidepanel.css', 'src/firefox/src/ui/settings.js', 'src/firefox/src/background.js', 'src/firefox/src/run-reconnect.js', 'browser'],
-  ]) {
-    const panel = fs.readFileSync(path.join(ROOT, panelRel), 'utf8');
-    const styles = fs.readFileSync(path.join(ROOT, styleRel), 'utf8');
-    const settings = fs.readFileSync(path.join(ROOT, settingsRel), 'utf8');
-    const background = fs.readFileSync(path.join(ROOT, backgroundRel), 'utf8');
-    const reconnect = fs.readFileSync(path.join(ROOT, reconnectRel), 'utf8');
-
-    const constantsStart = panel.indexOf('const COST_ALLOWANCE_ERROR_RE =');
-    const parserStart = panel.indexOf('function parseCostAllowanceError(content) {', constantsStart);
-    const parserEnd = panel.indexOf('\n}\n\nfunction formatCostAllowanceUsd', parserStart);
-    assert.notEqual(constantsStart, -1, `${label}: cost allowance matcher missing`);
-    assert.notEqual(parserStart, -1, `${label}: cost allowance parser missing`);
-    assert.notEqual(parserEnd, -1, `${label}: cost allowance parser boundary missing`);
-    const declarations = panel.slice(constantsStart, parserStart);
-    const parserSource = panel.slice(parserStart, parserEnd + 2);
-    const parseCostAllowanceError = Function(
-      `${declarations}\n${parserSource}\nreturn parseCostAllowanceError;`,
-    )();
-
-    assert.deepEqual(
-      parseCostAllowanceError(totalError),
-      {
-        scope: 'total',
-        limitUsd: 10,
-        message: 'Error: Cloud cost allowance reached: total cloud/router usage is $10.02 against the $10.00 limit. Stopping before further cloud/router model calls.',
-      },
-      `${label}: total allowance error should expose its active limit without the Settings-only instruction`,
-    );
-    assert.equal(parseCostAllowanceError(sessionError)?.scope, 'session', `${label}: session allowance errors should target the session guard`);
-    assert.equal(parseCostAllowanceError(sessionError)?.limitUsd, 4, `${label}: session allowance limit should parse as a number`);
-    assert.equal(parseCostAllowanceError('ordinary provider failure'), null, `${label}: unrelated failures should keep normal rendering`);
-
-    const bindStart = panel.indexOf('function bindCostAllowanceButton(btn) {');
-    const bindEnd = panel.indexOf('\n}\n\nfunction parseSubscribeError', bindStart);
-    const bindBody = panel.slice(bindStart, bindEnd + 2);
-    assert.match(bindBody, new RegExp(`await ${storageApi}\\.storage\\.local\\.get\\(\\[storageKey\\]\\)`), `${label}: bump should read the currently persisted limit`);
-    assert.match(bindBody, /currentLimit \+ COST_ALLOWANCE_BUMP_USD/, `${label}: bump should add exactly $10 to the current limit`);
-    assert.match(bindBody, new RegExp(`await ${storageApi}\\.storage\\.local\\.set\\(\\{ \\[storageKey\\]: nextLimit \\}\\)`), `${label}: bump should persist the raised limit`);
-    assert.match(bindBody, /querySelector\('\.cost-allowance-retry-btn, \.cost-allowance-continue-btn'\)/, `${label}: successful bump should reveal the durability-selected resume action`);
-
-    const renderStart = panel.indexOf("function renderCostAllowanceError(textEl, content, resumeMode = '', resumeOptions = {}) {");
-    const renderEnd = panel.indexOf('\n}\n\nfunction addErrorRetryButton', renderStart);
-    const renderBody = panel.slice(renderStart, renderEnd + 2);
-    assert.match(renderBody, /textEl\.replaceChildren\(\);/, `${label}: allowance card should clear via DOM APIs`);
-    assert.match(renderBody, /msg\.textContent = parsed\.message;/, `${label}: allowance message should remain textContent`);
-    assert.match(renderBody, /bumpBtn\.textContent = '\+ \$10';/, `${label}: allowance card should expose the one-click $10 action`);
-    assert.match(renderBody, /bumpBtn\.setAttribute\('aria-label', bumpBtn\.title\);/, `${label}: compact $10 action should keep a localized accessible label`);
-    assert.match(renderBody, /continueBtn\.hidden = true;/, `${label}: continuation should stay gated until persistence succeeds`);
-    assert.match(renderBody, /const canContinue = resumeOptions\?\.submittedTurnDurable === true;[\s\S]*?const requiresRetry = !canContinue;/, `${label}: only explicit durable-turn proof should enable continuation`);
-    assert.match(renderBody, /requiresRetry && resumeOptions\?\.retryPayload\?\.text[\s\S]*?configureRetryButton\(retryBtn, resumeOptions\.retryPayload\)/, `${label}: pre-turn allowance stops should retain and use the original retry payload`);
-    assert.match(renderBody, /else if \(canContinue\)/, `${label}: unknown durability should withhold continuation`);
-    assert.match(renderBody, /else if \(canContinue\) \{[\s\S]*?resumeAfterSubscription\(continueBtn\)/, `${label}: continuation should be offered only for durable turns`);
-    assert.match(panel, /rebindCostAllowanceButtons\(\);/, `${label}: restored chats should rebind allowance controls`);
-    assert.match(panel, /!parseSubscribeError\(content\) && !parseCostAllowanceError\(content\)/, `${label}: allowance stops should not count as successful Ask completions`);
-    assert.match(panel, /renderCostAllowanceError\(textEl, res\.content, modeForSend, \{[\s\S]*?submittedTurnDurable: res\.submittedTurnDurable,[\s\S]*?retryPayload,/, `${label}: returned pre-turn stops should render with request-scoped durability and retry state`);
-    assert.match(panel, /function renderAgentErrorUpdate[\s\S]*?if \(parseCostAllowanceError\(message\)\) return;/, `${label}: pre-terminal error events should defer allowance card routing`);
-    assert.match(panel, /function renderAssistantTextUpdate[\s\S]*?if \(parseCostAllowanceError\(content\)\) \{[\s\S]*?textEl\.replaceChildren\(\);[\s\S]*?return;/, `${label}: streamed allowance text should stay empty until terminal durability is known`);
-    assert.match(panel, /if \(textEl && parseCostAllowanceError\(res\.content\)\) \{[\s\S]*?renderCostAllowanceError\(textEl, res\.content, modeForSend,[\s\S]*?\} else if \(textEl && getStreamedAssistantText\(textEl\) === String\(res\.content\)\)/, `${label}: terminal allowance content should render its card before duplicate-stream formatting`);
-    assert.match(panel, /renderCostAllowanceError\(textEl, res\.content, modeForSend, \{[\s\S]*?submittedTurnDurable: res\.submittedTurnDurable,[\s\S]*?\}\)[\s\S]*?&& !renderSubscribeError/, `${label}: returned continuation stops should render with terminal durability proof`);
-    assert.match(panel, /data: event\.type === 'run_complete'[\s\S]*?submittedTurnDurable: state\?\.submittedTurnDurable === true,[\s\S]*?: event\.data,/, `${label}: replayed terminal events should be enriched with current durability proof before rendering`);
-    assert.match(panel, /const restoredAllowanceCardMissing = !!parseCostAllowanceError\(runUi\?\.finalContent\)[\s\S]*?\|\| restoredAllowanceCardMissing[\s\S]*?restoredAllowanceCardMissing \? \{\} : \{ seq: runUi\.seq \}/, `${label}: terminal restoration should rebuild a deferred allowance card even after replaying its final text sequence`);
-    assert.match(panel, /type: 'run_complete',[\s\S]*?submittedTurnDurable: state\?\.submittedTurnDurable === true,/, `${label}: restored terminal cards should retain durable-turn proof`);
-    assert.match(panel, /case 'run_complete':[\s\S]*?if \(textEl && parseCostAllowanceError\(data\.finalContent\)\)[\s\S]*?renderCostAllowanceError\(textEl, data\.finalContent,[\s\S]*?\} else if \(textEl && !textEl\.textContent\.trim\(\)\)/, `${label}: restored terminal allowance cards should render before the empty-text fallback guard`);
-    assert.match(panel, /function retryPayloadForRunAssistant\(assistantEl\)[\s\S]*?getComposerHistoryTextFromMessage\(userEl\)[\s\S]*?dataset\.retryAgentPrompt[\s\S]*?displayText,[\s\S]*?attachmentCount:/, `${label}: restored non-durable stops should reconstruct hidden-prompt retry routing from persisted chat metadata`);
-    assert.match(panel, /assistantEl\.dataset\.retryApiMutationsAllowed = apiMutationsAllowedForSend \? 'true' : 'false';[\s\S]*?assistantEl\.dataset\.retryAttachmentCount = String\(attachmentsForSend\.length\);[\s\S]*?if \(agentPrompt\) assistantEl\.dataset\.retryAgentPrompt = agentPrompt;/, `${label}: fresh chats should persist retry metadata and hidden prompts needed after a panel reload`);
-    assert.match(panel, /activeRetryPayloadForRequest\(eventTabId, msg\.requestId\)[\s\S]*?\|\| retryPayloadForRunAssistant\(currentAssistantEl\)/, `${label}: restored terminal cards should use the reconstructed retry payload when live state is gone`);
-    assert.match(panel, /const attachmentCount = Number\.isFinite\(Number\(retryPayload\.attachmentCount\)\)[\s\S]*?btn\.dataset\.retryAttachmentCount = String\(attachmentCount\);/, `${label}: reconstructed retries should preserve missing-attachment warnings`);
-    assert.match(background, /async function sendAgentRunComplete\(tabId, snapshot = null\)[\s\S]*?snapshot\.kind === 'continue'[\s\S]*?agent\.hasDurableSubmittedTurn\([\s\S]*?submittedTurnDurable,/, `${label}: terminal UI events should treat continuations as resumable and carry durable-turn proof`);
-    assert.match(background, /const requestedRunUi = runUiSnapshotForRequest\(runUiSnapshot, requestedRequestId\);[\s\S]*?const durabilityRequestId = requestedRequestId \|\| String\(requestedRunUi\?\.requestId \|\| ''\);[\s\S]*?requestedRunUi\?\.kind === 'continue'[\s\S]*?hasDurableSubmittedTurn\(tabId, durabilityRequestId\)/, `${label}: run probes should preserve continuation and restored-chat durability proof`);
-    assert.match(reconnect, /submittedTurnDurable: state\?\.submittedTurnDurable === true,/, `${label}: detached terminal responses should preserve durable-turn proof`);
-    assert.match(reconnect, /if \(sameSnapshot && TERMINAL_RUN_STATUSES\.has\(snapshot\.status\)\)[\s\S]*?if \(requestMatches\(detachedError\?\.requestId, requestId\)\)/, `${label}: terminal journals should win over duplicate detached error records`);
-
-    assert.match(styles, /\.cost-allowance-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/, `${label}: allowance actions should wrap in narrow panels`);
-    assert.match(styles, /\.cost-allowance-bump-btn\s*\{[\s\S]*?background:\s*var\(--accent\);/, `${label}: $10 action should use the primary accent treatment`);
-    assert.match(styles, /\.cost-allowance-retry-btn,[\s\S]*?\.cost-allowance-continue-btn\s*\{[\s\S]*?background:\s*transparent;/, `${label}: retry and continuation should share secondary styling`);
-    assert.match(styles, /\.cost-allowance-continue-btn\s*\{[\s\S]*?background:\s*transparent;/, `${label}: continuation should be visually secondary`);
-
-    assert.match(settings, /costSessionLimitInput\?\.addEventListener\('change',[\s\S]*?storage\.local\.set\(\{ costAllowanceSessionUsd: value \}\)/, `${label}: session allowance edits should autosave on committed changes`);
-    assert.match(settings, /costTotalLimitInput\?\.addEventListener\('change',[\s\S]*?storage\.local\.set\(\{ costAllowanceTotalUsd: value \}\)/, `${label}: total allowance edits should autosave on committed changes`);
   }
 });
 
@@ -29583,7 +25478,7 @@ test('sidepanel suppresses streamed raw tool-call text before rendering tool ste
     assert.match(panel, /async function flushRenderedTabChat\(\{ allowHidden = false \} = \{\}\)[\s\S]*?flushPendingStreamedAssistantMarkdownRenders\(\);[\s\S]*?const html = messagesEl\.innerHTML;[\s\S]*?await persistTabChat\(tabId, html, \{ allowHidden \}\);/, `${label}: tab switches and visibility handoffs should render a queued frame before serializing its last acknowledged stream chunk`);
     assert.doesNotMatch(panel, /const nextText = textEl\.textContent \+ data\.content;/, `${label}: rendered Markdown must never become the source for later deltas`);
     assert.match(panel, /function formatMarkdown\(text, options = \{\}\)[\s\S]*?const enhance = options\.enhance !== false;[\s\S]*?const highlighted = enhance \? highlightCode\(block\.code, block\.lang\) : escapeHtml\(block\.code\);[\s\S]*?if \(enhance\) scheduleMathRender\(\);[\s\S]*?if \(enhance && codeBlocks\.length > 0\)/, `${label}: syntax highlighting and interactive Markdown enhancements should wait for the terminal render`);
-    assert.match(panel, /case 'run_complete':[\s\S]*?const streamedText = getStreamedAssistantText\(textEl\);[\s\S]*?const hasStreamedText = hasStreamedAssistantText\(textEl\);[\s\S]*?const visibleStreamedText = streamedText[\s\S]*?\|\| \(hasStreamedText \? textEl\?\.innerText \|\| textEl\?\.textContent \|\| '' : ''\);[\s\S]*?else if \(textEl && hasStreamedText\)[\s\S]*?const terminalContent = data\.status === 'stopped' \|\| data\.status === 'cancelled'[\s\S]*?\? visibleStreamedText[\s\S]*?renderAssistantTextUpdate\(currentAssistantEl, terminalContent, \{[\s\S]*?replace: terminalContent !== streamedText,[\s\S]*?else if \(textEl && !textEl\.textContent\.trim\(\)\)/, `${label}: restored/background streams should receive one enhanced authoritative terminal render while stopped runs preserve visible partial text`);
+    assert.match(panel, /case 'run_complete':[\s\S]*?const streamedText = getStreamedAssistantText\(textEl\);[\s\S]*?const hasStreamedText = hasStreamedAssistantText\(textEl\);[\s\S]*?const visibleStreamedText = streamedText[\s\S]*?\|\| \(hasStreamedText \? textEl\?\.innerText \|\| textEl\?\.textContent \|\| '' : ''\);[\s\S]*?if \(textEl && hasStreamedText\)[\s\S]*?const terminalContent = data\.status === 'stopped' \|\| data\.status === 'cancelled'[\s\S]*?\? visibleStreamedText[\s\S]*?renderAssistantTextUpdate\(currentAssistantEl, terminalContent, \{[\s\S]*?replace: terminalContent !== streamedText,[\s\S]*?else if \(textEl && !textEl\.textContent\.trim\(\)\)/, `${label}: restored/background streams should receive one enhanced authoritative terminal render while stopped runs preserve visible partial text`);
     assert.doesNotMatch(panel, /dataset\.streamedAssistantText\s*=/, `${label}: streamed text must not be serialized as a data attribute`);
     assert.match(panel, /getStreamedAssistantText\(textEl\) === String\(res\.content\)[\s\S]*?renderAssistantTextUpdate\(assistantEl, res\.content\);/, `${label}: completed streams should format the visible final text in place`);
     assert.match(panel, /clearAssistantTextStreamState\(assistantEl\);/, `${label}: run completion should clear transient streamed-text state before persistence`);
@@ -29637,7 +25532,6 @@ test('verbose terminal rendering does not append a normalized streamed answer tw
     const context = {
       verboseMode: true,
       isStoppedByUserStatus: () => false,
-      parseCostAllowanceError: () => null,
       renderSubscribeError: () => false,
       getStreamedAssistantText: textEl => streamedTextByEl.get(textEl) || '',
       hasStreamedAssistantText: textEl => streamedTextByEl.has(textEl)
@@ -29803,8 +25697,6 @@ test('settings organizes General Basic and Advanced controls while keeping profi
     const basicIds = [
       'select-language',
       'select-auto-screenshot',
-      'input-cost-session-limit',
-      'input-cost-total-limit',
     ];
     const basicIndexes = basicIds.map((id) => displayPanel.indexOf(`id="${id}"`));
     basicIndexes.forEach((index, position) => {
@@ -29814,14 +25706,11 @@ test('settings organizes General Basic and Advanced controls while keeping profi
     const requestedTailIds = [
       'range-request-timeout',
       'select-auto-screenshot',
-      'input-cost-session-limit',
-      'input-cost-total-limit',
-      'toggle-help-improve',
     ];
     const requestedTailIndexes = requestedTailIds.map((id) => displayPanel.indexOf(`id="${id}"`));
     assert.ok(
       requestedTailIndexes.every((index, position) => position === 0 || requestedTailIndexes[position - 1] < index),
-      `${label}: Auto screenshot and both Cloud allowances should follow LLM request timeout and precede Help Improve WebBrain`,
+      `${label}: Auto screenshot should follow the LLM request timeout`,
     );
 
     for (const id of [
@@ -29855,7 +25744,6 @@ test('settings organizes General Basic and Advanced controls while keeping profi
       'select-plan-before-act-mode',
       'range-max-steps',
       'range-request-timeout',
-      'toggle-help-improve',
     ]) {
       const index = displayPanel.indexOf(`id="${id}"`);
       assert.notEqual(index, -1, `${label}: ${id} should remain visible in General`);
@@ -29984,41 +25872,6 @@ test('all locales explain CapSolver auto-enablement and key validation', async (
         `${browser}/${filename}: invalid-key result should state the required prefix`,
       );
     }
-  }
-});
-
-test('Help Improve WebBrain is default-on, persisted, and reloads Cloud request config', () => {
-  for (const [label, prefix, runtime] of [
-    ['chrome', 'src/chrome', 'chrome'],
-    ['firefox', 'src/firefox', 'browser'],
-  ]) {
-    const html = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.html'), 'utf8');
-    const settings = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.js'), 'utf8');
-    const locale = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/locales/en.js'), 'utf8');
-    const localeDir = path.join(ROOT, prefix, 'src/ui/locales');
-    const manager = fs.readFileSync(path.join(ROOT, prefix, 'src/providers/manager.js'), 'utf8');
-    const background = fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8');
-
-    assert.match(html, /id="toggle-help-improve" checked/, `${label}: Help Improve should be on by default in General`);
-    const helpImproveIndex = html.indexOf('id="toggle-help-improve"');
-    const requestTimeoutIndex = html.indexOf('id="range-request-timeout"');
-    const advancedIndex = html.indexOf('<details class="advanced-settings">');
-    assert.ok(requestTimeoutIndex > -1 && requestTimeoutIndex < helpImproveIndex && helpImproveIndex < advancedIndex, `${label}: Help Improve should be the last visible General setting above Advanced`);
-    assert.match(settings, /helpImproveToggle\.checked = stored\.helpImproveWebBrain !== false/, `${label}: missing default-on storage hydration`);
-    assert.match(settings, new RegExp(`${runtime}\\.storage\\.local\\.set\\(\\{ helpImproveWebBrain: helpImproveToggle\\.checked \\}\\)`), `${label}: setting should persist`);
-    assert.match(locale, /'st\.display\.help_improve\.label': 'Help Improve WebBrain'/, `${label}: setting label missing`);
-    assert.match(locale, /On by default[^']*<u>Local-model and bring-your-own API requests are never collected by WebBrain\.<\/u>/, `${label}: setting disclosure should explain and emphasize its default and scope`);
-    assert.match(locale, /Turn it off in General to exclude future Cloud interactions/, `${label}: provider disclosure should point to the visible General setting`);
-    for (const localeFile of fs.readdirSync(localeDir).filter((name) => name.endsWith('.js'))) {
-      const translatedLocale = fs.readFileSync(path.join(localeDir, localeFile), 'utf8');
-      assert.match(translatedLocale, /["']st\.display\.help_improve\.desc_html["']\s*:\s*["'][^\n]*<u>[^<]+<\/u>/, `${label}/${localeFile}: translated local/BYO exclusion should be underlined`);
-      const providerDisclosure = translatedLocale.match(/["']st\.providers\.webbrain_data_use\.body["']\s*:[^\n]+/)?.[0] || '';
-      assert.doesNotMatch(providerDisclosure, /[→←]/, `${label}/${localeFile}: provider disclosure should no longer point to Advanced`);
-      assert.match(providerDisclosure, /<u>[^<]+<\/u>/, `${label}/${localeFile}: provider local/BYO exclusion should also be underlined`);
-    }
-    assert.match(manager, /const HELP_IMPROVE_WEBBRAIN_KEY = 'helpImproveWebBrain';/, `${label}: provider manager setting key missing`);
-    assert.match(manager, /helpImproveWebBrain = data\[HELP_IMPROVE_WEBBRAIN_KEY\] !== false/, `${label}: Cloud provider config should default improvement use on`);
-    assert.match(background, /changes\.providers \|\| changes\.activeProvider \|\| changes\.helpImproveWebBrain/, `${label}: Cloud provider config should reload after opt-out changes`);
   }
 });
 
@@ -33822,7 +29675,6 @@ test('selection shortcut grounding metadata suppresses competing page images', a
       999,
       [],
       prompt,
-      null,
       { sourceGrounding },
     );
     assert.equal(typeof grounded.content, 'string', `${label}: selection-only content should stay text-only`);
@@ -33870,7 +29722,6 @@ test('standalone chat runs omit active extension-page context and screenshots', 
       1001,
       [],
       'Answer without using a browser page.',
-      null,
       { standaloneChat: true },
     );
     assert.equal(typeof enriched.content, 'string', `${label}: standalone chat should remain text-only`);
@@ -33884,88 +29735,6 @@ test('standalone chat runs omit active extension-page context and screenshots', 
     assert.equal(visionProviderCalls, 0, `${label}: standalone enrichment invoked a vision provider`);
     assert.equal(screenshotCalls, 0, `${label}: standalone enrichment captured the chat UI`);
   }
-});
-
-test('standalone WebGPU control uses a per-run provider without changing global selection', async () => {
-  const markup = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/sidepanel.html'), 'utf8');
-  const panel = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/sidepanel.js'), 'utf8');
-  const css = fs.readFileSync(path.join(ROOT, 'src/chrome/styles/sidepanel.css'), 'utf8');
-  const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
-  const agentSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
-
-  assert.match(markup, /id="btn-webgpu-standalone"[\s\S]*?☢/, 'standalone header is missing the nuclear WebGPU control');
-  assert.match(css, /\.standalone-webgpu-toggle\.active\s*\{[\s\S]*?background: var\(--success\)/,
-    'active WebGPU control should turn green');
-  assert.match(panel, /standaloneWebgpuBtn\.hidden = !isStandaloneWindow/,
-    'the WebGPU control must stay out of the ordinary side panel');
-  assert.match(panel, /providerSelect\.disabled = standaloneWebgpuActive[\s\S]*?providerPickerBtn\.disabled = standaloneWebgpuActive/,
-    'the ordinary provider picker should lock while the WebGPU override is active');
-  assert.match(panel, /standaloneWebgpuBtn\.disabled = !standaloneWebgpuEnabled/,
-    'the nuclear control should be clickable whenever Apocalypse Mode is enabled');
-  assert.match(panel, /function standaloneWebgpuRunPayload\(\) \{\s*return isStandaloneWindow && standaloneWebgpuActive \? \{ providerId: 'webgpu' \} : \{\};/,
-    'standalone WebGPU state is not carried as a run-scoped override');
-  assert.match(background, /case 'get_providers': \{[\s\S]*?delete providers\.webgpu/,
-    'WebGPU must never appear in the ordinary provider picker');
-  assert.match(background, /case 'set_active_provider': \{[\s\S]*?msg\.providerId === 'webgpu'[\s\S]*?nuclear WebGPU control/,
-    'WebGPU must not become the globally active provider');
-  assert.match(background, /case 'get_standalone_webgpu_status': \{[\s\S]*?enabled: apocalypse\?\.enabled === true[\s\S]*?ready:/,
-    'the standalone control should distinguish Apocalypse enablement from model readiness');
-  assert.match(background, /type: 'apocalypse-mode-state'[\s\S]*?enabled: snapshot\.enabled === true/,
-    'open standalone windows should be notified when Apocalypse Mode changes');
-  assert.match(agentSource, /this\._runProviderOverrides = new Map\(\)/);
-  assert.match(agentSource, /getProvider\(overrideId\)/);
-
-  const globalProvider = { name: 'global' };
-  const webgpuProvider = { name: 'webgpu' };
-  const manager = {
-    getActive: () => globalProvider,
-    getProvider: id => id === 'webgpu' ? webgpuProvider : null,
-  };
-  const agent = new AgentCh(manager);
-  agent._runProviderOverrides.set(71, 'webgpu');
-  assert.equal(agent._activeProvider(71), webgpuProvider, 'the standalone tab should resolve WebGPU');
-  assert.equal(agent._activeProvider(72), globalProvider, 'another tab should keep the global provider');
-
-  const helperStart = background.indexOf('async function standaloneRunProviderId(msg) {');
-  const helperEnd = background.indexOf('\n}', helperStart) + 2;
-  assert.ok(helperStart >= 0 && helperEnd > helperStart, 'standalone WebGPU background guard is missing');
-  const apocalypseState = { enabled: true };
-  const webgpuState = { ready: true };
-  const standaloneRunProviderId = vm.runInNewContext(
-    `(${background.slice(helperStart, helperEnd)})`,
-    {
-      WEBGPU_MODEL_ID: 'LiquidAI/LFM2.5-2.6B-ONNX',
-      apocalypseController: {
-        handle: async () => ({ enabled: apocalypseState.enabled }),
-      },
-      providerManager: {
-        getAll: () => ({
-          webgpu: { model: 'LiquidAI/LFM2.5-2.6B-ONNX' },
-        }),
-        getWebgpuDownloadStatus: async () => ({ ready: webgpuState.ready }),
-      },
-    },
-  );
-  assert.equal(await standaloneRunProviderId({}), null);
-  await assert.rejects(
-    standaloneRunProviderId({ providerId: 'webgpu', standaloneChat: false }),
-    /standalone chat control/,
-  );
-  assert.equal(
-    await standaloneRunProviderId({ providerId: 'webgpu', standaloneChat: true }),
-    'webgpu',
-  );
-  apocalypseState.enabled = false;
-  await assert.rejects(
-    standaloneRunProviderId({ providerId: 'webgpu', standaloneChat: true }),
-    /Enable Apocalypse Mode/,
-  );
-  apocalypseState.enabled = true;
-  webgpuState.ready = false;
-  await assert.rejects(
-    standaloneRunProviderId({ providerId: 'webgpu', standaloneChat: true }),
-    /Download LFM2\.5 2\.6B/,
-  );
 });
 
 test('standalone window transport, sizing, and translations are mirrored', async () => {
@@ -34119,7 +29888,6 @@ test('selection-only model requests exclude prior conversation context', async (
         enriched,
         _onUpdate,
         _mode,
-        _costState,
         _runId,
         _tabInfo,
         gateRunOptions,
@@ -34144,8 +29912,6 @@ test('selection-only model requests exclude prior conversation context', async (
       agent._startTraceRun = async () => null;
       agent._endTraceRun = () => {};
       agent._persist = () => {};
-      agent._checkCostAllowance = async () => null;
-      agent._recordCostUsage = async () => null;
 
       const prompt = buildSelectionPrompt('authoritative selected words', 'summarize');
       const runOptions = { sourceGrounding };
@@ -34327,8 +30093,6 @@ test('selection-only response-only phases carry the scope note', async () => {
       getActive: () => provider,
       getVisionProvider: async () => null,
     });
-    agent._checkCostAllowance = async () => null;
-    agent._recordCostUsage = async () => null;
     const selection = { role: 'user', content: 'selection turn' };
     const messages = [
       { role: 'system', content: 'system rules' },
@@ -34337,7 +30101,7 @@ test('selection-only response-only phases carry the scope note', async () => {
     ];
 
     const scoped = await agent._generateContextOnlyResponse(
-      1, messages, provider, agent._newCostRunState(), null,
+      1, messages, provider, null,
       {
         phase: 'response_only',
         step: 1,
@@ -34351,7 +30115,7 @@ test('selection-only response-only phases carry the scope note', async () => {
     assert.doesNotMatch(JSON.stringify(requests[0]), /PRIOR SECRET/, `${label}: response-only phase leaked pre-selection history`);
 
     await agent._generateContextOnlyResponse(
-      1, messages, provider, agent._newCostRunState(), null,
+      1, messages, provider, null,
       { phase: 'response_only', step: 1 },
     );
     assert.doesNotMatch(String(requests[1][0]?.content), /only covers their selected text/, `${label}: ordinary response-only turn should not carry the scope note`);
@@ -34413,8 +30177,6 @@ test('ordinary attachments leave selection grounding and remain usable', async (
     };
     agent._startTraceRun = async () => null;
     agent._endTraceRun = () => {};
-    agent._checkCostAllowance = async () => null;
-    agent._recordCostUsage = async () => null;
 
     const updates = [];
     const final = await agent.processMessage(
@@ -34498,8 +30260,6 @@ test('independent cloud, scheduled, and workflow runs clear inherited selection 
       agent._preactivateNyTimesSkillForRun = () => {};
       agent._startTraceRun = async () => null;
       agent._endTraceRun = () => {};
-      agent._checkCostAllowance = async () => null;
-      agent._recordCostUsage = async () => null;
 
       const final = await agent.processMessage(
         tabId,
@@ -34676,8 +30436,6 @@ test('selection-only overflow trims only the isolated model view', async () => {
       agent._startTraceRun = async () => null;
       agent._endTraceRun = () => {};
       agent._persist = () => {};
-      agent._checkCostAllowance = async () => null;
-      agent._recordCostUsage = async () => null;
 
       const selectedText = `${'A'.repeat(7000)}SELECTION_TAIL_MUST_STAY_IN_HISTORY`;
       const prompt = buildSelectionPrompt(selectedText, 'summarize');
@@ -43466,66 +39224,6 @@ test('inspect_event_listeners resolves marked ref targets through CDP and always
   }
 });
 
-test('Cloud bridge settings are Chromium-only, live under Advanced, and keep setup guidance in sync', () => {
-  const chromeHtml = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.html'), 'utf8');
-  const chromeSettings = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.js'), 'utf8');
-  const chromeLocale = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/locales/en.js'), 'utf8');
-  const firefoxHtml = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.html'), 'utf8');
-  const firefoxSettings = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.js'), 'utf8');
-  const firefoxLocale = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/locales/en.js'), 'utf8');
-
-  const generalStart = chromeHtml.indexOf('<section class="tab-panel" data-panel="display"');
-  const providersStart = chromeHtml.indexOf('<section class="tab-panel active" data-panel="providers"', generalStart);
-  const generalPanel = chromeHtml.slice(generalStart, providersStart);
-  const advancedStart = generalPanel.indexOf('<details class="advanced-settings">');
-  const bridgeStart = generalPanel.indexOf('id="cloud-bridge-setting"');
-  assert.notEqual(generalStart, -1, 'Chrome General settings panel missing');
-  assert.notEqual(advancedStart, -1, 'Chrome General settings should include Advanced');
-  assert.ok(bridgeStart > advancedStart, 'Cloud bridge should live inside General > Advanced');
-  assert.match(generalPanel, /id="toggle-cloud-bridge"/, 'Chrome Advanced should expose the bridge toggle');
-  assert.match(generalPanel, /id="input-cloud-bridge-url"/, 'Chrome Advanced should expose the bridge URL');
-  assert.match(generalPanel, /id="cloud-bridge-status"[^>]*role="status"[^>]*aria-live="polite"/, 'bridge status should be announced accessibly');
-  assert.doesNotMatch(generalPanel, /id="toggle-cloud-bridge"\s+checked/, 'Cloud bridge must default off');
-  assert.match(chromeHtml, /prefers-reduced-motion: reduce[\s\S]*cloud-bridge-status/, 'waiting animation should respect reduced-motion preferences');
-
-  assert.doesNotMatch(firefoxHtml, /cloud-bridge-setting|toggle-cloud-bridge|input-cloud-bridge-url/, 'Firefox should not show unsupported bridge controls');
-  assert.doesNotMatch(firefoxSettings, /webbrainCloudBridgeEnabled|webbrainCloudBridgeUrl|cloud_bridge_status/, 'Firefox settings should not wire the Chromium bridge');
-  assert.doesNotMatch(firefoxLocale, /st\.display\.cloud_bridge/, 'Firefox should not ship copy for an unavailable setting');
-
-  assert.match(chromeSettings, /const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';/, 'Chrome settings should use the runtime bridge enable key');
-  assert.match(chromeSettings, /const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';/, 'Chrome settings should use the runtime bridge URL key');
-  assert.match(chromeSettings, /cloudBridgeToggle\.checked = stored\[CLOUD_BRIDGE_ENABLED_KEY\] === true/, 'bridge should hydrate only explicit opt-in');
-  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_start', \{ url: normalized \}\)/, 'bridge controls should start the configured endpoint');
-  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_stop'\)/, 'bridge controls should stop the endpoint');
-  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_status'\)/, 'bridge controls should report live connection status');
-  const saveUrlStart = chromeSettings.indexOf('async function saveCloudBridgeUrl()');
-  const toggleStart = chromeSettings.indexOf('async function toggleCloudBridge()', saveUrlStart);
-  const saveUrlBody = chromeSettings.slice(saveUrlStart, toggleStart);
-  assert.doesNotMatch(saveUrlBody, /setCloudBridgeControlsBusy|cloudBridgeToggle\.disabled/, 'URL blur saves must not disable and cancel the pending bridge-toggle click');
-  assert.match(chromeSettings, /status\.lastError === 'WebSocket error'[\s\S]*status_unreachable/, 'generic WebSocket failures should explain that the local bridge is unreachable');
-  assert.match(chromeSettings, /url\.protocol !== 'ws:'[\s\S]*127\.0\.0\.1[\s\S]*localhost[\s\S]*\[::1\]/, 'settings should reject non-loopback bridge URLs before saving');
-  assert.match(chromeLocale, /'st\.display\.cloud_bridge\.label': 'Cloud bridge'/, 'Chrome English bridge label missing');
-  assert.match(chromeLocale, /Use port 17373 for WebBrain Cloud, 17374 for MCP clients, or 17375 for LM Studio/, 'bridge copy should explain the one-socket destinations');
-
-  for (const rel of ['README.md', 'mcp-server/README.md', 'lmstudio-plugin/README.md']) {
-    const readme = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    assert.match(readme, /Settings → General → Advanced → Cloud bridge/, `${rel}: bridge setup path should match the Chromium UI`);
-  }
-  const rootReadme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-  const mcpReadme = fs.readFileSync(path.join(ROOT, 'mcp-server/README.md'), 'utf8');
-  for (const [label, readme] of [['root README', rootReadme], ['MCP README', mcpReadme]]) {
-    assert.match(readme, /npx -y @webbrain\/mcp-server/, `${label}: should document how to launch the MCP bridge`);
-    assert.match(readme, /Connection error: WebSocket error/, `${label}: should explain the generic listener failure`);
-    assert.match(readme, /17373[\s\S]*17374[\s\S]*17375/, `${label}: should distinguish the three bridge destinations`);
-  }
-  const mcpBridge = fs.readFileSync(path.join(ROOT, 'mcp-server/src/bridge.ts'), 'utf8');
-  const mcpIndex = fs.readFileSync(path.join(ROOT, 'mcp-server/src/index.ts'), 'utf8');
-  const lmBridge = fs.readFileSync(path.join(ROOT, 'lmstudio-plugin/src/util/bridgeClient.ts'), 'utf8');
-  for (const [label, source] of [['MCP error', mcpBridge], ['MCP connection', mcpIndex], ['LM Studio connection', lmBridge]]) {
-    assert.match(source, /Settings → General → Advanced → Cloud bridge/, `${label}: runtime setup guidance should match the UI`);
-  }
-});
-
 test('Experimental WebMCP is Chrome-only, opt-in, and absent from default model context', async () => {
   const html = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.html'), 'utf8');
   const firefoxHtml = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.html'), 'utf8');
@@ -45600,1064 +41298,6 @@ test('failed sensitive field-tool readbacks are annotated and redacted', () => {
 
 console.log('\nprovider categorization');
 
-test('Chrome exposes separate endpoint-free WebGPU text and vision providers', async () => {
-  const previousChrome = globalThis.chrome;
-  const sentMessages = [];
-  let localEnabled = true;
-  let textModelReady = true;
-  let webgpuExecutionError = '';
-  try {
-    globalThis.chrome = {
-      offscreen: { hasDocument: async () => true },
-      runtime: {
-        lastError: null,
-        sendMessage(message, callback) {
-          sentMessages.push(message);
-          if (message.type === 'webgpu-vision-dispose') callback({ ok: true, disposed: true });
-          else if (message.type === 'webgpu-dispose') callback({ ok: true, disposed: true });
-          else if (message.type === 'webgpu-probe') callback({ ok: true, hasWebGPU: true, isFallbackAdapter: false, libraryVersion: '4.2.0' });
-          else if (message.type === 'webgpu-download-status') callback({ ok: true, status: textModelReady ? 'ready' : 'not-downloaded', ready: textModelReady });
-          else if (message.type === 'webgpu-chat') callback(webgpuExecutionError
-            ? { ok: false, error: webgpuExecutionError }
-            : { ok: true, content: 'Local answer.' });
-          else callback({ ok: true, content: 'A settings page is visible.' });
-        },
-      },
-      storage: {
-        local: {
-          get: async () => ({
-            visionModel: {
-              type: 'openai',
-              baseUrl: 'https://vision.example/v1',
-              apiKey: 'preserved-secret',
-              model: 'remote-vision',
-            },
-            [WEBGPU_VISION_ENABLED_KEY]: localEnabled,
-          }),
-          set: async () => {},
-        },
-      },
-    };
-
-    const manager = new ProviderManagerCh();
-    const webgpuConfig = manager._defaultConfigs().webgpu;
-    assert.equal(webgpuConfig.model, WEBGPU_MODEL_ID);
-    assert.equal(WEBGPU_MODEL_ID, WEBGPU_LFM25_MODEL_ID);
-    assert.equal(webgpuConfig.baseUrl, '');
-    assert.equal(webgpuConfig.dtype, WEBGPU_DTYPE);
-    const generalProvider = manager._createProvider('webgpu', webgpuConfig);
-    assert.ok(generalProvider instanceof WebGPUProvider);
-    assert.equal(generalProvider.promptTier, 'compact');
-    assert.equal(new WebGPUProvider({ model: WEBGPU_MODEL_ID }).promptTier, 'compact');
-    assert.equal(new WebGPUProvider({ model: WEBGPU_MODEL_ID, promptTier: 'full' }).promptTier, 'full');
-    assert.equal(new WebGPUProvider({ model: WEBGPU_LFM25_MODEL_ID }).model, WEBGPU_LFM25_MODEL_ID);
-    const customProvider = new WebGPUProvider({ model: 'custom-owner/custom-model' });
-    assert.equal(customProvider.model, 'custom-owner/custom-model');
-    assert.equal(customProvider.requiresToolTemplate, true);
-    assert.equal(generalProvider.requiresToolTemplate, false);
-    assert.equal(
-      new WebGPUProvider({ model: 'https://huggingface.co/custom-owner/custom-model/' }).model,
-      'custom-owner/custom-model',
-    );
-    assert.deepEqual(WEBGPU_MODEL_PRESETS.map(option => ({ id: option.id, label: option.label })), [
-      { id: WEBGPU_LFM25_MODEL_ID, label: 'LFM2.5 2.6B' },
-    ]);
-    assert.equal(normalizeWebgpuModelId(' custom-owner/custom-model '), 'custom-owner/custom-model');
-    assert.throws(() => new WebGPUProvider({ model: 'not-a-repository' }), /owner\/repository/);
-    assert.throws(() => new WebGPUProvider({ model: 'https://example.com/owner/model' }), /huggingface\.co/);
-    assert.equal(generalProvider.supportsTools, true);
-    assert.equal(generalProvider.supportsVision, false);
-    const probe = await generalProvider.testConnection();
-    assert.equal(probe.ok, true);
-    assert.equal(probe.libraryVersion, '4.2.0');
-    assert.deepEqual(sentMessages[0], { type: 'webgpu-probe' });
-    const tools = [{ type: 'function', function: { name: 'read_page', parameters: { type: 'object' } } }];
-    const localResult = await generalProvider.chat([{ role: 'user', content: 'Hello' }], { maxTokens: 123, tools });
-    assert.equal(localResult.content, 'Local answer.');
-    assert.deepEqual(sentMessages[1], {
-      type: 'webgpu-download-status',
-      model: WEBGPU_MODEL_ID,
-      dtype: WEBGPU_DTYPE,
-    });
-    assert.deepEqual(sentMessages[2], {
-      type: 'webgpu-chat',
-      model: WEBGPU_MODEL_ID,
-      device: 'webgpu',
-      dtype: WEBGPU_DTYPE,
-      requireTools: false,
-      messages: [{ role: 'user', content: 'Hello' }],
-      options: { maxTokens: 123, tools },
-    });
-    const textDisposed = await generalProvider.dispose();
-    assert.deepEqual(textDisposed, { ok: true, disposed: true });
-    assert.deepEqual(sentMessages[3], { type: 'webgpu-dispose' });
-
-    const provider = await manager.getVisionProvider();
-    assert.ok(provider instanceof WebGPUVisionProvider);
-    assert.equal(provider.name, 'webgpu-vision');
-    assert.equal(provider.supportsVision, true);
-    assert.equal(provider.supportsTools, false);
-    assert.equal(provider.config.category, 'local');
-
-    const messages = [{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Describe this screenshot.' },
-        { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } },
-      ],
-    }];
-    const result = await provider.chat(messages, { maxTokens: 321 });
-    assert.equal(result.content, 'A settings page is visible.');
-    assert.equal(result.toolCalls, null);
-    assert.deepEqual(sentMessages[4], {
-      type: 'webgpu-vision-chat',
-      model: WEBGPU_VISION_MODEL_ID,
-      device: 'webgpu',
-      dtype: WEBGPU_VISION_DTYPE,
-      messages,
-      options: { maxTokens: 321 },
-    });
-
-    const disposed = await manager.disposeWebgpuVisionRuntime();
-    assert.deepEqual(disposed, { ok: true, disposed: true });
-    assert.deepEqual(sentMessages[5], { type: 'webgpu-vision-dispose' });
-
-    manager.providers.set('webgpu', generalProvider);
-    manager.providers.set('remote', { config: { type: 'openai', model: 'remote-model' } });
-    manager.activeProviderId = 'webgpu';
-    await manager.setActive('remote');
-    assert.deepEqual(sentMessages[6], { type: 'webgpu-dispose' });
-
-    textModelReady = false;
-    await assert.rejects(
-      generalProvider.chat([{ role: 'user', content: 'Do not download implicitly.' }]),
-      /not downloaded/,
-    );
-    await assert.rejects(manager.setActive('webgpu'), /Download LFM2\.5 2\.6B/);
-    assert.equal(manager.activeProviderId, 'remote', 'an uncached WebGPU provider must not become active');
-
-    textModelReady = true;
-    webgpuExecutionError = 'failed to call OrtRun(): BufferManager::Download mapAsync GPUBuffer failed';
-    await assert.rejects(
-      generalProvider.chat([{ role: 'user', content: 'Exercise the GPU.' }]),
-      error => error.isAskStreamTerminalError === true && /OrtRun/.test(error.message),
-      'fatal WebGPU execution failures should bypass the generic network retry',
-    );
-    webgpuExecutionError = `${WEBGPU_MODEL_ID} used its generation budget before finishing reasoning. Retry with a shorter prompt.`;
-    await assert.rejects(
-      generalProvider.chat([{ role: 'user', content: 'Exercise the deterministic token limit.' }]),
-      error => error.isAskStreamTerminalError === true && /generation budget/.test(error.message),
-      'a deterministic WebGPU generation-budget failure should not repeat the same expensive request',
-    );
-
-    const preload = await new WebGPUVisionProvider().preload();
-    assert.deepEqual(preload, { ok: true, started: true, ready: false });
-    assert.deepEqual(sentMessages.at(-1), {
-      type: 'webgpu-vision-preload',
-      model: WEBGPU_VISION_MODEL_ID,
-      device: 'webgpu',
-      dtype: WEBGPU_VISION_DTYPE,
-    });
-    assert.equal(WEBGPU_VISION_DOWNLOAD_STATE_KEY, 'webgpuVisionDownloadState');
-
-    localEnabled = false;
-    const preservedRemote = await manager.getVisionProvider();
-    assert.ok(!(preservedRemote instanceof WebGPUVisionProvider));
-    assert.equal(preservedRemote.config.baseUrl, 'https://vision.example/v1');
-    assert.equal(preservedRemote.config.apiKey, 'preserved-secret');
-  } finally {
-    if (previousChrome === undefined) delete globalThis.chrome;
-    else globalThis.chrome = previousChrome;
-  }
-});
-
-test('Apocalypse vision probes before automatic selection and rolls back failed starts', async () => {
-  const previousChrome = globalThis.chrome;
-  const storageState = {
-    visionModel: {
-      type: 'openai',
-      baseUrl: 'https://vision.example/v1',
-      apiKey: 'preserved-secret',
-      model: 'remote-vision',
-    },
-  };
-  const sentMessages = [];
-  let hasWebGPU = true;
-  let preloadResponse = { ok: true, started: true };
-  try {
-    globalThis.chrome = {
-      offscreen: { hasDocument: async () => true },
-      runtime: {
-        lastError: null,
-        sendMessage(message, callback) {
-          sentMessages.push(message);
-          if (message.type === 'webgpu-probe') {
-            callback({ ok: true, hasWebGPU, isFallbackAdapter: false, libraryVersion: 'test' });
-            return;
-          }
-          if (message.type === 'webgpu-vision-pause') {
-            callback({ ok: true, status: 'paused', ready: false });
-            return;
-          }
-          if (message.type === 'webgpu-vision-stop') {
-            callback({ ok: true, status: 'not-downloaded', ready: false, deletedEntries: 7 });
-            return;
-          }
-          callback(preloadResponse);
-        },
-      },
-      storage: {
-        local: {
-          get: async () => ({ ...storageState }),
-          set: async patch => Object.assign(storageState, patch),
-          remove: async keys => {
-            for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key];
-          },
-        },
-      },
-    };
-
-    const manager = new ProviderManagerCh();
-    const started = await manager.enableAndPreloadWebgpuVision();
-    assert.deepEqual(started, { ok: true, started: true, ready: false });
-    assert.deepEqual(sentMessages.map(message => message.type), [
-      'webgpu-probe',
-      'webgpu-vision-preload',
-    ]);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], true);
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], true);
-
-    const explicitResume = await manager.startWebgpuVisionDownload();
-    assert.equal(explicitResume.ok, true);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], true);
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], undefined,
-      'an explicit Vision Model resume must adopt and preserve the enabled selection');
-
-    delete storageState[WEBGPU_VISION_ENABLED_KEY];
-    delete storageState[WEBGPU_VISION_AUTO_SELECTED_KEY];
-    sentMessages.length = 0;
-    hasWebGPU = false;
-    const unsupported = await manager.enableAndPreloadWebgpuVision();
-    assert.equal(unsupported.ok, false);
-    assert.deepEqual(sentMessages.map(message => message.type), ['webgpu-probe']);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], undefined);
-
-    sentMessages.length = 0;
-    hasWebGPU = true;
-    preloadResponse = { ok: false, error: 'download dispatch failed' };
-    const failedAutomaticStart = await manager.enableAndPreloadWebgpuVision();
-    assert.equal(failedAutomaticStart.ok, false);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], undefined);
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], undefined);
-
-    storageState[WEBGPU_VISION_ENABLED_KEY] = true;
-    sentMessages.length = 0;
-    const failedExplicitStart = await manager.enableAndPreloadWebgpuVision();
-    assert.equal(failedExplicitStart.ok, false);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], true,
-      'an existing explicit local selection must not be rolled back as an automatic choice');
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], undefined);
-
-    preloadResponse = { ok: true, started: true };
-    delete storageState[WEBGPU_VISION_ENABLED_KEY];
-    const explicitStart = await manager.startWebgpuVisionDownload();
-    assert.equal(explicitStart.ok, true);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], true);
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], undefined,
-      'a user-started Vision Model download must not be marked as an automatic selection');
-    const selectedLocalProvider = await manager.getVisionProvider();
-    assert.ok(selectedLocalProvider instanceof WebGPUVisionProvider);
-    const paused = await manager.pauseWebgpuVisionDownload();
-    assert.equal(paused.ok, true);
-    assert.equal(paused.status, 'paused');
-    const stopped = await manager.stopWebgpuVisionDownload();
-    assert.equal(stopped.ok, true);
-    assert.equal(stopped.status, 'not-downloaded');
-    assert.equal(stopped.deletedEntries, 7);
-    assert.equal(storageState[WEBGPU_VISION_ENABLED_KEY], undefined,
-      'Stop & remove must disable local vision before deleting its cache');
-    assert.equal(storageState[WEBGPU_VISION_AUTO_SELECTED_KEY], undefined);
-    assert.equal(storageState.visionModel.model, 'remote-vision',
-      'Stop & remove must preserve the configured remote vision fallback');
-    const stoppedProvider = await manager.getVisionProvider();
-    assert.ok(!(stoppedProvider instanceof WebGPUVisionProvider),
-      'screenshots must not silently recreate a stopped local vision download');
-    await assert.rejects(
-      selectedLocalProvider.chat([{ role: 'user', content: 'Do not redownload.' }]),
-      /Vision Model is disabled/,
-      'a previously acquired local provider must not redownload after Stop & remove',
-    );
-    assert.deepEqual(sentMessages.slice(-2).map(message => message.type), [
-      'webgpu-vision-pause',
-      'webgpu-vision-stop',
-    ]);
-  } finally {
-    if (previousChrome === undefined) delete globalThis.chrome;
-    else globalThis.chrome = previousChrome;
-  }
-});
-
-test('Apocalypse text download fixes the LFM preset and avoids duplicate starts', async () => {
-  const previousChrome = globalThis.chrome;
-  const sentMessages = [];
-  const storageWrites = [];
-  let hasWebGPU = true;
-  let downloadState = {
-    status: 'not-downloaded',
-    ready: false,
-    modelId: WEBGPU_MODEL_ID,
-    dtype: WEBGPU_DTYPE,
-  };
-  try {
-    globalThis.chrome = {
-      offscreen: { hasDocument: async () => true },
-      runtime: {
-        lastError: null,
-        sendMessage(message, callback) {
-          sentMessages.push(message);
-          if (message.type === 'webgpu-probe') {
-            callback({ ok: true, hasWebGPU, isFallbackAdapter: false, libraryVersion: 'test' });
-            return;
-          }
-          if (message.type === 'webgpu-download-status') {
-            callback({ ok: true, ...downloadState });
-            return;
-          }
-          if (message.type === 'webgpu-download-start') {
-            downloadState = {
-              status: 'downloading',
-              ready: false,
-              modelId: message.model,
-              dtype: message.dtype,
-            };
-            callback({ ok: true, ...downloadState });
-            return;
-          }
-          callback({ ok: false, error: `Unexpected message: ${message.type}` });
-        },
-      },
-      storage: {
-        local: {
-          get: async () => ({}),
-          set: async patch => storageWrites.push(structuredClone(patch)),
-        },
-      },
-    };
-
-    const manager = new ProviderManagerCh();
-    manager.providers.set('webgpu', manager._createProvider('webgpu', {
-      ...manager._defaultConfigs().webgpu,
-      model: 'custom-owner/custom-model',
-      dtype: 'q8',
-      configured: false,
-    }));
-    manager.activeProviderId = 'webbrain_cloud';
-
-    const started = await manager.enableAndStartWebgpuTextDownload();
-    assert.equal(started.ok, true);
-    assert.equal(started.started, true);
-    assert.equal(started.status, 'downloading');
-    assert.deepEqual(sentMessages.map(message => message.type), [
-      'webgpu-probe',
-      'webgpu-download-status',
-      'webgpu-download-start',
-    ]);
-    const config = manager.getAll().webgpu;
-    assert.equal(config.model, WEBGPU_MODEL_ID);
-    assert.equal(config.dtype, WEBGPU_DTYPE);
-    assert.equal(config.contextWindow, 16384);
-    assert.equal(config.promptTier, 'compact');
-    assert.equal(config.configured, true);
-    assert.equal(manager.activeProviderId, 'webbrain_cloud', 'automatic download must not select WebGPU for normal chat');
-    assert.equal(storageWrites.at(-1).activeProvider, 'webbrain_cloud');
-
-    sentMessages.length = 0;
-    const alreadyDownloading = await manager.enableAndStartWebgpuTextDownload();
-    assert.equal(alreadyDownloading.ok, true);
-    assert.equal(alreadyDownloading.started, false);
-    assert.equal(alreadyDownloading.status, 'downloading');
-    assert.deepEqual(sentMessages.map(message => message.type), [
-      'webgpu-probe',
-      'webgpu-download-status',
-    ], 'an in-progress LFM download must not be queued twice');
-
-    sentMessages.length = 0;
-    hasWebGPU = false;
-    downloadState = {
-      status: 'not-downloaded',
-      ready: false,
-      modelId: WEBGPU_MODEL_ID,
-      dtype: WEBGPU_DTYPE,
-    };
-    const unsupported = await manager.enableAndStartWebgpuTextDownload();
-    assert.equal(unsupported.ok, false);
-    assert.deepEqual(sentMessages.map(message => message.type), ['webgpu-probe'],
-      'unsupported hardware must fail before starting the LFM download');
-  } finally {
-    if (previousChrome === undefined) delete globalThis.chrome;
-    else globalThis.chrome = previousChrome;
-  }
-});
-
-test('WebGPU worker follows local text-generation and LiquidAI vision contracts', () => {
-  const worker = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/inference-worker.js'), 'utf8');
-  const host = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/vision-inference-host.js'), 'utf8');
-  const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
-  const ensure = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/ensure.js'), 'utf8');
-  const settingsScript = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.js'), 'utf8');
-  const apocalypseScript = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/apocalypse-mode.js'), 'utf8');
-  const apocalypseHtml = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/apocalypse-mode.html'), 'utf8');
-  const apocalypseCopy = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/locales/apocalypse-copy.mjs'), 'utf8');
-  const profileSync = fs.readFileSync(path.join(ROOT, 'src/chrome/src/profile-sync.js'), 'utf8');
-  const englishLocale = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/locales/en.js'), 'utf8');
-  assert.match(worker, /AutoModelForImageTextToText\.from_pretrained/);
-  assert.match(worker, /AutoProcessor\.from_pretrained/);
-  assert.match(worker, /apply_chat_template/);
-  assert.match(worker, /load_image\(imageUrl\)/);
-  assert.match(worker, /decoder_model_merged:\s*'q4'/);
-  assert.match(worker, /const blocks = \[\.\.\.imageBlocks, \.\.\.textBlocks\]/);
-  assert.match(worker, /createVisionProbeImage\(runtime\.library\.RawImage\)/);
-  assert.match(worker, /modelOperationQueue\.then\(operation, operation\)/);
-  assert.match(worker, /type === 'dispose'[\s\S]*?enqueueModelOperation\(disposeAllRuntimes\)/);
-  assert.match(worker, /type === 'preload'[\s\S]*?preloadVisionModel\(payload, request\)/);
-  assert.match(worker, /async function preloadRuntime[\s\S]*?await getVisionRuntime[\s\S]*?await disposeVisionRuntime/);
-  assert.match(worker, /type === 'pause-vision-download'[\s\S]*?pauseVisionDownload/);
-  assert.match(worker, /type === 'stop-vision-download'[\s\S]*?stopVisionDownload[\s\S]*?clearVisionModelCache/);
-  assert.match(worker, /clearVisionModelCache[\s\S]*?cache\.delete\(request\)/);
-  assert.doesNotMatch(worker, /clearVisionModelCache[\s\S]*?caches\.delete\(name\)/,
-    'Vision Model removal must not delete the shared Transformers cache');
-  assert.match(worker, /queuedVisionDownload !== request/,
-    'a paused or stopped queued Vision Model preload must be invalidated before execution');
-  assert.match(worker, /visionDownloadAbortController[\s\S]*?\.abort\(\)/,
-    'an active Vision Model transfer must be abortable without waiting for the model queue');
-  assert.match(host, /'webgpu-vision-dispose'/);
-  assert.match(host, /'webgpu-vision-preload'/);
-  assert.match(host, /'webgpu-vision-pause'/);
-  assert.match(host, /'webgpu-vision-stop'/);
-  assert.match(host, /webgpu-vision-download-state/);
-  assert.doesNotMatch(host, /chrome\.storage/, 'offscreen documents only expose chrome.runtime from extension APIs');
-  assert.match(host, /chrome\.runtime\.sendMessage\(\{[\s\S]*?VISION_DOWNLOAD_STATE_MESSAGE/);
-  assert.match(host, /data\?\.type === 'progress'[\s\S]*?updateVisionDownloadProgress/);
-  assert.match(host, /data\?\.type === 'progress'[\s\S]{0,240}!progressMatchesActiveVisionModel[\s\S]{0,240}updateVisionDownloadProgress/,
-    'shared-worker progress must be filtered before it mutates vision download state');
-  const progressFilterStart = host.indexOf('function progressMatchesActiveVisionModel');
-  const progressFilterEnd = host.indexOf('\n}', progressFilterStart) + 2;
-  assert.ok(progressFilterStart >= 0 && progressFilterEnd > progressFilterStart,
-    'vision progress model filter is missing');
-  const progressMatchesActiveVisionModel = vm.runInNewContext(
-    `(${host.slice(progressFilterStart, progressFilterEnd)})`,
-  );
-  const activePreload = Promise.resolve();
-  const visionModel = 'LiquidAI/LFM2.5-VL-450M';
-  assert.equal(progressMatchesActiveVisionModel({ modelId: visionModel }, visionModel, activePreload), true,
-    'active vision-model progress should be retained');
-  assert.equal(progressMatchesActiveVisionModel({ modelId: 'webbrain-one/Ling-3.0-tiny-ONNX' }, visionModel, activePreload), false,
-    'Ling text-model progress must not overwrite vision preload state');
-  assert.equal(progressMatchesActiveVisionModel({ modelId: visionModel }, visionModel, null), false,
-    'late progress must not update state after vision preload settles');
-  assert.match(background, /message\?\.type !== WEBGPU_VISION_DOWNLOAD_STATE_MESSAGE/);
-  assert.match(background, /sender\?\.url[\s\S]*?VISION_OFFSCREEN_URL/);
-  assert.match(background, /normalized\.status === 'error'[\s\S]*?WEBGPU_VISION_AUTO_SELECTED_KEY[\s\S]*?WEBGPU_VISION_ENABLED_KEY/);
-  assert.match(background, /async function resumeInterruptedVisionPreload\(\)[\s\S]*?WEBGPU_VISION_ENABLED_KEY[\s\S]*?state\.status === 'starting'[\s\S]*?state\.status === 'downloading'[\s\S]*?enableApocalypseVisionModel\(\)/,
-    'Chrome startup must resume an enabled, incomplete local-vision preload');
-  assert.match(background, /Promise\.all\(\[[\s\S]*?syncDownloadSchedule\(\)[\s\S]*?resumeInterruptedVisionPreload\(\)/,
-    'local-vision recovery must run with the service-worker startup restoration');
-  const startupRecovery = background.slice(
-    background.indexOf('Promise.all([', background.indexOf('async function resumeInterruptedVisionPreload')),
-    background.indexOf('const agent = new Agent', background.indexOf('async function resumeInterruptedVisionPreload')),
-  );
-  assert.doesNotMatch(startupRecovery, /apocalypseController\.handle\('status'\)/,
-    'service-worker startup must not override a later local-vision opt-out');
-  assert.match(worker, /let visionRuntime = null/);
-  assert.match(worker, /let textRuntime = null/);
-  const visionLoader = worker.slice(worker.indexOf('async function getVisionRuntime'), worker.indexOf('async function getTextRuntime'));
-  const textLoader = worker.slice(worker.indexOf('async function getTextRuntime'), worker.indexOf('function enqueueModelOperation'));
-  assert.match(visionLoader, /disposeVisionRuntime\(\)/);
-  assert.doesNotMatch(visionLoader, /disposeTextRuntime\(\)/);
-  assert.match(textLoader, /disposeTextRuntime\(\)/);
-  assert.doesNotMatch(textLoader, /disposeVisionRuntime\(\)/);
-  assert.match(worker, /type === 'dispose-vision'[\s\S]*?enqueueModelOperation\(disposeVisionRuntime\)/);
-  assert.match(worker, /type === 'dispose-text'[\s\S]*?enqueueModelOperation\(disposeTextRuntime\)/);
-  assert.match(worker, /pipeline\('text-generation', modelId/);
-  assert.match(worker, /dtype = payload\?\.dtype \|\| 'q4f16'/);
-  assert.match(worker, /function textDtypeKey\(dtype\)/);
-  assert.match(worker, /Object\.entries\(dtype\)\.sort/);
-  assert.match(worker, /const WEBGPU_TEXT_MAX_NEW_TOKENS = 256/);
-  assert.match(worker, /const WEBGPU_LFM25_MAX_NEW_TOKENS = 512/);
-  assert.match(worker, /'ep\.webgpuexecutionprovider\.storageBufferCacheMode': 'simple'/);
-  assert.match(worker, /session_options: createWebGpuTextSessionOptions\(\)/);
-  assert.match(worker, /addEventListener\?\.\('uncapturederror'/);
-  assert.match(worker, /GPU detail:/);
-  assert.doesNotMatch(worker, /cannot execute Ling/);
-  assert.match(worker, /preserve_thinking: false/);
-  assert.match(worker, /enable_thinking: false/);
-  assert.match(worker, /tools: tools\.length \? tools : undefined/);
-  assert.match(host, /'webgpu-chat'/);
-  assert.match(host, /'webgpu-download-start'/);
-  assert.match(host, /message\.type === 'webgpu-download-start'[\s\S]*?sendResponse\(await sendVisionWorkerMessage\('start-download-text'/);
-  assert.doesNotMatch(host, /sendVisionWorkerMessage\('download-text'[\s\S]*?\.catch\(\(\) => \{\}\)/);
-  assert.match(host, /'webgpu-download-pause'/);
-  assert.match(host, /'webgpu-download-stop'/);
-  assert.match(host, /'webgpu-download-status'/);
-  assert.match(host, /'webgpu-dispose'/);
-  assert.match(host, /'webgpu-vision-dispose'/);
-  assert.match(host, /message\.type === 'webgpu-vision-stop'[\s\S]*?sendVisionWorkerMessage\('stop-vision-download'/);
-  assert.match(host, /message\.type === 'webgpu-vision-dispose'[\s\S]*?sendVisionWorkerMessage\('dispose-vision'\)/);
-  assert.match(host, /message\.type === 'webgpu-dispose'[\s\S]*?sendVisionWorkerMessage\('dispose-text'\)/);
-  assert.match(worker, /type === 'start-download-text'/);
-  assert.match(worker, /function assertTextDownloadCanStart/);
-  assert.match(worker, /function assertToolCapableTextRuntime/);
-  assert.match(ensure, /'WORKERS'/, 'offscreen document should declare its Worker purpose');
-  assert.match(settingsScript, /\[WEBGPU_VISION_ENABLED_KEY\]: true/);
-  assert.match(settingsScript, /addEventListener\('focus'[\s\S]{0,180}loadVisionConfig/);
-  assert.match(settingsScript, /changes\[WEBGPU_VISION_ENABLED_KEY\][\s\S]{0,100}loadVisionConfig/);
-  assert.match(settingsScript, /chrome\.storage\.local\.remove\(WEBGPU_VISION_AUTO_SELECTED_KEY\)/,
-    'an explicit local-vision selection must clear automatic-selection provenance');
-  assert.match(settingsScript, /dispose_webgpu_vision/);
-  assert.match(apocalypseHtml, /id="webgpu-provider-card"[^>]*hidden/);
-  assert.match(apocalypseHtml, /data-webgpu-download-action="start"/);
-  assert.match(apocalypseHtml, /data-webgpu-download-action="pause"/);
-  assert.match(apocalypseHtml, /data-webgpu-download-action="resume"/);
-  assert.match(apocalypseHtml, /data-webgpu-download-action="stop"/);
-  assert.match(apocalypseHtml, /data-vision-download-action="pause"/);
-  assert.match(apocalypseHtml, /data-vision-download-action="resume"/);
-  assert.match(apocalypseHtml, /data-vision-download-action="stop"/);
-  assert.match(apocalypseHtml, /id="models-readiness"[^>]*data-kind="disabled"[^>]*role="status"/);
-  const apocalypseHeader = apocalypseHtml.slice(
-    apocalypseHtml.indexOf('<header>'),
-    apocalypseHtml.indexOf('</header>') + '</header>'.length,
-  );
-  assert.match(apocalypseHeader, /id="models-readiness"/,
-    'aggregate model readiness must use the empty right side of the sticky Apocalypse Mode header');
-  for (const id of ['installed-count', 'archive-bytes', 'storage-usage']) {
-    assert.match(apocalypseHeader, new RegExp(`id="${id}"`),
-      `${id} must be shown beside aggregate readiness in the Apocalypse Mode header`);
-  }
-  assert.match(apocalypseScript, /function updateOverallModelsReadiness\(\)/);
-  assert.match(apocalypseScript, /webgpuDownloadState\.ready === true && visionStatus === 'ready' && wikipediaStatus === 'ready'/,
-    'aggregate readiness must require text, vision, and Simple English Wikipedia');
-  assert.match(apocalypseScript, /basicWikipediaCatalogItem = selectBasicWikipediaArchive\(supported\)/,
-    'the basic Wikipedia card must select its exact catalog archive');
-  assert.match(apocalypseScript, /const ready = wikipedia[\s\S]*?if \(ready\.length\) return ready\[0\]/,
-    'a verified replacement Wikipedia edition must continue to satisfy aggregate readiness');
-  assert.match(apocalypseScript, /updateEmergencyBoxGate\(kind\)/,
-    'aggregate readiness must update the Emergency Box gate');
-  for (const state of ['ready', 'downloading', 'paused', 'incomplete', 'disabled', 'error']) {
-    assert.match(apocalypseScript, new RegExp(`ap\\.models\\.status\\.${state}`),
-      `aggregate model readiness is missing its ${state} state`);
-  }
-  assert.match(apocalypseScript, /get_webgpu_download_status/);
-  assert.match(apocalypseScript, /webgpu-text-download-state/);
-  assert.doesNotMatch(settingsScript, /data-webgpu-download-action=/,
-    'the WebGPU provider download block must live on Apocalypse Mode, not Settings');
-  assert.doesNotMatch(settingsScript, /saveVisionConfig\(\{\s*type:\s*'webgpu'/);
-  assert.match(settingsScript, /Object\.entries\(providersData\)\.filter\(\(\[id\]\) => id !== 'webgpu'\)/,
-    'Settings still renders the WebGPU provider card');
-  assert.match(apocalypseHtml, /data-i18n="ap\.models\.text\.title"/);
-  assert.match(apocalypseHtml, /data-i18n="ap\.models\.vision\.title"/);
-  assert.match(apocalypseHtml, /data-i18n="ap\.models\.wikipedia\.title"/);
-  assert.match(apocalypseCopy, /'ap\.models\.text\.title': 'Text Model'/);
-  assert.match(apocalypseCopy, /'ap\.models\.vision\.title': 'Vision Model'/);
-  assert.match(apocalypseCopy, /'ap\.models\.wikipedia\.title': 'Wikipedia in Simple English'/);
-  assert.match(apocalypseHtml, /1\.55 GB · WebGPU/);
-  assert.doesNotMatch(apocalypseHtml, /id="webgpu-(?:model|context-window|prompt-tier|save|activate)/);
-  assert.doesNotMatch(apocalypseHtml, /id="webgpu-test"/);
-  assert.match(apocalypseHtml, /id="vision-model-test"[^>]*data-i18n="st\.vision\.test"[^>]*disabled/);
-  assert.doesNotMatch(apocalypseHtml, /(?:base-url|api-key|__custom__|data-webgpu-model-link)/);
-  assert.doesNotMatch(apocalypseScript, /WEBGPU_MODEL_PRESETS|normalizeWebgpuModelId|set_active_provider/);
-  assert.doesNotMatch(apocalypseScript, /providerCommand\('test_provider', \{ providerId: 'webgpu' \}\)/);
-  assert.match(apocalypseScript, /providerCommand\('test_vision_provider'\)/);
-  assert.match(apocalypseScript, /update_provider[\s\S]*?providerId: 'webgpu'[\s\S]*?model: WEBGPU_MODEL_ID[\s\S]*?contextWindow: 16384[\s\S]*?promptTier: 'compact'/);
-  assert.doesNotMatch(profileSync, /webgpuVisionEnabled/, 'Chrome-only vision selection must not profile-sync to Firefox');
-  assert.doesNotMatch(profileSync, /webgpuVisionAutoSelected/, 'automatic local-vision provenance must not profile-sync to Firefox');
-  assert.match(englishLocale, /switch tabs or close Settings while it downloads; keep Chrome open/);
-  assert.match(englishLocale, /Download it in Apocalypse Mode, then use the nuclear control in standalone chat[\s\S]*It does not replace your selected provider/);
-
-  const settings = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.html'), 'utf8');
-  const multimodal = settings.indexOf('data-panel="multimodal"');
-  const visionCard = settings.indexOf('id="vision-card"', multimodal);
-  const localToggle = settings.indexOf('id="btn-use-webgpu-vision"', visionCard);
-  const transcription = settings.indexOf('id="transcription-card"', localToggle);
-  assert.ok(multimodal >= 0 && visionCard > multimodal && localToggle > visionCard && transcription > localToggle);
-
-  const vendorDir = path.join(ROOT, 'src/chrome/vendor/transformers');
-  const transformersBundle = fs.readFileSync(path.join(vendorDir, 'transformers.web.js'), 'utf8');
-  assert.match(transformersBundle, /Gemma4ForCausalLM/);
-  assert.match(transformersBundle, /Gemma4ForConditionalGeneration/);
-  assert.match(transformersBundle, /q2f16/);
-  assert.match(fs.readFileSync(path.join(vendorDir, 'ort.webgpu.mjs'), 'utf8'), /ONNX Runtime Web v1\.27\.0/);
-  assert.match(fs.readFileSync(path.join(vendorDir, 'README.md'), 'utf8'), /Qwen3\/QMoE correctness fixes/);
-  assert.match(fs.readFileSync(path.join(vendorDir, 'LICENSE.transformers.txt'), 'utf8'), /Apache License[\s\S]*Version 2\.0/);
-  assert.match(fs.readFileSync(path.join(vendorDir, 'LICENSE.onnxruntime.txt'), 'utf8'), /^MIT License/);
-  assert.match(fs.readFileSync(path.join(vendorDir, 'ThirdPartyNotices.onnxruntime.txt'), 'utf8'), /^THIRD PARTY SOFTWARE NOTICES AND INFORMATION/);
-});
-
-test('Vision Model removal deletes only its cache entries', async () => {
-  const previousSelf = globalThis.self;
-  const previousCaches = globalThis.caches;
-  const visionBase = `https://huggingface.co/${WEBGPU_VISION_MODEL_ID}/resolve/main/`;
-  const textBase = `https://huggingface.co/${WEBGPU_MODEL_ID}/resolve/main/`;
-  const cacheEntries = new Map([
-    [`${visionBase}config.json`, true],
-    [`${visionBase}onnx/model_q4.onnx`, true],
-    [`${textBase}config.json`, true],
-    ['https://huggingface.co/another/model/resolve/main/config.json', true],
-  ]);
-  const deletedCacheNames = [];
-  try {
-    globalThis.self = { addEventListener() {}, postMessage() {} };
-    globalThis.caches = {
-      keys: async () => ['transformers-cache', 'unrelated-cache'],
-      open: async () => ({
-        keys: async () => [...cacheEntries.keys()].map(url => ({ url })),
-        delete: async request => cacheEntries.delete(request.url || request),
-      }),
-      delete: async name => {
-        deletedCacheNames.push(name);
-        return true;
-      },
-    };
-    const workerUrl = `${pathToFileURL(path.join(ROOT, 'src/chrome/src/offscreen/inference-worker.js')).href}?vision-cache-scope-test`;
-    const { clearVisionModelCache } = await import(workerUrl);
-    const result = await clearVisionModelCache(WEBGPU_VISION_MODEL_ID);
-    assert.equal(result.deletedEntries, 2);
-    assert.equal(cacheEntries.has(`${visionBase}config.json`), false);
-    assert.equal(cacheEntries.has(`${visionBase}onnx/model_q4.onnx`), false);
-    assert.equal(cacheEntries.has(`${textBase}config.json`), true,
-      'removing the Vision Model must preserve the Text Model cache');
-    assert.equal(cacheEntries.has('https://huggingface.co/another/model/resolve/main/config.json'), true);
-    assert.deepEqual(deletedCacheNames, [], 'model removal must not delete a shared cache namespace');
-  } finally {
-    if (previousSelf === undefined) delete globalThis.self;
-    else globalThis.self = previousSelf;
-    if (previousCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = previousCaches;
-  }
-});
-
-test('WebGPU worker replays text tool history and applies model-specific generation contracts', async () => {
-  const previousSelf = globalThis.self;
-  const previousCounts = globalThis.__webgpuRuntimeCounts;
-  const previousHoldTextDownload = globalThis.__holdWebgpuTextDownload;
-  const previousReleaseTextDownload = globalThis.__releaseWebgpuTextDownload;
-  const previousGenerationOptions = globalThis.__webgpuGenerationOptions;
-  const previousPipelineOptions = globalThis.__webgpuPipelineOptions;
-  const previousHoldTextGeneration = globalThis.__holdWebgpuTextGeneration;
-  const previousReleaseTextGeneration = globalThis.__releaseWebgpuTextGeneration;
-  let workerListener = null;
-  const posted = [];
-  try {
-    globalThis.self = {
-      addEventListener(type, listener) {
-        if (type === 'message') workerListener = listener;
-      },
-      postMessage(message) {
-        posted.push(message);
-      },
-    };
-    const workerUrl = `${pathToFileURL(path.join(ROOT, 'src/chrome/src/offscreen/inference-worker.js')).href}?tool-history-test`;
-    const { prepareTextMessages, splitThinking, tokenizerSupportsTools } = await import(workerUrl);
-    const messages = [
-      {
-        role: 'assistant',
-        content: null,
-        tool_calls: [{
-          id: 'call_1',
-          type: 'function',
-          function: {
-            name: 'click_ax',
-            arguments: '{"ref_id":"ref_7","force":true}',
-          },
-        }],
-      },
-      { role: 'tool', tool_call_id: 'call_1', content: '{"success":true}' },
-    ];
-
-    const prepared = prepareTextMessages(messages);
-    assert.deepEqual(prepared[0].tool_calls[0].function.arguments, { ref_id: 'ref_7', force: true });
-    assert.equal(prepared[0].content, '');
-    assert.equal(prepared[1].content, '{"success":true}');
-    assert.equal(messages[0].tool_calls[0].function.arguments, '{"ref_id":"ref_7","force":true}', 'normalization must not mutate persisted history');
-    assert.deepEqual(splitThinking('<think>private trace</think>Visible answer'), {
-      content: 'Visible answer',
-      reasoningContent: 'private trace',
-      incompleteReasoning: false,
-    });
-    assert.deepEqual(splitThinking('implicit private trace</think>Visible answer', { openingTagInPrompt: true }), {
-      content: 'Visible answer',
-      reasoningContent: 'implicit private trace',
-      incompleteReasoning: false,
-    });
-    assert.deepEqual(splitThinking('unfinished private trace', { openingTagInPrompt: true }), {
-      content: '',
-      reasoningContent: 'unfinished private trace',
-      incompleteReasoning: true,
-    });
-    assert.equal(tokenizerSupportsTools({ chat_template: '{% if tools %}{{ tools }}{% endif %}{{ messages }}' }), true);
-    assert.equal(tokenizerSupportsTools({ chat_template: '{{ messages }}' }), false);
-    assert.equal(tokenizerSupportsTools({
-      chat_template: {
-        default: '{{ messages }}',
-        tool_use: '{% for tool in tools %}{{ tool }}{% endfor %}',
-      },
-    }), true);
-
-    globalThis.__webgpuRuntimeCounts = {
-      visionProcessorLoads: 0,
-      visionModelLoads: 0,
-      textLoads: 0,
-      visionProcessorDisposals: 0,
-      visionModelDisposals: 0,
-      textDisposals: 0,
-    };
-    const runtimeModule = `
-      export const env = { version: 'test', backends: { onnx: { wasm: {} } } };
-      export class RawImage { constructor(data, width, height, channels) { Object.assign(this, { data, width, height, channels }); } }
-      export const AutoProcessor = {
-        async from_pretrained() {
-          globalThis.__webgpuRuntimeCounts.visionProcessorLoads++;
-          const processor = async () => ({ input_ids: { dims: { at: () => 1 } } });
-          processor.apply_chat_template = () => 'vision prompt';
-          processor.batch_decode = () => ['vision answer'];
-          processor.dispose = async () => { globalThis.__webgpuRuntimeCounts.visionProcessorDisposals++; };
-          return processor;
-        },
-      };
-      export const AutoModelForImageTextToText = {
-        async from_pretrained() {
-          globalThis.__webgpuRuntimeCounts.visionModelLoads++;
-          return {
-            generate: async () => ({ slice: () => ({}) }),
-            dispose: async () => { globalThis.__webgpuRuntimeCounts.visionModelDisposals++; },
-          };
-        },
-      };
-      export async function pipeline(task, modelId, options) {
-        globalThis.__webgpuRuntimeCounts.textLoads++;
-        options.session_options.extra.session ??= {};
-        options.session_options.extra.session.use_ort_model_bytes_directly ??= '1';
-        globalThis.__webgpuPipelineOptions = { task, modelId, options };
-        if (globalThis.__holdWebgpuTextDownload) {
-          await new Promise(resolve => { globalThis.__releaseWebgpuTextDownload = resolve; });
-        }
-        const instance = async (input, options) => {
-          if (globalThis.__holdWebgpuTextGeneration) {
-            await new Promise(resolve => { globalThis.__releaseWebgpuTextGeneration = resolve; });
-          }
-          globalThis.__webgpuGenerationOptions = options;
-          const content = modelId === 'LiquidAI/LFM2.5-2.6B-ONNX'
-            ? 'private model reasoning</think>Hello!'
-            : 'text answer';
-          return [{ generated_text: [...input, { role: 'assistant', content }] }];
-        };
-        instance.model = {};
-        instance.tokenizer = {
-          chat_template: modelId === 'custom-no-tools'
-            ? '{{ messages }}'
-            : '{% if tools %}{{ tools }}{% endif %}{{ messages }}',
-        };
-        instance.dispose = async () => { globalThis.__webgpuRuntimeCounts.textDisposals++; };
-        return instance;
-      }
-    `;
-    let requestId = 1;
-    const dispatch = async (type, payload = {}) => {
-      const id = requestId++;
-      await workerListener({ data: { id, type, payload } });
-      const response = posted.find(message => message.id === id);
-      assert.ok(response, `worker did not answer ${type}`);
-      assert.equal(response.ok, true, response.error || `${type} failed`);
-      return response;
-    };
-    await dispatch('init', {
-      transformersUrl: `data:text/javascript,${encodeURIComponent(runtimeModule)}`,
-      wasmMjsUrl: 'test.mjs',
-      wasmUrl: 'test.wasm',
-    });
-    const visionPayload = {
-      modelId: 'vision-model',
-      device: 'webgpu',
-      dtype: { decoder_model_merged: 'q4' },
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Describe this.' },
-          { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } },
-        ],
-      }],
-      options: { visionProbe: true, maxTokens: 1 },
-    };
-    const textPayload = {
-      modelId: 'text-model',
-      device: 'webgpu',
-      dtype: 'q4f16',
-      messages: [{ role: 'user', content: 'Continue.' }],
-      options: { maxTokens: 4096 },
-    };
-    await dispatch('chat', visionPayload);
-    const beforeDownloadId = requestId++;
-    await workerListener({ data: { id: beforeDownloadId, type: 'text-chat', payload: textPayload } });
-    const beforeDownload = posted.find(message => message.id === beforeDownloadId);
-    assert.equal(beforeDownload.ok, false);
-    assert.match(beforeDownload.error, /not downloaded/);
-    await dispatch('download-text', textPayload);
-    await dispatch('text-chat', textPayload);
-    assert.equal(
-      globalThis.__webgpuPipelineOptions.options.session_options.extra['ep.webgpuexecutionprovider.storageBufferCacheMode'],
-      'simple',
-      'Ling must avoid ORT WebGPU bucket-cache amplification',
-    );
-    assert.equal(globalThis.__webgpuGenerationOptions.max_new_tokens, 256, 'Ling generation must keep a browser-safe output budget');
-    await dispatch('chat', visionPayload);
-    await dispatch('text-chat', textPayload);
-    assert.deepEqual(globalThis.__webgpuRuntimeCounts, {
-      visionProcessorLoads: 1,
-      visionModelLoads: 1,
-      textLoads: 1,
-      visionProcessorDisposals: 0,
-      visionModelDisposals: 0,
-      textDisposals: 0,
-    }, 'alternating calls should reuse both resident runtimes');
-
-    await dispatch('dispose-vision');
-    assert.equal(globalThis.__webgpuRuntimeCounts.visionProcessorDisposals, 1);
-    assert.equal(globalThis.__webgpuRuntimeCounts.visionModelDisposals, 1);
-    assert.equal(globalThis.__webgpuRuntimeCounts.textDisposals, 0, 'vision disposal must preserve Ling');
-    await dispatch('dispose-text');
-    assert.equal(globalThis.__webgpuRuntimeCounts.textDisposals, 1);
-
-    await dispatch('stop-text-download', textPayload);
-    const stopped = await dispatch('text-download-status', textPayload);
-    assert.equal(stopped.status, 'not-downloaded');
-    assert.equal(stopped.ready, false);
-
-    globalThis.__holdWebgpuTextDownload = true;
-    const pausedDownloadId = requestId++;
-    const pausedDownloadPromise = workerListener({
-      data: { id: pausedDownloadId, type: 'download-text', payload: textPayload },
-    });
-    for (let attempt = 0; attempt < 20 && !globalThis.__releaseWebgpuTextDownload; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    assert.equal(typeof globalThis.__releaseWebgpuTextDownload, 'function', 'download should reach the controllable pipeline');
-    const paused = await dispatch('pause-text-download');
-    assert.equal(paused.status, 'paused');
-    globalThis.__releaseWebgpuTextDownload();
-    await pausedDownloadPromise;
-    const pausedDownload = posted.find(message => message.id === pausedDownloadId);
-    assert.equal(pausedDownload.ok, true);
-    assert.equal(pausedDownload.status, 'paused');
-
-    globalThis.__holdWebgpuTextDownload = false;
-    globalThis.__releaseWebgpuTextDownload = null;
-    const resumed = await dispatch('download-text', textPayload);
-    assert.equal(resumed.status, 'ready');
-    assert.equal(resumed.ready, true);
-
-    globalThis.__holdWebgpuTextDownload = true;
-    globalThis.__releaseWebgpuTextDownload = null;
-    const activePayload = { ...textPayload, modelId: 'text-model-active' };
-    const otherPayload = { ...textPayload, modelId: 'text-model-other' };
-    const activeDownloadId = requestId++;
-    const activeDownloadPromise = workerListener({
-      data: { id: activeDownloadId, type: 'download-text', payload: activePayload },
-    });
-    for (let attempt = 0; attempt < 20 && !globalThis.__releaseWebgpuTextDownload; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    assert.equal(typeof globalThis.__releaseWebgpuTextDownload, 'function', 'second download should reach the controllable pipeline');
-
-    const conflictId = requestId++;
-    await workerListener({
-      data: { id: conflictId, type: 'start-download-text', payload: otherPayload },
-    });
-    const conflict = posted.find(message => message.id === conflictId);
-    assert.equal(conflict.ok, false);
-    assert.match(conflict.error, /Finish or stop the text-model-active download/);
-
-    const otherStatus = await dispatch('text-download-status', otherPayload);
-    assert.equal(otherStatus.modelId, otherPayload.modelId);
-    assert.equal(otherStatus.status, 'not-downloaded');
-    const stopOtherId = requestId++;
-    const stopOtherPromise = workerListener({
-      data: { id: stopOtherId, type: 'stop-text-download', payload: otherPayload },
-    });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    globalThis.__releaseWebgpuTextDownload();
-    await Promise.all([activeDownloadPromise, stopOtherPromise]);
-
-    const activeDownload = posted.find(message => message.id === activeDownloadId);
-    assert.equal(activeDownload.ok, true);
-    assert.equal(activeDownload.modelId, activePayload.modelId, 'another model status/stop request must not relabel the active transfer');
-    assert.equal(activeDownload.status, 'ready', 'stopping another model must not abort the active transfer');
-    const stoppedOther = posted.find(message => message.id === stopOtherId);
-    assert.equal(stoppedOther.modelId, otherPayload.modelId);
-    assert.equal(stoppedOther.status, 'not-downloaded');
-    const activeStatus = await dispatch('text-download-status', activePayload);
-    assert.equal(activeStatus.status, 'ready');
-    assert.equal(activeStatus.ready, true);
-
-    globalThis.__holdWebgpuTextGeneration = true;
-    const generationId = requestId++;
-    const generationPromise = workerListener({ data: { id: generationId, type: 'text-chat', payload: activePayload } });
-    for (let attempt = 0; attempt < 20 && !globalThis.__releaseWebgpuTextGeneration; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    const queuedPayload = { ...textPayload, modelId: 'text-model-queued' };
-    const queuedId = requestId++;
-    const queuedPromise = workerListener({ data: { id: queuedId, type: 'start-download-text', payload: queuedPayload } });
-    const stopQueuedId = requestId++;
-    const stopQueuedPromise = workerListener({ data: { id: stopQueuedId, type: 'stop-text-download', payload: queuedPayload } });
-    globalThis.__releaseWebgpuTextGeneration();
-    await Promise.all([generationPromise, queuedPromise, stopQueuedPromise]);
-    assert.equal(posted.find(message => message.id === queuedId)?.status, 'not-downloaded', 'stopped queued download still started');
-    assert.equal(posted.find(message => message.id === stopQueuedId)?.status, 'not-downloaded', 'queued Stop did not clear the target model');
-    globalThis.__holdWebgpuTextGeneration = false;
-    globalThis.__releaseWebgpuTextGeneration = null;
-
-    const pausedVisionPayload = {
-      modelId: 'vision-model-paused',
-      device: 'webgpu',
-      dtype: { decoder_model_merged: 'q4' },
-    };
-    const visionLoadsBeforePause = globalThis.__webgpuRuntimeCounts.visionModelLoads;
-    globalThis.__holdWebgpuTextGeneration = true;
-    const pauseBlockerId = requestId++;
-    const pauseBlockerPromise = workerListener({
-      data: { id: pauseBlockerId, type: 'text-chat', payload: activePayload },
-    });
-    for (let attempt = 0; attempt < 20 && !globalThis.__releaseWebgpuTextGeneration; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    const pausedVisionId = requestId++;
-    const pausedVisionPromise = workerListener({
-      data: { id: pausedVisionId, type: 'preload', payload: pausedVisionPayload },
-    });
-    const pausedVision = await dispatch('pause-vision-download', { modelId: pausedVisionPayload.modelId });
-    assert.equal(pausedVision.status, 'paused');
-    globalThis.__releaseWebgpuTextGeneration();
-    await Promise.all([pauseBlockerPromise, pausedVisionPromise]);
-    assert.equal(posted.find(message => message.id === pausedVisionId)?.status, 'paused',
-      'a queued Vision Model preload must remain cancelled after the queue unblocks');
-    assert.equal(globalThis.__webgpuRuntimeCounts.visionModelLoads, visionLoadsBeforePause,
-      'pausing a queued Vision Model preload must prevent it from starting');
-    globalThis.__holdWebgpuTextGeneration = false;
-    globalThis.__releaseWebgpuTextGeneration = null;
-
-    const resumedVision = await dispatch('preload', pausedVisionPayload);
-    assert.equal(resumedVision.status, 'ready');
-    assert.equal(globalThis.__webgpuRuntimeCounts.visionModelLoads, visionLoadsBeforePause + 1);
-    await dispatch('dispose-vision');
-
-    const stoppedVisionPayload = {
-      ...pausedVisionPayload,
-      modelId: 'vision-model-stopped',
-    };
-    const visionLoadsBeforeStop = globalThis.__webgpuRuntimeCounts.visionModelLoads;
-    globalThis.__holdWebgpuTextGeneration = true;
-    const stopBlockerId = requestId++;
-    const stopBlockerPromise = workerListener({
-      data: { id: stopBlockerId, type: 'text-chat', payload: activePayload },
-    });
-    for (let attempt = 0; attempt < 20 && !globalThis.__releaseWebgpuTextGeneration; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    const stoppedVisionId = requestId++;
-    const stoppedVisionPromise = workerListener({
-      data: { id: stoppedVisionId, type: 'preload', payload: stoppedVisionPayload },
-    });
-    const stopVisionId = requestId++;
-    const stopVisionPromise = workerListener({
-      data: { id: stopVisionId, type: 'stop-vision-download', payload: stoppedVisionPayload },
-    });
-    await Promise.race([
-      stopVisionPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(
-        'stopping a queued Vision Model waited for the unrelated text operation',
-      )), 250)),
-    ]);
-    assert.equal(posted.find(message => message.id === stopVisionId)?.status, 'not-downloaded',
-      'queued Vision Stop was not acknowledged before the text queue unblocked');
-    globalThis.__releaseWebgpuTextGeneration();
-    await Promise.all([stopBlockerPromise, stoppedVisionPromise, stopVisionPromise]);
-    assert.equal(posted.find(message => message.id === stoppedVisionId)?.status, 'not-downloaded',
-      'a stopped queued Vision Model preload still started');
-    assert.equal(posted.find(message => message.id === stopVisionId)?.status, 'not-downloaded');
-    assert.equal(globalThis.__webgpuRuntimeCounts.visionModelLoads, visionLoadsBeforeStop,
-      'stopping a queued Vision Model preload must prevent it from starting');
-    globalThis.__holdWebgpuTextGeneration = false;
-    globalThis.__releaseWebgpuTextGeneration = null;
-
-    globalThis.__holdWebgpuTextDownload = false;
-    globalThis.__releaseWebgpuTextDownload = null;
-    const objectDtypePayload = {
-      ...textPayload,
-      modelId: 'text-model-object-dtype',
-      dtype: { decoder_model_merged: 'q2f16', embed_tokens: 'q2f16' },
-    };
-    const objectDtypeDownload = await dispatch('download-text', objectDtypePayload);
-    assert.equal(objectDtypeDownload.status, 'ready');
-    const objectDtypeStatus = await dispatch('text-download-status', {
-      ...objectDtypePayload,
-      dtype: { embed_tokens: 'q2f16', decoder_model_merged: 'q2f16' },
-    });
-    assert.equal(objectDtypeStatus.status, 'ready', 'dtype-map key order must not change model readiness');
-    const wrongObjectDtypeStatus = await dispatch('text-download-status', {
-      ...objectDtypePayload,
-      dtype: { embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' },
-    });
-    assert.equal(wrongObjectDtypeStatus.status, 'not-downloaded', 'different dtype maps must have separate ready markers');
-
-    const lfmPayload = {
-      ...textPayload,
-      modelId: WEBGPU_LFM25_MODEL_ID,
-    };
-    await dispatch('download-text', lfmPayload);
-    const lfmResponse = await dispatch('text-chat', lfmPayload);
-    assert.equal(lfmResponse.content, 'Hello!');
-    assert.equal(lfmResponse.reasoningContent, 'private model reasoning');
-    assert.deepEqual(globalThis.__webgpuGenerationOptions, {
-      do_sample: true,
-      temperature: 0.1,
-      top_k: 50,
-      repetition_penalty: 1.1,
-      max_new_tokens: 512,
-      tools: undefined,
-      tokenizer_encode_kwargs: { preserve_thinking: false },
-    }, 'LFM2.5 must use LiquidAI generation settings and its reasoning-template argument');
-
-    const incompatiblePayload = {
-      ...textPayload,
-      modelId: 'custom-no-tools',
-      requireTools: true,
-    };
-    const incompatibleId = requestId++;
-    await workerListener({
-      data: { id: incompatibleId, type: 'download-text', payload: incompatiblePayload },
-    });
-    const incompatible = posted.find(message => message.id === incompatibleId);
-    assert.equal(incompatible.ok, false);
-    assert.match(incompatible.error, /chat template that accepts tools/);
-  } finally {
-    if (previousSelf === undefined) delete globalThis.self;
-    else globalThis.self = previousSelf;
-    if (previousCounts === undefined) delete globalThis.__webgpuRuntimeCounts;
-    else globalThis.__webgpuRuntimeCounts = previousCounts;
-    if (previousHoldTextDownload === undefined) delete globalThis.__holdWebgpuTextDownload;
-    else globalThis.__holdWebgpuTextDownload = previousHoldTextDownload;
-    if (previousReleaseTextDownload === undefined) delete globalThis.__releaseWebgpuTextDownload;
-    else globalThis.__releaseWebgpuTextDownload = previousReleaseTextDownload;
-    if (previousGenerationOptions === undefined) delete globalThis.__webgpuGenerationOptions;
-    else globalThis.__webgpuGenerationOptions = previousGenerationOptions;
-    if (previousPipelineOptions === undefined) delete globalThis.__webgpuPipelineOptions;
-    else globalThis.__webgpuPipelineOptions = previousPipelineOptions;
-    if (previousHoldTextGeneration === undefined) delete globalThis.__holdWebgpuTextGeneration;
-    else globalThis.__holdWebgpuTextGeneration = previousHoldTextGeneration;
-    if (previousReleaseTextGeneration === undefined) delete globalThis.__releaseWebgpuTextGeneration;
-    else globalThis.__releaseWebgpuTextGeneration = previousReleaseTextGeneration;
-  }
-});
-
 test('categoryFor: local family', () => {
   for (const PM of [ProviderManagerCh, ProviderManagerFx]) {
     for (const id of ['llamacpp', 'ollama', 'lmstudio', 'jan', 'vllm', 'sglang', 'localai', 'gpt4all', 'local_openai_proxy']) {
@@ -46665,7 +41305,6 @@ test('categoryFor: local family', () => {
     }
     assert.equal(PM.categoryFor('custom_llama_cpp', { type: 'llamacpp' }), 'local');
   }
-  assert.equal(ProviderManagerCh.categoryFor('webgpu', { type: 'webgpu' }), 'local');
 });
 
 test('categoryFor: cloud family (openai / anthropic / gemini / mistral / deepseek / xai / oauth)', () => {
@@ -48805,14 +43444,6 @@ test('ProviderManager removes only duplicates and safely reselects their source'
         /cannot be duplicated/i,
         `${label}: the managed no-setup provider should not produce meaningless copies`,
       );
-      if (defaults.webgpu) {
-        manager.providers.set('webgpu', manager._createProvider('webgpu', defaults.webgpu));
-        await assert.rejects(
-          () => manager.duplicateProvider('webgpu'),
-          /cannot be duplicated/i,
-          `${label}: a shared in-browser WebGPU runtime should not be duplicated`,
-        );
-      }
     }
   } finally {
     globalThis.chrome = originalChrome;
@@ -49592,9 +44223,7 @@ test('provider response path preserves raw assistant content and metadata', asyn
   ]) {
     const raw = { choices: [{ message: { content: malformed } }] };
     const agent = new AgentClass({});
-    agent._checkCostAllowance = async () => null;
-    agent._recordCostUsage = async () => null;
-    const result = await agent._chatWithCostAllowance({
+    const result = await agent._chat({
       chat: async () => ({
         content: malformed,
         reasoningContent,
@@ -49908,6 +44537,27 @@ test('_defaultConfigs: new offline providers present and enabled by default', ()
   }
 });
 
+test('_defaultConfigs: chrome and firefox ship identical provider sets', () => {
+  // The Chromium-only in-browser WebGPU runtime was the one provider the two
+  // builds did not share. With it removed the lists must match exactly, so any
+  // future divergence is a bug rather than a documented exception.
+  const chDefaults = new ProviderManagerCh()._defaultConfigs();
+  const fxDefaults = new ProviderManagerFx()._defaultConfigs();
+  assert.deepEqual(
+    Object.keys(chDefaults).sort(),
+    Object.keys(fxDefaults).sort(),
+    'provider lists diverged between the Chrome and Firefox builds'
+  );
+  // Categories must also match — drift here would mean the filter UI
+  // shows different buckets on each platform.
+  for (const id of Object.keys(fxDefaults)) {
+    assert.equal(
+      chDefaults[id].category, fxDefaults[id].category,
+      `provider ${id}: category differs (chrome=${chDefaults[id].category}, firefox=${fxDefaults[id].category})`
+    );
+  }
+});
+
 test('_defaultConfigs: generic local OpenAI-compatible proxy is safe and configurable', () => {
   for (const [label, PM, settingsRel] of [
     ['chrome', ProviderManagerCh, 'src/chrome/src/ui/settings.js'],
@@ -50147,42 +44797,6 @@ test('Kimi settings keep K2.5 as the default and list every supported model', ()
       /kimi:\s*\{[\s\S]*?placeholder: 'kimi-k2\.5'[\s\S]*?suggestions: \['kimi-k2\.5', 'kimi-k3', 'kimi-k2\.7-code', 'kimi-k2\.7-code-highspeed', 'kimi-k2\.6'\][\s\S]*?https:\/\/api\.moonshot\.ai\/v1/,
       `${prefix}: Kimi should default to K2.5 and list all five current model IDs`,
     );
-  }
-});
-
-test('_defaultConfigs: chrome and firefox differ only by the Chromium WebGPU provider', () => {
-  const chDefaults = new ProviderManagerCh()._defaultConfigs();
-  const fxDefaults = new ProviderManagerFx()._defaultConfigs();
-  assert.deepEqual(
-    Object.keys(chDefaults).filter(id => id !== 'webgpu').sort(),
-    Object.keys(fxDefaults).sort(),
-    'provider lists diverged beyond the Chromium-only WebGPU runtime'
-  );
-  // Categories must also match — drift here would mean the filter UI
-  // shows different buckets on each platform.
-  for (const id of Object.keys(fxDefaults)) {
-    assert.equal(
-      chDefaults[id].category, fxDefaults[id].category,
-      `provider ${id}: category differs (chrome=${chDefaults[id].category}, firefox=${fxDefaults[id].category})`
-    );
-  }
-});
-
-test('WebBrain Cloud sends the Help Improve preference without leaking it to BYO providers', () => {
-  for (const Provider of [OpenAIProviderCh, OpenAIProviderFx]) {
-    const defaultOn = new Provider({ providerName: 'webbrain-cloud', deviceGuid: 'device-123' });
-    assert.equal(defaultOn._headers()['X-WebBrain-Help-Improve'], '1');
-    assert.equal(defaultOn._headers()['X-WebBrain-Device-Id'], 'device-123');
-    assert.equal(defaultOn._headers()['X-WebBrain-Client'], 'extension');
-
-    const optedOut = new Provider({ providerName: 'webbrain-cloud', helpImproveWebBrain: false });
-    assert.equal(optedOut._headers()['X-WebBrain-Help-Improve'], '0');
-    assert.equal(optedOut._headers()['X-WebBrain-Device-Id'], undefined);
-    assert.equal(optedOut._headers()['X-WebBrain-Client'], 'extension');
-
-    const bringYourOwn = new Provider({ providerName: 'openai', apiKey: 'test-key' });
-    assert.equal(bringYourOwn._headers()['X-WebBrain-Help-Improve'], undefined);
-    assert.equal(bringYourOwn._headers()['X-WebBrain-Client'], undefined);
   }
 });
 
@@ -51311,14 +45925,11 @@ test('Ask stream aggregation exposes text live but withholds tool calls until re
       },
     };
     const agent = new AgentClass({});
-    agent._checkCostAllowance = async () => null;
-    agent._recordCostUsage = async () => null;
     const deltas = [];
     let settled = false;
-    const pending = agent._chatStreamWithCostAllowance(
+    const pending = agent._chatStream(
       provider,
       [{ role: 'user', content: 'check' }],
-      {},
       {},
       null,
       delta => deltas.push(delta),
@@ -51353,36 +45964,22 @@ test('Ask streaming estimates and records usage when a provider omits token meta
     };
 
     const successfulAgent = new AgentClass({});
-    successfulAgent._checkCostAllowance = async () => null;
-    let successfulRecordedUsage = null;
-    successfulAgent._recordCostUsage = async (_provider, usage) => {
-      successfulRecordedUsage = usage;
-      return null;
-    };
     const successfulProvider = {
       async *chatStream() {
         yield { type: 'text', content: 'Estimated answer.' };
         yield { type: 'done' };
       },
     };
-    const result = await successfulAgent._chatStreamWithCostAllowance(
+    const result = await successfulAgent._chatStream(
       successfulProvider,
       messages,
       streamOptions,
-      {},
     );
     assert.equal(result.usage?.estimated, true, `${label}: missing stream usage should be marked estimated`);
     assert.ok(result.usage?.prompt_tokens > 0, `${label}: estimated prompt usage should include messages and tools`);
     assert.ok(result.usage?.completion_tokens > 0, `${label}: estimated completion usage should include streamed text`);
-    assert.deepEqual(successfulRecordedUsage, result.usage, `${label}: estimated stream usage should reach cost accounting`);
 
     const interruptedAgent = new AgentClass({});
-    interruptedAgent._checkCostAllowance = async () => null;
-    let interruptedRecordedUsage = null;
-    interruptedAgent._recordCostUsage = async (_provider, usage) => {
-      interruptedRecordedUsage = usage;
-      return null;
-    };
     const interruptedProvider = {
       async *chatStream() {
         yield { type: 'text', content: 'Billable partial output.' };
@@ -51392,7 +45989,7 @@ test('Ask streaming estimates and records usage when a provider omits token meta
       },
     };
     await assert.rejects(
-      interruptedAgent._chatStreamWithCostAllowance(
+      interruptedAgent._chatStream(
         interruptedProvider,
         messages,
         streamOptions,
@@ -51400,8 +45997,6 @@ test('Ask streaming estimates and records usage when a provider omits token meta
       ),
       /stream ended early/,
     );
-    assert.equal(interruptedRecordedUsage?.estimated, true, `${label}: interrupted billable output should be estimated`);
-    assert.ok(interruptedRecordedUsage?.total_tokens > 0, `${label}: interrupted stream usage should reach cost accounting`);
   }
 });
 
@@ -52869,362 +47464,6 @@ test('official GPT-5.6 keeps HTTP stream errors terminal', async () => {
     }
   } finally {
     globalThis.fetch = originalFetch;
-  }
-});
-
-test('Agent cost metering treats bracketed local IPv6 URLs as local', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    for (const url of [
-      'http://[::1]:1234/v1',
-      'http://[::]:1234/v1',
-      'http://[fc00::1]:1234/v1',
-      'http://[fd12:3456::1]:1234/v1',
-      'http://[fe80::1]:1234/v1',
-      'http://[::ffff:127.0.0.1]:1234/v1',
-      'http://[::ffff:192.168.1.1]:1234/v1',
-    ]) {
-      assert.equal(agent._isLocalBaseUrl(url), true, `${AgentClass.name} should treat ${url} as local`);
-      assert.equal(
-        agent._isCostMeteredProvider({ config: { type: 'openai', baseUrl: url, apiKey: 'local-key' } }),
-        false,
-        `${AgentClass.name} should not meter ${url}`
-      );
-    }
-  }
-});
-
-test('Agent cost metering is limited to cloud and router categories and excludes WebBrain Cloud', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const cases = [
-      {
-        config: { category: 'cloud', providerName: 'webbrain-cloud', baseUrl: 'https://api.webbrain.one/v1' },
-        expected: false,
-        label: 'WebBrain Cloud',
-      },
-      {
-        config: { category: 'cloud', providerName: 'openai', baseUrl: 'https://api.openai.com/v1' },
-        expected: true,
-        label: 'cloud provider',
-      },
-      {
-        config: { category: 'router', providerName: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
-        expected: true,
-        label: 'router provider',
-      },
-      {
-        config: { category: 'local', providerName: 'llamacpp', baseUrl: 'https://remote-local-model.example/v1' },
-        expected: false,
-        label: 'local category',
-      },
-      {
-        config: { providerName: 'custom', baseUrl: 'https://custom.example/v1', apiKey: 'key' },
-        expected: false,
-        label: 'uncategorized remote endpoint',
-      },
-    ];
-    for (const { config, expected, label } of cases) {
-      assert.equal(
-        agent._isCostMeteredProvider({ config }),
-        expected,
-        `${AgentClass.name} should ${expected ? '' : 'not '}meter ${label}`
-      );
-    }
-  }
-});
-
-test('dedicated vision providers are cost-metered when remote and exempt when local', async () => {
-  const originalChrome = globalThis.chrome;
-  const originalBrowser = globalThis.browser;
-  try {
-    for (const [label, apiName, ManagerClass, AgentClass] of [
-      ['chrome', 'chrome', ProviderManagerCh, AgentCh],
-      ['firefox', 'browser', ProviderManagerFx, AgentFx],
-    ]) {
-      let baseUrl = 'https://api.openai.com/v1';
-      globalThis[apiName] = {
-        storage: {
-          local: {
-            get: async () => ({
-              visionModel: { baseUrl, apiKey: 'paid-key', model: 'gpt-5.6-terra' },
-            }),
-          },
-        },
-      };
-
-      const manager = new ManagerClass();
-      const agent = new AgentClass(manager);
-      const remoteVision = await manager.getVisionProvider();
-      assert.equal(remoteVision.config.category, 'cloud', `${label}: dedicated vision should be classified as cloud`);
-      assert.equal(agent._isCostMeteredProvider(remoteVision), true, `${label}: remote dedicated vision should be metered`);
-
-      baseUrl = 'http://localhost:1234/v1';
-      const localVision = await manager.getVisionProvider();
-      assert.equal(localVision.config.category, 'cloud', `${label}: dedicated vision should retain its provider category`);
-      assert.equal(agent._isCostMeteredProvider(localVision), false, `${label}: local dedicated vision should remain exempt`);
-    }
-  } finally {
-    if (originalChrome === undefined) delete globalThis.chrome;
-    else globalThis.chrome = originalChrome;
-    if (originalBrowser === undefined) delete globalThis.browser;
-    else globalThis.browser = originalBrowser;
-  }
-});
-
-test('cost accounting starts a fresh aggregate after the WebBrain Cloud exemption', () => {
-  for (const [label, prefix] of [
-    ['chrome', 'src/chrome'],
-    ['firefox', 'src/firefox'],
-  ]) {
-    const agentSource = fs.readFileSync(path.join(ROOT, prefix, 'src/agent/agent.js'), 'utf8');
-    const settingsSource = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/settings.js'), 'utf8');
-    assert.match(
-      agentSource,
-      /const CLOUD_COST_SPENT_KEY = 'meteredProviderCostSpentUsd';/,
-      `${label}: cost accounting should use the metered-only aggregate`,
-    );
-    assert.doesNotMatch(
-      agentSource,
-      /const CLOUD_COST_SPENT_KEY = 'cloudCostSpentUsd';/,
-      `${label}: legacy spend that included WebBrain Cloud must not be inherited`,
-    );
-    assert.match(
-      settingsSource,
-      /meteredProviderCostSpentUsd/,
-      `${label}: Settings should display and reset the metered-only aggregate`,
-    );
-    assert.doesNotMatch(
-      settingsSource,
-      /cloudCostSpentUsd/,
-      `${label}: Settings should not display the legacy mixed aggregate`,
-    );
-  }
-});
-
-test('Agent cost metering treats only real IPv4 literals as local', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    for (const url of [
-      'http://10.1.2.3:1234/v1',
-      'http://127.0.0.1:1234/v1',
-      'http://172.16.0.5:1234/v1',
-      'http://192.168.1.10:1234/v1',
-    ]) {
-      assert.equal(agent._isLocalBaseUrl(url), true, `${AgentClass.name} should treat ${url} as local`);
-    }
-    for (const url of [
-      'https://10.example.com/v1',
-      'https://127.example.com/v1',
-      'https://172.16.example.com/v1',
-      'https://192.168.example.com/v1',
-      'https://999.1.2.3/v1',
-    ]) {
-      assert.equal(agent._isLocalBaseUrl(url), false, `${AgentClass.name} should treat ${url} as remote`);
-      assert.equal(
-        agent._isCostMeteredProvider({ config: { type: 'openai', category: 'cloud', baseUrl: url, apiKey: 'paid-key' } }),
-        true,
-        `${AgentClass.name} should meter ${url}`
-      );
-    }
-  }
-});
-
-test('Agent cost metering does not charge local URLs saved on cloud cards', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    for (const config of [
-      { type: 'openai', category: 'cloud', providerName: 'nvidia', baseUrl: 'http://localhost:8000/v1', apiKey: 'self-hosted' },
-      { type: 'openai', category: 'cloud', providerName: 'openai', baseUrl: 'http://127.0.0.1:8080/v1', apiKey: 'proxy-key' },
-      { type: 'openai', category: 'router', providerName: 'openrouter', baseUrl: 'http://192.168.1.8:3000/v1', apiKey: 'router-key' },
-      { type: 'openai', category: 'cloud', providerName: 'mistral', baseUrl: 'http://[::1]:1234/v1', apiKey: 'local-key' },
-    ]) {
-      assert.equal(
-        agent._isCostMeteredProvider({ config }),
-        false,
-        `${AgentClass.name} should not meter local override ${config.baseUrl}`
-      );
-    }
-  }
-});
-
-test('Agent cost metering still treats public IPv6 URLs as remote', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    assert.equal(agent._isLocalBaseUrl('https://[2606:4700:4700::1111]/v1'), false);
-    assert.equal(
-      agent._isCostMeteredProvider({ config: { type: 'openai', category: 'router', baseUrl: 'https://[2606:4700:4700::1111]/v1', apiKey: 'paid-key' } }),
-      true
-    );
-  }
-});
-
-test('Agent cost extraction honors reported zero-cost usage', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = { config: { inputCostPerMillionUsd: 100, outputCostPerMillionUsd: 100 } };
-    const usage = { prompt_tokens: 1000, completion_tokens: 1000 };
-    assert.equal(agent._extractUsageCostUsd(provider, { ...usage, cost: 0 }), 0);
-    assert.equal(agent._extractUsageCostUsd(provider, { ...usage, cost_usd: '0' }), 0);
-  }
-});
-
-test('Agent cost extraction estimates only when reported cost is missing', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = { config: { inputCostPerMillionUsd: 100, outputCostPerMillionUsd: 100 } };
-    const usage = { prompt_tokens: 1000, completion_tokens: 1000 };
-    assert.equal(agent._extractUsageCostUsd(provider, usage), 0.2);
-    assert.equal(agent._extractUsageCostUsd(provider, { ...usage, cost: '' }), 0.2);
-  }
-});
-
-test('Agent cost estimation discounts OpenAI cached input included in the input total', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = {
-      config: {
-        inputCostPerMillionUsd: 100,
-        cacheReadCostPerMillionUsd: 10,
-        outputCostPerMillionUsd: 200,
-      },
-    };
-    const chatCompletionsUsage = {
-      prompt_tokens: 1000,
-      completion_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 800 },
-    };
-    const responsesUsage = {
-      input_tokens: 1000,
-      output_tokens: 100,
-      input_tokens_details: { cached_tokens: 800 },
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, chatCompletionsUsage), 0.048);
-    assert.equal(agent._estimateUsageCostUsd(provider, responsesUsage), 0.048);
-  }
-});
-
-test('Agent cost estimation prices OpenAI included cache writes from nested usage details', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = {
-      config: {
-        inputCostPerMillionUsd: 100,
-        cacheReadCostPerMillionUsd: 10,
-        cacheWriteCostPerMillionUsd: 125,
-        outputCostPerMillionUsd: 200,
-      },
-    };
-    // uncached 200@100 + read 600@10 + write 200@125 + out 100@200 = 0.071
-    const chatCompletionsUsage = {
-      prompt_tokens: 1000,
-      completion_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 600, cache_write_tokens: 200 },
-    };
-    const responsesUsage = {
-      input_tokens: 1000,
-      output_tokens: 100,
-      input_tokens_details: { cached_tokens: 600, cache_write_tokens: 200 },
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, chatCompletionsUsage), 0.071);
-    assert.equal(agent._estimateUsageCostUsd(provider, responsesUsage), 0.071);
-
-    const clamped = {
-      prompt_tokens: 100,
-      completion_tokens: 0,
-      prompt_tokens_details: { cached_tokens: 80, cache_write_tokens: 50 },
-    };
-    // Clamp write so read+write <= input: uncached 0 + read 80@10 + write 20@125 = 0.0033
-    assert.equal(agent._estimateUsageCostUsd(provider, clamped), 0.0033);
-  }
-});
-
-test('Agent cost estimation handles Anthropic and Bedrock cache tokens as separate input', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = {
-      config: {
-        inputCostPerMillionUsd: 100,
-        cacheReadCostPerMillionUsd: 10,
-        cacheWriteCostPerMillionUsd: 125,
-        outputCostPerMillionUsd: 200,
-      },
-    };
-    const anthropicUsage = {
-      input_tokens: 200,
-      output_tokens: 100,
-      cache_read_input_tokens: 800,
-      cache_creation_input_tokens: 400,
-    };
-    const bedrockUsage = {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadInputTokens: 800,
-      cacheWriteInputTokens: 400,
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, anthropicUsage), 0.098);
-    assert.equal(agent._estimateUsageCostUsd(provider, bedrockUsage), 0.098);
-  }
-});
-
-test('Agent cost estimation prices Anthropic one-hour cache writes separately', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = {
-      config: {
-        inputCostPerMillionUsd: 100,
-        cacheWriteCostPerMillionUsd: 125,
-        cacheWrite1hCostPerMillionUsd: 200,
-        outputCostPerMillionUsd: 200,
-      },
-    };
-    const usage = {
-      input_tokens: 100,
-      output_tokens: 100,
-      cache_creation_input_tokens: 300,
-      cache_creation: {
-        ephemeral_5m_input_tokens: 100,
-        ephemeral_1h_input_tokens: 200,
-      },
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, usage), 0.0825);
-  }
-});
-
-test('Agent cost estimation prices Bedrock cache detail TTLs separately', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = {
-      config: {
-        inputCostPerMillionUsd: 100,
-        cacheWriteCostPerMillionUsd: 125,
-        cacheWrite1hCostPerMillionUsd: 200,
-        outputCostPerMillionUsd: 200,
-      },
-    };
-    const usage = {
-      prompt_tokens: 100,
-      completion_tokens: 100,
-      cacheWriteInputTokens: 300,
-      cacheDetails: [
-        { ttl: '1h', inputTokens: 200 },
-        { ttl: '5m', inputTokens: 100 },
-      ],
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, usage), 0.0825);
-  }
-});
-
-test('Agent cost estimation keeps normal input pricing when cache rates are absent', () => {
-  for (const AgentClass of [AgentCh, AgentFx]) {
-    const agent = new AgentClass({});
-    const provider = { config: { inputCostPerMillionUsd: 100, outputCostPerMillionUsd: 200 } };
-    const usage = {
-      prompt_tokens: 1000,
-      completion_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 800 },
-    };
-    assert.equal(agent._estimateUsageCostUsd(provider, usage), 0.12);
   }
 });
 
@@ -58016,7 +52255,7 @@ test('progress intent classifier accepts multilingual structured intent and fail
       { role: 'user', content: 'Her stargazer\\u2019i takip et.' },
     ]);
     agent._currentUrl = async () => 'https://github.com/foo/bar/stargazers';
-    agent._chatWithCostAllowance = async () => ({
+    agent._chat = async () => ({
       content: JSON.stringify({
         mode: 'active',
         allowedActions: ['follow'],
@@ -58037,7 +52276,7 @@ test('progress intent classifier accepts multilingual structured intent and fail
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'E-postaları topla, kimseyi takip etme; Follow butonlarını sadece durum için kullan.' },
     ]);
-    agent._chatWithCostAllowance = async () => ({
+    agent._chat = async () => ({
       content: JSON.stringify({
         mode: 'active',
         allowedActions: ['collect_email'],
@@ -58054,7 +52293,7 @@ test('progress intent classifier accepts multilingual structured intent and fail
     assert.deepEqual(TurkishNoFollow.allowedActions, ['collect_email'], `${AgentClass.name}: collect_email intent was not preserved`);
     assert.deepEqual(TurkishNoFollow.forbiddenActions, ['follow'], `${AgentClass.name}: negated takip et did not forbid follow`);
 
-    agent._chatWithCostAllowance = async () => ({ content: 'not json' });
+    agent._chat = async () => ({ content: 'not json' });
     const failed = await agent._ensureProgressSessionForCurrentTask(tabId, {
       provider: { chat: async () => ({ content: '{}' }) },
       pageScope: 'https://github.com/foo/bar/stargazers',
@@ -58532,7 +52771,7 @@ test('progress session changes remove stale pinned ledger prompts', async () => 
 
     agent.conversations.get(tabId).push({ role: 'assistant', content: 'Paused with one row unresolved.' });
     agent.conversations.get(tabId).push({ role: 'user', content: 'Summarize this repository.' });
-    agent._chatWithCostAllowance = async () => ({
+    agent._chat = async () => ({
       content: JSON.stringify({
         mode: 'read_only',
         allowedActions: [],
@@ -63561,7 +57800,7 @@ test('planner intent routes plan-only questions across languages without an inpu
     for (const [agentIndex, AgentClass] of [AgentCh, AgentFx].entries()) {
       for (const [caseIndex, fixture] of cases.entries()) {
         const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerIntentFixture({
             requestKind: 'plan_only',
             locale: fixture.locale,
@@ -63573,7 +57812,6 @@ test('planner intent routes plan-only questions across languages without an inpu
           8620 + (agentIndex * 10) + caseIndex,
           { role: 'user', content: fixture.task },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63599,7 +57837,7 @@ test('planner intent carries explicit planner-shaped result authorization', asyn
   await withPlannerBrowserGlobals(async () => {
     for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerIntentFixture({
           requestKind: 'execute',
           requiresStateChange: false,
@@ -63612,7 +57850,6 @@ test('planner intent carries explicit planner-shaped result authorization', asyn
         tabId,
         { role: 'user', content: 'Return JSON with summary, steps, risks, and confidence fields.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63635,7 +57872,7 @@ test('planner intent carries explicit app-state evidence authorization', async (
   await withPlannerBrowserGlobals(async () => {
     for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerIntentFixture({
           requestKind: 'execute',
           requiresStateChange: true,
@@ -63648,7 +57885,6 @@ test('planner intent carries explicit app-state evidence authorization', async (
         tabId,
         { role: 'user', content: 'Remember this note in the WebBrain scratchpad.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63673,7 +57909,7 @@ test('planner scheduling metadata reaches the execution guard with planning on o
       const intentTabId = 8590 + index;
       const intentAgent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
       intentAgent.setPlanBeforeActMode('off');
-      intentAgent._chatWithCostAllowance = async () => ({
+      intentAgent._chat = async () => ({
         content: plannerIntentFixture({
           requestKind: 'execute',
           requiresStateChange: false,
@@ -63685,7 +57921,6 @@ test('planner scheduling metadata reaches the execution guard with planning on o
         intentTabId,
         { role: 'user', content: 'Monitor this page every five minutes.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
@@ -63702,7 +57937,6 @@ test('planner scheduling metadata reaches the execution guard with planning on o
         () => {},
         'act',
         null,
-        null,
         { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
         { locale: 'en' },
       );
@@ -63716,7 +57950,7 @@ test('planner scheduling metadata reaches the execution guard with planning on o
       const fullTabId = 8592 + index;
       const fullAgent = new AgentClass({ getActive: () => ({ name: 'planner-test', model: 'planner-test' }) });
       fullAgent.setPlanBeforeActMode('try');
-      fullAgent._chatWithCostAllowance = async () => ({
+      fullAgent._chat = async () => ({
         content: plannerFixtureJson({
           scheduling: { tool: 'schedule_task', hint: 'Run a five-minute monitor.' },
         }),
@@ -63725,7 +57959,6 @@ test('planner scheduling metadata reaches the execution guard with planning on o
         fullTabId,
         { role: 'user', content: 'Monitor this page every five minutes.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
@@ -63742,7 +57975,6 @@ test('planner scheduling metadata reaches the execution guard with planning on o
         { role: 'user', content: 'Monitor this page every five minutes.' },
         () => {},
         'act',
-        null,
         null,
         { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
         { locale: 'en' },
@@ -63772,7 +58004,7 @@ test('planner intent stops underspecified and calendar schedules for clarificati
     for (const [agentIndex, AgentClass] of [AgentCh, AgentFx].entries()) {
       for (const [caseIndex, fixture] of cases.entries()) {
         const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerIntentFixture({
             requestKind: 'clarify',
             localizedSummary: fixture.summary,
@@ -63783,7 +58015,6 @@ test('planner intent stops underspecified and calendar schedules for clarificati
           8594 + (agentIndex * 10) + caseIndex,
           { role: 'user', content: fixture.task },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
@@ -63810,7 +58041,7 @@ test('full planner carries explicit planner-shaped result authorization', async 
         requireConsequentialConfirmation: false,
         autoApprovePlanReview: true,
       });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerFixtureJson({ allows_planner_shaped_result: true }),
       });
 
@@ -63818,7 +58049,6 @@ test('full planner carries explicit planner-shaped result authorization', async 
         tabId,
         { role: 'user', content: 'Return JSON with summary, steps, risks, and confidence fields.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63843,7 +58073,7 @@ test('full planner carries explicit app-state evidence authorization', async () 
         requireConsequentialConfirmation: false,
         autoApprovePlanReview: true,
       });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerFixtureJson({
           requires_state_change: true,
           allows_app_state_tool_evidence: true,
@@ -63855,7 +58085,6 @@ test('full planner carries explicit app-state evidence authorization', async () 
         tabId,
         { role: 'user', content: 'Remember this note in the WebBrain scratchpad.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63875,7 +58104,7 @@ test('planner intent stays in Act with a localized warning after two invalid att
     for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
       let calls = 0;
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         calls += 1;
         return { content: 'not valid planner JSON' };
       };
@@ -63885,7 +58114,6 @@ test('planner intent stays in Act with a localized warning after two invalid att
         8680 + index,
         { role: 'user', content: 'Bunu hallet.' },
         (type, data) => { if (type === 'warning') warning = data || null; },
-        null,
         null,
         '',
         { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -63915,7 +58143,7 @@ test('planner intent preserves Act and canonical execution fields when localized
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
       let calls = 0;
       let warning = '';
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         calls += 1;
         return {
           content: JSON.stringify({
@@ -63943,7 +58171,6 @@ test('planner intent preserves Act and canonical execution fields when localized
         { role: 'user', content: 'download this video' },
         (type, data) => { if (type === 'warning') warning = data?.message || ''; },
         null,
-        null,
         '',
         { tabUrl: 'https://x.com/example/status/1', tabTitle: 'Example post' },
         'act',
@@ -63969,7 +58196,7 @@ test('full planner carries download completion metadata into the execution guard
         requireConsequentialConfirmation: false,
         autoApprovePlanReview: true,
       });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerFixtureJson({
           requires_state_change: false,
           completion_requirements: { download: true },
@@ -63981,7 +58208,6 @@ test('full planner carries download completion metadata into the execution guard
         8920 + index,
         { role: 'user', content: 'Download the selected video.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com/video', tabTitle: 'Video' },
@@ -64013,7 +58239,7 @@ test('planner intent keeps execution authorized for plan-and-act and negated app
     ];
     for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerIntentFixture({
           requestKind: 'execute',
           requiresStateChange: true,
@@ -64025,7 +58251,6 @@ test('planner intent keeps execution authorized for plan-and-act and negated app
           8690 + (index * 10) + taskIndex,
           { role: 'user', content: task },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.com', tabTitle: 'Example' },
@@ -64048,7 +58273,7 @@ test('planner intent carries submit-required completion metadata into the execut
   await withPlannerBrowserGlobals(async () => {
     for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
       const agent = new AgentClass({ getActive: () => ({ name: 'intent-test', model: 'intent-test' }) });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerIntentFixture({
           requestKind: 'execute',
           requiresStateChange: false,
@@ -64061,7 +58286,6 @@ test('planner intent carries submit-required completion metadata into the execut
         8890 + index,
         { role: 'user', content: 'Complete and submit this form.' },
         () => {},
-        null,
         null,
         '',
         { tabUrl: 'https://example.com/items?create=1', tabTitle: 'Create item' },
@@ -66005,7 +60229,7 @@ test('context compaction pins scheduled resume instructions', async () => {
     console.log = () => {};
     let result;
     try {
-      result = await agent._manageContext(tabId, messages, () => {}, null, { force: true });
+      result = await agent._manageContext(tabId, messages, () => {}, { force: true });
     } finally {
       console.log = origLog;
     }
@@ -66048,7 +60272,7 @@ test('context compaction summarizes the user task after injected runtime context
     console.log = () => {};
     let result;
     try {
-      result = await agent._manageContext(tabId, messages, () => {}, null, { force: true });
+      result = await agent._manageContext(tabId, messages, () => {}, { force: true });
     } finally {
       console.log = origLog;
     }
@@ -66095,7 +60319,7 @@ test('context trimming ignores stale scheduled resume instructions', async () =>
     console.log = () => {};
     let result;
     try {
-      result = await agent._manageContext(tabId, messages, () => {}, null, { force: true });
+      result = await agent._manageContext(tabId, messages, () => {}, { force: true });
     } finally {
       console.log = origLog;
     }
@@ -70917,7 +65141,6 @@ test('planner routes existing-context artifact requests to a tool-free response'
         { role: 'user', content: 'Just tell me what you were going to draft.' },
         () => {},
         null,
-        null,
         'Assistant: The browser action got stuck.',
         { tabUrl: 'https://mail.google.com/', tabTitle: 'Inbox' },
         'act',
@@ -71027,7 +65250,6 @@ test('full planner rechecks read-only follow-ups against existing assistant cont
         { role: 'user', content: "It's not true; the PRs are by us to help people. I won't apologize." },
         () => {},
         null,
-        null,
         historyDigest,
         { tabUrl: 'https://github.com/example/repo/issues/1', tabTitle: 'Issue #1' },
         'try',
@@ -71081,7 +65303,6 @@ test('full planner keeps explicit fresh reads executable after follow-up recheck
         { role: 'user', content: 'Reread the issue and revise your answer.' },
         () => {},
         null,
-        null,
         'User: Is my draft a good response?\nAssistant: Here is a suggested response.',
         { tabUrl: 'https://github.com/example/repo/issues/1', tabTitle: 'Issue #1' },
         'try',
@@ -71120,7 +65341,7 @@ test('full planner propagates terminal intent recheck failures', async () => {
           risks: [],
         },
       });
-      const allowanceMessage = 'Cloud cost allowance reached: this session is $1.00 against the $1.00 limit.';
+      const allowanceMessage = 'Free usage is spent. Subscribe for more usage: https://webbrain.one/subscribe';
       let requests = 0;
       const provider = {
         promptTier: 'full',
@@ -71129,9 +65350,7 @@ test('full planner propagates terminal intent recheck failures', async () => {
         chat: async () => {
           requests += 1;
           if (requests === 1) return { content: fullExecute, usage: {} };
-          const error = new Error(allowanceMessage);
-          error.code = 'WB_COST_ALLOWANCE';
-          throw error;
+          throw new Error(allowanceMessage);
         },
       };
       const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
@@ -71140,7 +65359,6 @@ test('full planner propagates terminal intent recheck failures', async () => {
         9279 + index,
         { role: 'user', content: "It's not true; revise your answer." },
         () => {},
-        null,
         null,
         'User: Is my draft a good response?\nAssistant: Here is a suggested response.',
         { tabUrl: 'https://github.com/example/repo/issues/1', tabTitle: 'Issue #1' },
@@ -71323,7 +65541,6 @@ test('planner consistency repair preserves submit intent across one direct clari
           { role: 'user', content: 'Use the WebBrain details and answer the remaining questions.' },
           () => {},
           null,
-          null,
           '',
           { tabUrl: 'https://example.test/application', tabTitle: 'Application' },
         ];
@@ -71499,7 +65716,6 @@ test('planner consistency repair preserves an explicit plan-only request', async
         { role: 'user', content: 'Only give me a plan for reviewing this email later.' },
         () => {},
         null,
-        null,
         '',
         { tabUrl: 'https://mail.google.com/', tabTitle: 'Inbox' },
         'act',
@@ -71557,7 +65773,6 @@ test('planner validates semantic skill ids and activates approved skills before 
         { role: 'user', content: 'Bu videoyu indir.' },
         () => {},
         null,
-        null,
         '',
         { tabUrl: 'https://www.instagram.com/', tabTitle: 'Instagram' },
         'try',
@@ -71572,7 +65787,6 @@ test('planner validates semantic skill ids and activates approved skills before 
         { role: 'user', content: 'Bu videoyu indir.' },
         () => {},
         'act',
-        null,
         null,
       );
       assert.equal(outcome.proceed, true, `${label}: approved semantic plan should proceed`);
@@ -71593,7 +65807,6 @@ test('planner validates semantic skill ids and activates approved skills before 
         { role: 'user', content: 'download this' },
         () => {},
         'act',
-        null,
         null,
       );
       assert.equal(rejectedOutcome.proceed, false, `${label}: rejected plan should stop`);
@@ -71637,7 +65850,6 @@ test('planner clears skill activation when verbose approval text is edited', asy
           { role: 'user', content: 'Download the public video.' },
           () => {},
           null,
-          null,
           '',
           { tabUrl: 'https://www.instagram.com/p/example/', tabTitle: 'Instagram' },
           'try',
@@ -71661,7 +65873,6 @@ test('planner clears skill activation when verbose approval text is edited', asy
         () => {},
         'act',
         null,
-        null,
       );
       assert.equal(outcome.proceed, true, `${label}: edited plan should still proceed`);
       assert.equal(changed.agent.activeSkillIds.has(label === 'chrome' ? 9195 : 9196), false, `${label}: removed verbose skill must not activate`);
@@ -71680,7 +65891,7 @@ test('reviewed plan edits override the planner response-language target', async 
       };
       const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
       agent.setPlanReviewSettings({ mode: 'always' });
-      agent._chatWithCostAllowance = async () => ({
+      agent._chat = async () => ({
         content: plannerFixtureJson({
           summary: 'Translate the visible article into Spanish',
           steps: [{ id: '1', action: 'Translate the visible article into Spanish', tools: ['read_page'] }],
@@ -71708,7 +65919,6 @@ test('reviewed plan edits override the planner response-language target', async 
         { role: 'user', content: 'Translate the visible article into Spanish.' },
         () => {},
         null,
-        null,
         '',
         { tabUrl: 'https://example.test/article', tabTitle: 'Article' },
         'try',
@@ -71729,7 +65939,6 @@ test('reviewed plan edits override the planner response-language target', async 
         { role: 'user', content: 'Translate the visible article into Spanish.' },
         () => {},
         'act',
-        null,
         null,
         { tabUrl: 'https://example.test/article', tabTitle: 'Article' },
         { locale: 'en' },
@@ -71758,7 +65967,7 @@ test('reviewed plan edits preserve only explicitly approved scheduling metadata'
         };
         const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
         agent.setPlanReviewSettings({ mode: 'always' });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerFixtureJson({
             scheduling: { tool: 'schedule_task', hint: 'Run every five minutes.' },
           }),
@@ -71772,7 +65981,6 @@ test('reviewed plan edits preserve only explicitly approved scheduling metadata'
           tabId,
           { role: 'user', content: 'Monitor this page every five minutes.' },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.com/status', tabTitle: 'Status' },
@@ -71820,7 +66028,7 @@ test('reviewed plan edits preserve only explicitly approved progress-ledger meta
         };
         const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
         agent.setPlanReviewSettings({ mode: 'always' });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerFixtureJson({
             confidence: 0.99,
             memory,
@@ -71835,7 +66043,6 @@ test('reviewed plan edits preserve only explicitly approved progress-ledger meta
           tabId,
           { role: 'user', content: 'Submit each prepared package.' },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.test/packages', tabTitle: 'Packages' },
@@ -71891,7 +66098,7 @@ test('reviewed plan edits preserve only explicitly approved submission metadata'
         };
         const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
         agent.setPlanReviewSettings({ mode: 'always' });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerFixtureJson({
             confidence: 0.99,
             requires_state_change: true,
@@ -71915,7 +66122,6 @@ test('reviewed plan edits preserve only explicitly approved submission metadata'
           tabId,
           { role: 'user', content: 'Fill and submit the form.' },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.test/items?create=1', tabTitle: 'Create item' },
@@ -71979,7 +66185,7 @@ test('reviewed plan step edits clear stale download completion metadata', async 
         };
         const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
         agent.setPlanReviewSettings({ mode: 'always' });
-        agent._chatWithCostAllowance = async () => ({
+        agent._chat = async () => ({
           content: plannerFixtureJson({
             confidence: 0.99,
             requires_state_change: false,
@@ -72003,7 +66209,6 @@ test('reviewed plan step edits clear stale download completion metadata', async 
           tabId,
           { role: 'user', content: 'Download the report.' },
           () => {},
-          null,
           null,
           '',
           { tabUrl: 'https://example.test/report', tabTitle: 'Report' },
@@ -72826,7 +67031,7 @@ test('Chrome Web Store visual fallback uses protected-page terminal recovery and
   const updates = [];
   let request = null;
   agent._persist = () => {};
-  agent._chatWithCostAllowance = async (_provider, sentMessages, options) => {
+  agent._chat = async (_provider, sentMessages, options) => {
     request = { sentMessages, options };
     return {
       content: '',
@@ -72848,7 +67053,6 @@ test('Chrome Web Store visual fallback uses protected-page terminal recovery and
     messages,
     (type, data) => updates.push({ type, data }),
     { model: 'test-model', supportsVision: true },
-    {},
     null,
     2,
     'protected fallback should not be used',
@@ -73315,7 +67519,7 @@ test('planner gate: abort during planner call stops before review card', async (
       const tabId = label === 'chrome' ? 9101 : 9102;
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         agent.abort(tabId);
         return { content: plannerFixtureJson() };
       };
@@ -73325,7 +67529,6 @@ test('planner gate: abort during planner call stops before review card', async (
         tabId,
         { role: 'user', content: 'collect account links' },
         (type) => { if (type === 'plan_review') showedReview = true; },
-        null,
       );
 
       assert.equal(gate.proceed, false, `${label} should stop`);
@@ -73341,14 +67544,13 @@ test('planner gate: try mode stays in Act when structured intent cannot be parse
       const tabId = label === 'chrome' ? 9151 : 9152;
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => ({ content: 'Here is my plan: not valid json at all' });
+      agent._chat = async () => ({ content: 'Here is my plan: not valid json at all' });
       let warning = null;
 
       const gate = await agent._runPlannerGate(
         tabId,
         { role: 'user', content: 'do something risky' },
         (type, data) => { if (type === 'warning') warning = data || null; },
-        null,
       );
 
       assert.equal(gate.proceed, true, `${label} malformed planner output should not kill the user turn`);
@@ -73369,13 +67571,12 @@ test('planner gate: strict mode fails closed when plan JSON cannot be parsed', a
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.setPlanBeforeActMode('strict');
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => ({ content: 'Here is my plan: not valid json at all' });
+      agent._chat = async () => ({ content: 'Here is my plan: not valid json at all' });
 
       const gate = await agent._runPlannerGate(
         tabId,
         { role: 'user', content: 'do something risky' },
         () => {},
-        null,
       );
 
       assert.equal(gate.proceed, false, `${label} should fail closed`);
@@ -73393,7 +67594,7 @@ test('planner gate: errors after a valid plan never bypass required review', asy
       const agent = new AgentClass({ getActive: () => ({ name: 'planner-test', model: 'planner-test' }) });
       agent.setPlanReviewSettings({ mode: 'always' });
       let calls = 0;
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         calls += 1;
         return { content: plannerFixtureJson(), usage: {} };
       };
@@ -73406,7 +67607,6 @@ test('planner gate: errors after a valid plan never bypass required review', asy
         tabId,
         { role: 'user', content: 'Perform this task.' },
         (type, data) => { if (type === 'warning') warning = data || null; },
-        null,
       );
 
       assert.equal(calls, 1, `${label}: post-validation failure retried the planner`);
@@ -73431,7 +67631,7 @@ test('planner request errors get one portable retry before Act continuation', as
       const agent = new AgentClass({ getActive: () => provider });
       let calls = 0;
       const seenOptions = [];
-      agent._chatWithCostAllowance = async (_provider, _messages, options) => {
+      agent._chat = async (_provider, _messages, options) => {
         calls += 1;
         seenOptions.push(options);
         if (calls === 1) throw new Error('400 unsupported response_format');
@@ -73444,7 +67644,6 @@ test('planner request errors get one portable retry before Act continuation', as
         tabId,
         { role: 'user', content: 'Answer this question.' },
         onUpdate,
-        null,
       );
       assert.equal(calls, 2, `${label}: intent request error should retry exactly once`);
       assert.equal(intent.proceed, true, `${label}: portable intent retry did not recover`);
@@ -73457,7 +67656,7 @@ test('planner request errors get one portable retry before Act continuation', as
       calls = 0;
       seenOptions.length = 0;
       warning = null;
-      agent._chatWithCostAllowance = async (_provider, _messages, options) => {
+      agent._chat = async (_provider, _messages, options) => {
         calls += 1;
         seenOptions.push(options);
         throw new Error(calls === 1 ? '400 unsupported response_format' : '503 temporarily unavailable');
@@ -73466,7 +67665,6 @@ test('planner request errors get one portable retry before Act continuation', as
         tabId,
         { role: 'user', content: 'Perform this task.' },
         onUpdate,
-        null,
       );
       assert.equal(calls, 2, `${label}: full planner request error should retry exactly once`);
       assert.equal(full.proceed, true, `${label}: two planner request errors stopped Act`);
@@ -73481,7 +67679,7 @@ test('planner request errors get one portable retry before Act continuation', as
       seenOptions.length = 0;
       warning = null;
       agent.setPlanBeforeActMode('strict');
-      agent._chatWithCostAllowance = async (_provider, _messages, options) => {
+      agent._chat = async (_provider, _messages, options) => {
         calls += 1;
         seenOptions.push(options);
         throw new Error(calls === 1 ? '400 unsupported response_format' : '401 invalid API key');
@@ -73490,7 +67688,6 @@ test('planner request errors get one portable retry before Act continuation', as
         tabId,
         { role: 'user', content: 'Perform this task.' },
         onUpdate,
-        null,
       );
       assert.equal(calls, 2, `${label}: strict planner request error should retry exactly once`);
       assert.equal(strict.proceed, false, `${label}: strict planner request exhaustion should stop before tools`);
@@ -73513,7 +67710,7 @@ test('planner Act-continuation marker survives the planner gate wrapper', async 
       const provider = { name: 'broken-provider', model: 'broken-model', config: {} };
       const agent = new AgentClass({ getActive: () => provider });
       let calls = 0;
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         calls += 1;
         throw new Error('503 planner unavailable');
       };
@@ -73525,7 +67722,6 @@ test('planner Act-continuation marker survives the planner gate wrapper', async 
         { role: 'user', content: 'Perform this task.' },
         () => {},
         'act',
-        null,
         null,
       );
       assert.equal(calls, 2, `${label}: gate wrapper did not preserve the two-attempt budget`);
@@ -73619,7 +67815,7 @@ test('planner request failures expose provider settings and retry actions in bot
     );
     assert.match(
       panel,
-      /msgEl\.querySelector\('\.error-retry-btn, \.cost-allowance-retry-btn, \.planner-request-failure-retry-btn'\)/,
+      /msgEl\.querySelector\('\.error-retry-btn, \.planner-request-failure-retry-btn'\)/,
       `${label}: a planner failure card can be given a second, duplicate Retry affordance`,
     );
     assert.match(css, /\.planner-request-failure-actions \{/, `${label}: planner failure action row is not styled`);
@@ -73707,7 +67903,7 @@ test('planner gate: retries reasoning-only planner responses for final JSON', as
       });
       let calls = 0;
       const seen = [];
-      agent._chatWithCostAllowance = async (_provider, messages, options) => {
+      agent._chat = async (_provider, messages, options) => {
         calls += 1;
         seen.push({ messages, options });
         if (calls === 1) {
@@ -73724,7 +67920,6 @@ test('planner gate: retries reasoning-only planner responses for final JSON', as
         tabId,
         { role: 'user', content: 'schedule a task in 2 minutes' },
         () => {},
-        null,
       );
 
       assert.equal(gate.proceed, true, `${label} should recover with a valid plan`);
@@ -73767,7 +67962,7 @@ test('planner gate uses the active text provider even when a local vision sideca
         autoApprovePlanReview: true,
       });
       let plannerProvider = null;
-      agent._chatWithCostAllowance = async (provider) => {
+      agent._chat = async (provider) => {
         plannerProvider = provider;
         return { content: plannerFixtureJson(), usage: {} };
       };
@@ -73776,7 +67971,6 @@ test('planner gate uses the active text provider even when a local vision sideca
         tabId,
         { role: 'user', content: 'Complete the task on this page.' },
         () => {},
-        null,
       );
 
       assert.equal(gate.proceed, true, `${AgentClass.name}: planner did not proceed`);
@@ -73798,13 +67992,13 @@ test('planner gate: approving plan appends without deleting scratchpad facts', a
         { role: 'user', content: 'original task' },
       ]);
       agent._scratchpadWrite(tabId, { text: '[auto] Existing downloadId=42 for report.pdf' });
-      agent._chatWithCostAllowance = async () => ({ content: plannerFixtureJson() });
+      agent._chat = async () => ({ content: plannerFixtureJson() });
       agent._waitForPlanReview = async () => ({ action: 'approve', editedText: '' });
 
       const messages = agent.conversations.get(tabId);
       const enriched = { role: 'user', content: 'collect account links' };
       const outcome = await agent._maybeRunPlannerGate(
-        tabId, messages, enriched, () => {}, 'act', null, null,
+        tabId, messages, enriched, () => {}, 'act', null,
       );
       assert.equal(outcome.proceed, true, `${label} should proceed`);
 
@@ -73844,7 +68038,6 @@ test('planner gate: trusted recommended media action skips planner and pins read
         { role: 'user', content: 'Download this public media from the current page.' },
         () => {},
         'act',
-        null,
         null,
         null,
         {
@@ -73893,7 +68086,6 @@ test('planner gate: trusted recommended media action skips planner and pins read
         'act',
         null,
         null,
-        null,
         {
           recommendedAction: {
             id: 'download-media',
@@ -73922,7 +68114,6 @@ test('planner gate: trusted recommended media action skips planner and pins read
         { role: 'user', content: 'Download this public media from the current page.' },
         () => {},
         'act',
-        null,
         null,
         null,
         {
@@ -73996,7 +68187,6 @@ test('planner gate: trusted WebBrain social promotion actions skip planner and p
           { role: 'user', content: fixture.request },
           () => {},
           'act',
-          null,
           null,
           null,
           { recommendedAction: fixture.plan },
@@ -74081,7 +68271,6 @@ test('planner gate: coupon fast path accepts only its read-only preflight', asyn
         { role: 'user', content: coupon.prompt },
         () => {},
         'act',
-        null,
         null,
         null,
         { recommendedAction: coupon.runOptions },
@@ -74278,7 +68467,6 @@ test('planner gate: skips one short follow-up after a newly approved try-mode pl
         () => {},
         'act',
         null,
-        null,
       );
 
       assert.equal(initial.proceed, true, `${label} should proceed after approving the initial plan`);
@@ -74294,7 +68482,6 @@ test('planner gate: skips one short follow-up after a newly approved try-mode pl
         () => {},
         'act',
         null,
-        null,
       );
 
       assert.equal(outcome.proceed, true, `${label} should proceed`);
@@ -74309,7 +68496,6 @@ test('planner gate: skips one short follow-up after a newly approved try-mode pl
         { role: 'user', content: 'same again' },
         () => {},
         'act',
-        null,
         null,
       );
 
@@ -74410,7 +68596,6 @@ test('planner gate: short-follow-up skip keeps planner for stale, first, long, U
           () => {},
           'act',
           null,
-          null,
         );
 
         assert.equal(outcome.proceed, true, `${label}: ${scenario.name} should proceed`);
@@ -74447,7 +68632,6 @@ test('planner gate: intervening ask turn clears short-follow-up allowance', asyn
         () => {},
         'ask',
         null,
-        null,
       );
 
       assert.equal(askOutcome.proceed, true, `${label} ask turn should proceed`);
@@ -74460,7 +68644,6 @@ test('planner gate: intervening ask turn clears short-follow-up allowance', asyn
         { role: 'user', content: 'do it' },
         () => {},
         'act',
-        null,
         null,
       );
 
@@ -74506,7 +68689,7 @@ test('planner gate: review exposes compact markdown plus verbose markdown', asyn
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.setPlanReviewSettings({ confidenceThreshold: 0.9 });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => ({ content: plannerFixtureJson() });
+      agent._chat = async () => ({ content: plannerFixtureJson() });
       agent._waitForPlanReview = async (_tabId, _planId, _plan, markdown, _onUpdate, verboseMarkdown) => {
         assert.match(markdown, /Open the page and collect visible account links/, `${label} compact plan should keep the summary`);
         assert.match(markdown, /1\. Read the current page/, `${label} compact plan should include steps`);
@@ -74525,7 +68708,6 @@ test('planner gate: review exposes compact markdown plus verbose markdown', asyn
         tabId,
         { role: 'user', content: 'collect account links' },
         () => {},
-        null,
       );
       assert.equal(gate.proceed, true, `${label} should proceed after approval`);
       assert.doesNotMatch(gate.approvedScratchpadText, /read_page/, `${label} compact edits should not re-pin stale hidden tool detail`);
@@ -74542,7 +68724,7 @@ test('planner gate: 75% confidence plans auto-approve by default', async () => {
       const tabId = label === 'chrome' ? 9215 : 9216;
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => ({ content: plannerFixtureJson({ confidence: 0.75 }) });
+      agent._chat = async () => ({ content: plannerFixtureJson({ confidence: 0.75 }) });
       agent._waitForPlanReview = async () => {
         throw new Error('75% default should not wait for side panel plan approval');
       };
@@ -74555,7 +68737,6 @@ test('planner gate: 75% confidence plans auto-approve by default', async () => {
           assert.notEqual(type, 'plan_review', `${label} should not emit a plan review prompt`);
           if (type === 'plan_auto_approved') autoApprovedEvents.push(data);
         },
-        null,
       );
 
       assert.equal(gate.proceed, true, `${label} should proceed`);
@@ -74575,7 +68756,7 @@ test('planner gate: always-review mode still stops high-confidence plans', async
       const agent = new AgentClass({ getActive: () => ({}) });
       agent.setPlanReviewSettings({ mode: 'always', confidenceThreshold: 0.9 });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
-      agent._chatWithCostAllowance = async () => ({ content: plannerFixtureJson({ confidence: 0.99 }) });
+      agent._chat = async () => ({ content: plannerFixtureJson({ confidence: 0.99 }) });
       let reviewed = false;
       agent._waitForPlanReview = async () => {
         reviewed = true;
@@ -74586,7 +68767,6 @@ test('planner gate: always-review mode still stops high-confidence plans', async
         tabId,
         { role: 'user', content: 'collect account links' },
         () => {},
-        null,
       );
 
       assert.equal(gate.proceed, true, `${label} should proceed after approval`);
@@ -74607,7 +68787,7 @@ test('planner gate: scheduled runs auto-approve plan review', async () => {
         requireConsequentialConfirmation: false,
         autoApprovePlanReview: true,
       });
-      agent._chatWithCostAllowance = async () => ({ content: plannerFixtureJson() });
+      agent._chat = async () => ({ content: plannerFixtureJson() });
       agent._waitForPlanReview = async () => {
         throw new Error('scheduled run should not wait for side panel plan approval');
       };
@@ -74621,7 +68801,6 @@ test('planner gate: scheduled runs auto-approve plan review', async () => {
           assert.notEqual(type, 'plan_review', `${label} should not emit a plan review prompt`);
         },
         'act',
-        null,
         null,
       );
 
@@ -74645,7 +68824,7 @@ test('planner gate: managed cloud runs bypass planning in Chrome and Firefox', a
       agent.setPlanReviewSettings({ mode: 'always', confidenceThreshold: 0.99 });
       agent.conversations.set(tabId, [{ role: 'system', content: 'system' }]);
       let plannerCalls = 0;
-      agent._chatWithCostAllowance = async () => {
+      agent._chat = async () => {
         plannerCalls += 1;
         return { content: plannerFixtureJson() };
       };
@@ -74661,7 +68840,6 @@ test('planner gate: managed cloud runs bypass planning in Chrome and Firefox', a
         { role: 'user', content: 'complex cloud task' },
         type => updates.push(type),
         'act',
-        null,
         null,
         null,
         { cloudRun: true },
@@ -75930,11 +70108,11 @@ test('detached terminal journals win over duplicate task rejection records', asy
         running: false,
         starting: false,
         submittedTurnDurable: false,
-        detachedError: { requestId, message: 'Cloud cost allowance reached.' },
+        detachedError: { requestId, message: 'Provider request failed.' },
         runUi: {
           requestId,
           status: 'failed',
-          finalContent: 'Error: Cloud cost allowance reached.',
+          finalContent: 'Error: Provider request failed.',
           events: [],
         },
       }),
@@ -75942,7 +70120,7 @@ test('detached terminal journals win over duplicate task rejection records', asy
       wait: async () => {},
     });
 
-    assert.equal(response.content, 'Error: Cloud cost allowance reached.', `${label}: terminal content should remain renderable`);
+    assert.equal(response.content, 'Error: Provider request failed.', `${label}: terminal content should remain renderable`);
     assert.equal(response.submittedTurnDurable, false, `${label}: terminal durability proof should survive duplicate rejection state`);
   }
 });
@@ -78804,93 +72982,6 @@ test('profile sync keeps auxiliary timestamps independent from provider edits', 
   const remote = { ...shared, auxiliaryProviders: { visionModel: { apiKey: 'remote-vision' }, transcriptionModel: null }, meta: { providersAt: 20, auxiliaryItemsAt: { visionModel: 20 } } };
   const { vault } = mergeProfileVaults(local, remote);
   assert.equal(vault.auxiliaryProviders.visionModel.apiKey, 'remote-vision');
-});
-
-test('profile sync keeps Chromium-only WebGPU provider state out of portable vaults', async () => {
-  const chromeSync = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const firefoxSync = await import(
-    'file://' + path.join(ROOT, 'src/firefox/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const portableBase = {
-    version: 1,
-    providers: { openai: { type: 'openai', apiKey: 'portable-secret' } },
-    activeProvider: 'openai',
-    auxiliaryProviders: {},
-    profile: { enabled: false, text: '' },
-    memory: { records: [] },
-    tombstones: {},
-    meta: { providersAt: 5, providerItemsAt: { openai: 5 }, activeProviderAt: 5 },
-  };
-  const pollutedRemote = {
-    ...portableBase,
-    providers: {
-      ...portableBase.providers,
-      webgpu: { type: 'webgpu', model: WEBGPU_LFM25_MODEL_ID, configured: true },
-    },
-    activeProvider: 'webgpu',
-    meta: { providersAt: 20, providerItemsAt: { openai: 5, webgpu: 20 }, activeProviderAt: 20 },
-  };
-
-  for (const runtime of [chromeSync, firefoxSync]) {
-    const { vault } = runtime.mergeProfileVaults(portableBase, pollutedRemote);
-    assert.equal(vault.providers.webgpu, undefined);
-    assert.equal(vault.activeProvider, 'openai', 'a polluted WebGPU selection should retain the local portable selection');
-    assert.equal(vault.meta.providerItemsAt.webgpu, undefined);
-  }
-
-  const localState = {
-    providers: structuredClone(pollutedRemote.providers),
-    activeProvider: 'webgpu',
-    profileSyncPortableActiveProvider: 'openai',
-    profileSyncMetadataV1: structuredClone(pollutedRemote.meta),
-  };
-  const chromeWrites = [];
-  const chromeStorage = {
-    get: async () => structuredClone(localState),
-    set: async values => {
-      chromeWrites.push(structuredClone(values));
-      Object.assign(localState, structuredClone(values));
-    },
-  };
-  const chromeManager = new chromeSync.ProfileSyncManager(chromeStorage);
-  const localVault = await chromeManager.localVault();
-  assert.equal(localVault.providers.webgpu, undefined);
-  assert.equal(localVault.activeProvider, 'openai');
-  assert.equal(localVault.meta.providerItemsAt.webgpu, undefined);
-
-  await chromeManager.apply({
-    ...portableBase,
-    providers: { anthropic: { type: 'anthropic', apiKey: 'remote-secret' } },
-    activeProvider: 'anthropic',
-  }, []);
-  const chromeApplied = chromeWrites.at(-1);
-  assert.equal(chromeApplied.providers.webgpu.configured, true, 'Chrome should retain its local-only provider config');
-  assert.equal(chromeApplied.providers.anthropic.apiKey, 'remote-secret');
-  assert.equal(chromeApplied.activeProvider, 'webgpu', 'remote sync should not deactivate the local WebGPU provider');
-  assert.equal(chromeApplied.profileSyncPortableActiveProvider, 'anthropic');
-
-  let scheduled = 0;
-  chromeManager.schedule = () => { scheduled++; };
-  await chromeManager.noteChanges({
-    activeProvider: { oldValue: 'anthropic', newValue: 'webgpu' },
-    providers: {
-      oldValue: chromeApplied.providers,
-      newValue: { ...chromeApplied.providers, webgpu: { ...chromeApplied.providers.webgpu, contextWindow: 8192 } },
-    },
-  });
-  assert.equal(localState.profileSyncPortableActiveProvider, 'anthropic');
-  assert.equal(scheduled, 0, 'local-only WebGPU edits should not schedule a portable vault upload');
-
-  let firefoxApplied;
-  const firefoxManager = new firefoxSync.ProfileSyncManager({
-    set: async values => { firefoxApplied = structuredClone(values); },
-  });
-  await firefoxManager.apply(pollutedRemote, []);
-  assert.equal(firefoxApplied.providers.webgpu, undefined);
-  assert.equal(firefoxApplied.activeProvider, 'webbrain_cloud');
-  assert.equal(firefoxApplied.profileSyncMetadataV1.providerItemsAt.webgpu, undefined);
 });
 
 test('profile sync password change uploads a vault encrypted with the new password', async () => {
@@ -84562,7 +78653,7 @@ test('dedicated vision descriptions suppress hidden reasoning and reuse one imag
     };
     const agent = new AgentClass({ getVisionProvider: async () => vision });
     const calls = [];
-    agent._chatWithCostAllowance = async (_provider, messages, options) => {
+    agent._chat = async (_provider, messages, options) => {
       calls.push({ messages, options });
       if (calls.length === 1) {
         return {
@@ -84594,7 +78685,7 @@ test('dedicated vision retries without unsupported LM Studio reasoning controls'
     };
     const agent = new AgentClass({ getVisionProvider: async () => vision });
     const optionsSeen = [];
-    agent._chatWithCostAllowance = async (_provider, _messages, options) => {
+    agent._chat = async (_provider, _messages, options) => {
       optionsSeen.push(options);
       if (optionsSeen.length === 1) throw new Error('Unknown parameter: reasoning_effort');
       return { content: '1) Page purpose: protected store listing' };
@@ -84669,21 +78760,6 @@ test('multimodal connection tests exercise image and audio routes instead of onl
       assert.match(visionCalls[0].messages[0].content[0].image_url.url, /^data:image\/png;base64,/);
       assert.equal(visionCalls[0].options.extraBody.reasoning_tokens, 0);
       assert.equal(visionCalls[0].options.webbrainVisionProbe, true);
-
-      if (label === 'chrome') {
-        visionManager.getVisionProvider = async () => ({
-          name: 'webgpu-vision',
-          model: WEBGPU_VISION_MODEL_ID,
-          baseUrl: 'local://webgpu',
-          chat: async (messages, options) => {
-            assert.match(messages[0].content[1].text, /three solid vertical color panels/i);
-            assert.equal(options.webbrainVisionProbe, true);
-            return { content: 'yellow, blue, red' };
-          },
-        });
-        const localVisionResult = await visionManager.testVisionProvider();
-        assert.equal(localVisionResult.ok, true, 'chrome: local color-panel vision probe should pass');
-      }
 
       visionManager.getVisionProvider = async () => ({
         model: 'text-only-model',

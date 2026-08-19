@@ -148,7 +148,6 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     if (providerName === 'webbrain-cloud') {
       if (this.config.deviceGuid) headers['X-WebBrain-Device-Id'] = this.config.deviceGuid;
       headers['X-WebBrain-Client'] = 'extension';
-      headers['X-WebBrain-Help-Improve'] = this.config.helpImproveWebBrain === false ? '0' : '1';
     }
     // OpenRouter-specific headers
     if (providerName === 'openrouter') {

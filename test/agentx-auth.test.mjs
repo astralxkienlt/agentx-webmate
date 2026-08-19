@@ -267,7 +267,6 @@ test('AgentX provider sends only model-key bearer authentication', () => {
   assert.equal(headers.Authorization, 'Bearer sk-model-key');
   assert.equal(headers['X-WebBrain-Device-Id'], undefined);
   assert.equal(headers['X-WebBrain-Client'], undefined);
-  assert.equal(headers['X-WebBrain-Help-Improve'], undefined);
 });
 
 test('AgentX provider refuses missing or non-gateway models', () => {
@@ -1399,7 +1398,7 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     fs.readFile(path.join(CHROME_ROOT, 'src/recorder/host.js'), 'utf8'),
   ]);
   assert.match(transcribe, /restrictedProviderId/);
-  assert.match(transcribe, /active netMind Cloud model is not in the gateway model list/);
+  assert.match(transcribe, /active netMind Extension model is not in the gateway model list/);
   assert.match(recorderHost, /allowedModels: activeConfig\.models/);
 });
 

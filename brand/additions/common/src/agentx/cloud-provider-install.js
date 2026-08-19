@@ -1,7 +1,9 @@
 import { AgentXCloudError } from './cloud-service.js';
 import {
   pickGatewayModel,
+  pickGatewayTranscriptionModel,
   pickGatewayVisionModel,
+  transcriptionModelsFromGateway,
   visionModelsFromGateway,
 } from './cloud-models.js';
 
@@ -21,6 +23,7 @@ export async function installCloudCredential(sendToBackground, credential) {
     ? [...new Set(credential.models.map(String).map((model) => model.trim()).filter(Boolean))]
     : [String(credential.model || '').trim()].filter(Boolean);
   const visionModels = visionModelsFromGateway(models, credential.visionFromInfo);
+  const transcriptionModels = transcriptionModelsFromGateway(models, credential.transcriptionFromInfo);
   const current = await sendToBackground('get_providers').catch(() => null);
   const currentConfig = current?.providers?.[AGENTX_CLOUD_PROVIDER_ID] || {};
   const model = pickGatewayModel(currentConfig.model, models, credential.model);
@@ -34,12 +37,18 @@ export async function installCloudCredential(sendToBackground, credential) {
     currentConfig.agentxCloudVisionModel || credential.visionModel,
     visionModels,
   );
+  const transcriptionModel = pickGatewayTranscriptionModel(
+    currentConfig.agentxCloudTranscriptionModel || credential.transcriptionModel,
+    transcriptionModels,
+  );
   const installedCredential = {
     ...credential,
     models,
     model,
     visionModels,
     visionModel,
+    transcriptionModels,
+    transcriptionModel,
   };
   await sendToBackground('update_provider', {
     providerId: AGENTX_CLOUD_PROVIDER_ID,
@@ -56,6 +65,8 @@ export async function installCloudCredential(sendToBackground, credential) {
       agentxCloudAccount: installedCredential.account,
       agentxCloudVisionModel: installedCredential.visionModel,
       agentxCloudVisionModels: installedCredential.visionModels,
+      agentxCloudTranscriptionModel: installedCredential.transcriptionModel,
+      agentxCloudTranscriptionModels: installedCredential.transcriptionModels,
     },
   });
   await sendToBackground('set_active_provider', { providerId: AGENTX_CLOUD_PROVIDER_ID });
@@ -79,6 +90,8 @@ export async function removeCloudCredential(sendToBackground) {
       agentxCloudAccount: '',
       agentxCloudVisionModel: '',
       agentxCloudVisionModels: [],
+      agentxCloudTranscriptionModel: '',
+      agentxCloudTranscriptionModels: [],
     },
   });
 }

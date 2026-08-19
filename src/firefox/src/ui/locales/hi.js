@@ -1,6 +1,4 @@
 // Hindi — translated from the canonical English locale.
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -530,10 +528,6 @@ export default {
   'st.display.search.placeholder': "सामान्य सेटिंग्स खोजें",
   'st.display.search.empty': "कोई सामान्य सेटिंग मेल नहीं खाती.",
   'st.display.advanced': "उन्नत",
-  ...getApocalypseModeCopy('hi'),
-  ...getEmergencyBoxCopy('hi'),
-  'st.display.help_improve.label': "WebBrain को बेहतर बनाने में सहायता करें",
-  'st.display.help_improve.desc_html': "योग्य WebBrain क्लाउड टेक्स्ट और टूल इंटरैक्शन को बनाए रखने और मूल्यांकन, सुधार, फाइन-ट्यूनिंग और प्रशिक्षण के लिए उपयोग करने की अनुमति दें। डिफ़ॉल्ट रूप से चालू. इसे बंद करने से वर्तमान वार्तालाप स्थायी रूप से बंद हो जाता है; इसे वापस चालू करना अगली नई बातचीत पर लागू होता है। स्क्रीनशॉट और छवि बाइट्स को WebBrain सुधार डेटाबेस में बरकरार नहीं रखा गया है। <u>स्थानीय-मॉडल और अपनी खुद की एपीआई अनुरोध WebBrain द्वारा कभी एकत्र नहीं किए जाते हैं।</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">गोपनीयता नीति →</a>",
   'st.display.clarify_timeout.label': "टाइमआउट स्पष्ट करें",
   'st.display.clarify_timeout.desc': "पहले विकल्प को स्वत: चुनने से पहले स्पष्ट संकेत के उत्तर के लिए कितनी देर तक इंतजार करना होगा (या कोई विकल्प न होने पर समय समाप्त करना होगा)। 0 = तत्काल (हमेशा स्वतः चयन)। 1200 से ऊपर के मान अनिश्चित काल तक प्रतीक्षा करते हैं (बंद)। डिफ़ॉल्ट 60s. अनुमति या फॉर्म-सबमिट पुष्टिकरण पर लागू नहीं होता है।",
   'st.display.clarify_timeout.off': "बंद",
@@ -576,11 +570,6 @@ export default {
   'st.display.auto_screenshot.every_step': "हर कदम",
   'st.display.tracing.label': "रिकॉर्ड निशान (मॉडल तुलना के लिए)",
   'st.display.tracing.desc_html': "प्रत्येक रन (एलएलएम अनुरोध, प्रतिक्रिया, टूल कॉल, स्क्रीनशॉट) को स्थानीय IndexedDB में जारी रखें ताकि आप साथ-साथ मॉडलों का निरीक्षण और तुलना कर सकें। एक अलग ट्रेसेस टैब में खुलता है। डिफ़ॉल्ट रूप से बंद है क्योंकि यह प्रति चरण डिस्क राइट जोड़ता है। <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">ट्रेस पेज खोलें →</a>",
-  'st.display.cost_session_limit.label': "क्लाउड लागत सत्र भत्ता",
-  'st.display.cost_session_limit.desc': "एक बार जब यह सत्र रिपोर्ट की गई या अनुमानित लागत भत्ता तक पहुंच जाता है, तो क्लाउड रुक जाता है और OpenRouter किसी अन्य भुगतान मॉडल कॉल से पहले चलता है। डिफ़ॉल्ट $10.",
-  'st.display.cost_total_limit.label': "क्लाउड लागत कुल भत्ता",
-  'st.display.cost_total_limit.desc': "ट्रैक रिपोर्ट किए गए या अनुमानित क्लाउड/OpenRouter मॉडल पूरे एक्सटेंशन में खर्च होते हैं और भत्ते पर आगे भुगतान किए गए कॉल को रोकते हैं। स्थानीय प्रदाताओं की गणना नहीं की जाती है.",
-  'st.display.cost_reset': "व्यय रीसेट करें",
   'st.display.strict_secret.label': "सख्त गुप्त संचालन",
   'st.display.strict_secret.desc': "सारांश या सहायक पाठ में क्रेडेंशियल (पासवर्ड, एपीआई कुंजी, टोकन, ओटीपी) उद्धृत करने से इनकार करें - भले ही आप स्पष्ट रूप से उनके लिए पूछें। उपयोगी यदि आप नियमित रूप से ट्रेस फ़ाइलें या स्क्रीन-शेयर साझा करते हैं। डिफ़ॉल्ट रूप से बंद: वेबब्रेन आपके ब्राउज़र में चलता है, इसलिए डिफ़ॉल्ट रूप से एजेंट आपको आपके द्वारा मांगे गए मान दिखाता है और केवल `done` सारांश को व्यवस्थित रखता है।",
   'st.display.allow_local_network.label': "एजेंट को स्थानीय नेटवर्क तक पहुंचने की अनुमति दें",
@@ -994,6 +983,4 @@ export default {
   "sp.workflows.healing.keep": "सहेजा गया लक्ष्य रखें",
   "sp.workflows.healing.saved": "“{name}” में {count} लोकेटर अपडेट किए गए।",
   "sp.workflows.healing.not_saved": "“{name}” के लिए स्वीकृत लोकेटर सहेजा नहीं गया क्योंकि वर्कफ़्लो बदल गया था या सत्यापन निर्णायक नहीं था।",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} बिना किसी API एंडपॉइंट के पूरी तरह Chrome में चलता है। पहली जनरेशन लगभग 4.85 GB डाउनलोड करती है और इसे ब्राउज़र में कैश करती है। कनेक्शन जाँच मॉडल डाउनलोड किए बिना पैकेज किए गए रनटाइम और हार्डवेयर अडैप्टर की जाँच करती है।',
 };

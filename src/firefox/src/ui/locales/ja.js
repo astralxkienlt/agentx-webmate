@@ -1,8 +1,6 @@
 // Japanese (ja).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "コンテキストを自動的に圧縮しました",
   'sp.context_compacted_detail': "以前のメッセージ {summarized} 件を要約 · {remaining} 件を保持",
   'ob.tokens.context_hint': "エージェントを安定して実行するには、少なくとも 16k トークンのコンテキストウィンドウを持つモデルを選んでください。8k はコンパクトモードを有効にすれば動作する場合があります。4k はツールセットには小さすぎます。WebBrain はウィンドウの上限に近づくと会話を自動的に圧縮します。",
-  'st.display.cost_session_limit.label': "クラウド費用のセッション上限",
-  'st.display.cost_session_limit.desc': "このセッションが報告値または推定値の費用上限に達すると、次の有料モデル呼び出しの前にクラウドおよび OpenRouter の実行を停止します。デフォルトは 10 ドル。",
-  'st.display.cost_total_limit.label': "クラウド費用の合計上限",
-  'st.display.cost_total_limit.desc': "拡張機能全体で報告値または推定値のクラウド/OpenRouter モデルの支出を追跡し、上限に達すると以降の有料呼び出しを停止します。ローカルプロバイダーはカウントされません。",
-  'st.display.cost_reset': "支出をリセット",
   'st.provider.field.prompt_tier': "プロンプト階層",
   'st.provider.field.prompt_tier.compact': "コンパクト — 極小モデル（8B 未満）：ツール最小限、簡潔なルール",
   'st.provider.field.prompt_tier.mid': "ミッド — 小型/ローカルモデル（約 9B〜32B）：軽量なプロンプト、ツール削減（ローカルの既定）",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': '一般設定を検索',
   'st.display.search.empty': '一致する一般設定はありません。',
   'st.display.advanced': '詳細設定',
-  ...getApocalypseModeCopy('ja'),
-  ...getEmergencyBoxCopy('ja'),
   'st.display.clarify_timeout.label': '確認のタイムアウト',
   'st.display.clarify_timeout.desc': 'clarify の返答を待つ時間。経過すると最初の選択肢を自動選択（選択肢がなければタイムアウト）。0 で即時（常に自動選択）。1200 秒超は無制限（オフ）。既定 60 秒。権限やフォーム送信確認には適用されません。',
   'st.display.clarify_timeout.off': 'オフ',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "まだ書き出すものがありません — 先に会話を始めてください。",
   "sp.export_traces.partial": "ツールチェーンを書き出しましたが、一部のターンのイベントを読めませんでした。",
   "sp.export_traces.truncated": "ツールチェーンを書き出しました。この会話にトレースが多い場合、古いターンが欠けることがあります。",
-  "st.display.help_improve.label": "WebBrain の改善に協力する",
-  "st.display.help_improve.desc_html": "選択された WebBrain Cloud の操作を保持し、評価、改善、微調整、トレーニングに使用することを許可します。既定でオンです。今後の Cloud 操作がこれらの目的に使用されないようにするにはオフにしてください。<u>ローカルモデルへのリクエストや、ご自身の API 認証情報で直接送信したリクエストを WebBrain が収集することはありません。</u><a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">プライバシーポリシー →</a>",
   "st.providers.webbrain_data_use.body": "WebBrain Cloud には毎日の無料利用枠が含まれます。「WebBrain の改善に協力する」は既定でオンであり、選択された Cloud の会話が保持され、評価、改善、微調整、トレーニングに使用される場合があります。今後の Cloud 操作をこれらの用途から除外するには、一般でオフにしてください。<u>ローカルモデルへのリクエストや、ご自身の API 認証情報で直接送信したリクエストを WebBrain が収集することはありません。</u>{privacyLink}。追加利用は {subscribeLink} で購読してください。請求は {accountLink} で管理できます。",
   'st.providers.compat.title': '高度なモデル互換性',
   'st.providers.compat.blurb': 'モデルまたはエンドポイントが別のリクエスト契約を明記していない限り、Auto のままにしてください。',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "保存済みの対象を維持",
   "sp.workflows.healing.saved": "「{name}」のロケーターを {count} 件更新しました。",
   "sp.workflows.healing.not_saved": "ワークフローが変更されたか検証結果が不確実だったため、「{name}」で承認されたロケーターは保存されませんでした。",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

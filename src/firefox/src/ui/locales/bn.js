@@ -1,6 +1,4 @@
 // Bengali — translated from the canonical English locale.
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -530,10 +528,6 @@ export default {
   'st.display.search.placeholder': "সাধারণ সেটিংস অনুসন্ধান করুন",
   'st.display.search.empty': "কোনো সাধারণ সেটিংস মেলে না।",
   'st.display.advanced': "উন্নত",
-  ...getApocalypseModeCopy('bn'),
-  ...getEmergencyBoxCopy('bn'),
-  'st.display.help_improve.label': "WebBrain উন্নত করতে সাহায্য করুন",
-  'st.display.help_improve.desc_html': "যোগ্য WebBrain ক্লাউড টেক্সট এবং টুল ইন্টারঅ্যাকশনগুলিকে ধরে রাখার এবং মূল্যায়ন, উন্নতি, ফাইন-টিউনিং এবং প্রশিক্ষণের জন্য ব্যবহার করার অনুমতি দিন। ডিফল্টরূপে চালু এটি স্থায়ীভাবে বন্ধ করা বর্তমান কথোপকথন অপ্ট আউট করে; এটিকে আবার চালু করা পরবর্তী নতুন কথোপকথনের ক্ষেত্রে প্রযোজ্য। WebBrain উন্নতি ডাটাবেসে স্ক্রিনশট এবং ইমেজ বাইট রাখা হয় না। <u>স্থানীয়-মডেল এবং আন-আপনার-নিজের API অনুরোধগুলি WebBrain দ্বারা সংগ্রহ করা হয় না।</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">গোপনীয়তা নীতি →</a>",
   'st.display.clarify_timeout.label': "সময়সীমা পরিষ্কার করুন",
   'st.display.clarify_timeout.desc': "প্রথম বিকল্পটি স্বয়ংক্রিয়ভাবে নির্বাচন করার আগে একটি স্পষ্টীকরণ প্রম্পটের উত্তরের জন্য কতক্ষণ অপেক্ষা করতে হবে (অথবা কোনও বিকল্প না থাকলে টাইমিং আউট)। 0 = তাত্ক্ষণিক (সর্বদা স্বয়ংক্রিয়ভাবে নির্বাচন করুন)। 1200 এর উপরে মান অনির্দিষ্টকালের জন্য অপেক্ষা করুন (বন্ধ)। ডিফল্ট 60 অনুমতি বা ফর্ম জমা নিশ্চিতকরণ প্রযোজ্য নয়.",
   'st.display.clarify_timeout.off': "বন্ধ",
@@ -576,11 +570,6 @@ export default {
   'st.display.auto_screenshot.every_step': "প্রতিটি পদক্ষেপ",
   'st.display.tracing.label': "রেকর্ড ট্রেস (মডেল তুলনা জন্য)",
   'st.display.tracing.desc_html': "স্থানীয় IndexedDB-তে প্রতিটি রান (LLM অনুরোধ, প্রতিক্রিয়া, টুল কল, স্ক্রিনশট) চালিয়ে যান যাতে আপনি পাশাপাশি মডেলগুলি পরিদর্শন এবং তুলনা করতে পারেন। একটি পৃথক ট্রেস ট্যাবে খোলে। ডিফল্টরূপে বন্ধ কারণ এটি প্রতি ধাপে ডিস্ক রাইট যোগ করে। <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">ট্রেস পৃষ্ঠা খুলুন →</a>",
-  'st.display.cost_session_limit.label': "মেঘ খরচ অধিবেশন ভাতা",
-  'st.display.cost_session_limit.desc': "স্টপ ক্লাউড এবং OpenRouter এই সেশনটি রিপোর্ট করা বা আনুমানিক খরচ ভাতা পৌঁছানোর পরে অন্য একটি প্রদত্ত মডেল কলের আগে চলে। ডিফল্ট $10।",
-  'st.display.cost_total_limit.label': "ক্লাউড খরচ মোট ভাতা",
-  'st.display.cost_total_limit.desc': "ট্র্যাক রিপোর্ট করা বা আনুমানিক ক্লাউড/OpenRouter মডেল এক্সটেনশন জুড়ে ব্যয় করে এবং ভাতাতে আরও প্রদত্ত কল বন্ধ করে। স্থানীয় প্রদানকারীদের গণনা করা হয় না.",
-  'st.display.cost_reset': "খরচ রিসেট করুন",
   'st.display.strict_secret.label': "কঠোর গোপন হ্যান্ডলিং",
   'st.display.strict_secret.desc': "সারাংশ বা সহকারী টেক্সটে শংসাপত্র (পাসওয়ার্ড, API কী, টোকেন, ওটিপি) উদ্ধৃত করতে অস্বীকার করুন — এমনকি আপনি যখন স্পষ্টভাবে তাদের জন্য জিজ্ঞাসা করেন। আপনি যদি নিয়মিত ট্রেস ফাইল বা স্ক্রিন-শেয়ার করেন তবে দরকারী। ডিফল্টরূপে বন্ধ: ওয়েবব্রেন আপনার নিজের ব্রাউজারে চলে, তাই ডিফল্টরূপে এজেন্ট আপনাকে আপনার চাওয়া মানগুলি দেখায় এবং কেবল `done` সারাংশ পরিপাটি রাখে।",
   'st.display.allow_local_network.label': "এজেন্টকে স্থানীয় নেটওয়ার্ক অ্যাক্সেস করার অনুমতি দিন",
@@ -994,6 +983,4 @@ export default {
   "sp.workflows.healing.keep": "সংরক্ষিত লক্ষ্যটি রাখুন",
   "sp.workflows.healing.saved": "“{name}”-এ {count}টি লোকেটর আপডেট করা হয়েছে।",
   "sp.workflows.healing.not_saved": "ওয়ার্কফ্লো পরিবর্তিত হওয়ায় বা যাচাই অনিশ্চিত থাকায় “{name}”-এর অনুমোদিত লোকেটর সংরক্ষিত হয়নি।",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} কোনো API এন্ডপয়েন্ট ছাড়াই সম্পূর্ণভাবে Chrome-এ চলে। প্রথম জেনারেশনে প্রায় 4.85 GB ডাউনলোড হয় এবং ব্রাউজারে ক্যাশ করা হয়। সংযোগ পরীক্ষা মডেল ডাউনলোড না করেই প্যাকেজ করা রানটাইম ও হার্ডওয়্যার অ্যাডাপ্টার যাচাই করে।',
 };

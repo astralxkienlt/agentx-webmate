@@ -63,42 +63,6 @@
     }
     .subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
 
-    .header-row {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 16px;
-    }
-    .header-actions {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .support-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
-      color: var(--text2);
-      font-size: 12px;
-      font-weight: 600;
-      text-decoration: none;
-      white-space: nowrap;
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .support-link:hover { color: var(--accent); border-color: var(--accent); }
-    .support-link svg { width: 14px; height: 14px; flex-shrink: 0; }
-    .apocalypse-icon { color: var(--warning); font-size: 15px; line-height: 1; }
-    .apocalypse-link[data-enabled="true"] {
-      color: var(--warning);
-      border-color: var(--warning);
-      background: rgba(255, 200, 112, 0.08);
-    }
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -121,10 +85,15 @@
     }
     h2:first-of-type { margin-top: 0; }
 
-    /* Tab bar — sticky so it survives long provider lists. */
+    /* Tab bar — sticky so it survives long provider lists.
+       Flex, not six rigid 1fr columns: labels differ a lot in length between
+       locales ("Chung" vs "Đa phương thức" vs "Мультимодальность"), and equal
+       columns squeezed the long ones onto two lines while the short ones kept
+       one. Each tab is sized from its own label and then shares the leftover
+       space, so a full-width row stays on one line in far more languages. */
     .tabs {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      display: flex;
+      align-items: stretch;
       gap: 2px;
       margin: 4px 0 20px 0;
       padding: 4px;
@@ -134,20 +103,37 @@
       position: sticky;
       top: 0;
       z-index: 10;
+      /* A label that is one very long word (ru/uk "Мультимодальность") cannot
+         wrap. min-content sizing below keeps it whole and lets the strip
+         scroll instead of letting the text spill over its neighbour. */
+      overflow-x: auto;
+      scrollbar-width: thin;
+      overscroll-behavior-x: contain;
     }
     .tab-btn {
-      min-width: 0;
+      flex: 1 1 auto;
+      min-width: min-content;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
       background: transparent;
       color: var(--text2);
       border: none;
       border-radius: 6px;
-      padding: 9px 8px;
+      padding: 8px 12px;
       font-size: 13px;
       font-weight: 600;
-      line-height: 1.2;
+      line-height: 1.25;
+      text-align: center;
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
-      overflow-wrap: anywhere;
+      /* Break between words, never inside one — splitting a Vietnamese
+         syllable ("Đa phươn/g thức") makes the label unreadable. */
+      overflow-wrap: normal;
+      word-break: normal;
+      hyphens: none;
+      text-wrap: balance;
     }
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active {
@@ -157,11 +143,11 @@
     .tab-btn.active:hover { color: #fff; }
 
     @media (max-width: 600px) {
-      .header-row { flex-direction: column; gap: 10px; }
-      .header-actions { justify-content: flex-start; }
-      .tabs {
-        grid-template-columns: repeat(6, minmax(90px, 1fr));
-        overflow-x: auto;
+      /* Too narrow to fit six labels: make it an honest scrolling strip so
+         each tab keeps its own line instead of stacking into a tall block. */
+      .tab-btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
       }
     }
 
@@ -1086,27 +1072,12 @@
     :root[data-theme="light"] .btn-sign-out:hover  { background: rgba(89,55,25,0.06); }
     :root[data-theme="light"] .info-box code       { background: rgba(89,55,25,0.08); }
   </style>
-  <link rel="stylesheet" href="apocalypse-comm.css">
-  <link rel="stylesheet" href="download-tracker.css">
 </head>
 <body>
-  <div class="header-row">
-    <div>
-      <h1><a id="settings-title-link" href="#" data-i18n="st.title"></a></h1>
-      <p class="subtitle" id="subtitle"></p>
-    </div>
-    <div class="header-actions">
-      <a id="apocalypse-mode-link" class="support-link apocalypse-link" href="apocalypse-mode.html" target="_blank" rel="noopener" aria-describedby="apocalypse-mode-status">
-        <span class="apocalypse-icon" aria-hidden="true">☢</span>
-        <span data-i18n="st.display.apocalypse_mode.label"></span>
-      </a>
-      <a class="support-link" href="https://webbrain.one/docs" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2-3 4"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-        Support
-      </a>
-      <span id="apocalypse-mode-status" class="visually-hidden" aria-live="polite" data-i18n="st.display.apocalypse_mode.status.loading"></span>
-    </div>
-  </div>
+  <header class="page-header">
+    <h1><a id="settings-title-link" href="#" data-i18n="st.title"></a></h1>
+    <p class="subtitle" id="subtitle"></p>
+  </header>
 
   <nav class="tabs" role="tablist">
     <button class="tab-btn" type="button" role="tab" data-tab="display" data-i18n="st.tab.display"></button>
@@ -1216,45 +1187,6 @@
           <option value="state_change" data-i18n="st.display.auto_screenshot.state_change"></option>
           <option value="every_step" data-i18n="st.display.auto_screenshot.every_step"></option>
         </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label" data-i18n="st.display.cost_session_limit.label"></div>
-          <div class="setting-desc" data-i18n="st.display.cost_session_limit.desc"></div>
-          <div class="setting-desc" style="margin-top:4px;color:var(--accent);" data-i18n="st.display.cost_allowance_scope"></div>
-        </div>
-        <label style="display:flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text2);font-size:12px;">
-          <span>$</span>
-          <input type="number" id="input-cost-session-limit" min="0" step="0.01" value="10"
-                 style="width:76px;background:transparent;border:0;color:var(--text);font:inherit;outline:none;">
-        </label>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label"><span data-i18n="st.display.cost_total_limit.label"></span> <span id="cost-spent-value" style="color:var(--accent);font-weight:700;margin-left:4px;">$0.00 / $10.00</span></div>
-          <div class="setting-desc" data-i18n="st.display.cost_total_limit.desc"></div>
-          <div class="setting-desc" style="margin-top:4px;color:var(--accent);" data-i18n="st.display.cost_allowance_scope"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-          <label style="display:flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text2);font-size:12px;">
-            <span>$</span>
-            <input type="number" id="input-cost-total-limit" min="0" step="0.01" value="10"
-                   style="width:76px;background:transparent;border:0;color:var(--text);font:inherit;outline:none;">
-          </label>
-          <button type="button" id="btn-reset-cost-spend"
-                  style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;"
-                  data-i18n="st.display.cost_reset"></button>
-        </div>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label" data-i18n="st.display.help_improve.label"></div>
-          <div class="setting-desc" data-i18n-html="st.display.help_improve.desc_html"></div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-help-improve" checked>
-          <span class="toggle-slider"></span>
-        </label>
       </div>
 
       <details class="advanced-settings">
@@ -1761,8 +1693,6 @@
   <!-- Tab switcher must be an external script — Manifest V3's default
        CSP (`script-src 'self'`) blocks inline <script> execution. -->
   <script src="settings-tabs.js"></script>
-  <script type="module" src="apocalypse-comm.js"></script>
-  <script type="module" src="download-tracker.js"></script>
   <script src="settings.js" type="module"></script>
 </body>
 </html>

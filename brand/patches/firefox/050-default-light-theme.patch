@@ -53,7 +53,7 @@ diff --git a/src/config-transfer.js b/src/config-transfer.js
 --- a/src/config-transfer.js
 +++ b/src/config-transfer.js
 @@ -20,7 +20,7 @@
- // Cloud device ID, and Cloud Sync session/token metadata.
+ // Cloud device ID.
  export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
    wbLocale: 'en',
 -  themeMode: 'system',

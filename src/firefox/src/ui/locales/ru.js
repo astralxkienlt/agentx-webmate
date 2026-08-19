@@ -1,8 +1,6 @@
 // Russian (ru).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Контекст автоматически уплотнён",
   'sp.context_compacted_detail': "{summarized} предыдущих сообщений сжато · {remaining} сохранено",
   'ob.tokens.context_hint': "Для надёжной работы агента выберите модель с окном контекста не менее 16k токенов. 8k может подойти при включённом компактном режиме; 4k слишком мало для набора инструментов. WebBrain автоматически уплотняет диалог по мере приближения к границе окна.",
-  'st.display.cost_session_limit.label': "Лимит расходов на облако за сессию",
-  'st.display.cost_session_limit.desc': "Останавливает облачные запуски и OpenRouter перед очередным платным вызовом модели, когда эта сессия достигает указанного или расчётного лимита расходов. По умолчанию 10 $.",
-  'st.display.cost_total_limit.label': "Общий лимит расходов на облако",
-  'st.display.cost_total_limit.desc': "Отслеживает указанные или расчётные расходы на облачные модели/OpenRouter по всему расширению и останавливает дальнейшие платные вызовы при достижении лимита. Локальные провайдеры не учитываются.",
-  'st.display.cost_reset': "Сбросить расходы",
   'st.provider.field.prompt_tier': "Уровень промпта",
   'st.provider.field.prompt_tier.compact': "Компактный — крошечные модели (до 8B): минимум инструментов, краткие правила",
   'st.provider.field.prompt_tier.mid': "Средний — небольшие/локальные модели (~9B–32B): облегчённый промпт, меньше инструментов (по умолчанию для локальных)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'Поиск в общих настройках',
   'st.display.search.empty': 'Нет совпадений в общих настройках.',
   'st.display.advanced': 'Расширенные',
-  ...getApocalypseModeCopy('ru'),
-  ...getEmergencyBoxCopy('ru'),
   'st.display.clarify_timeout.label': 'Таймаут уточнения',
   'st.display.clarify_timeout.desc': 'Сколько ждать ответа на уточняющий вопрос, прежде чем автоматически выбрать первый вариант (или зафиксировать таймаут без вариантов). 0 — сразу (всегда автовыбор). Больше 1200 с — ждать бесконечно (Выкл.). По умолчанию 60 с. Не применяется к разрешениям и подтверждениям отправки форм.',
   'st.display.clarify_timeout.off': 'Выкл.',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "Пока нечего экспортировать — сначала начните разговор.",
   "sp.export_traces.partial": "Цепочка инструментов экспортирована, но часть событий хода не удалось прочитать.",
   "sp.export_traces.truncated": "Цепочка инструментов экспортирована. Старые ходы могут отсутствовать, если у разговора много трассировок.",
-  "st.display.help_improve.label": "Помогать улучшать WebBrain",
-  "st.display.help_improve.desc_html": "Разрешить хранить отдельные взаимодействия с WebBrain Cloud и использовать их для оценки, улучшения, тонкой настройки и обучения. Включено по умолчанию. Отключите, чтобы будущие взаимодействия с Cloud не использовались для этих целей. <u>WebBrain никогда не собирает запросы к локальным моделям и запросы, отправленные с вашими собственными учётными данными API.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Политика конфиденциальности →</a>",
   "st.providers.webbrain_data_use.body": "Включён бесплатный ежедневный объём WebBrain Cloud. Пока параметр «Помогать улучшать WebBrain» включён по умолчанию, отдельные разговоры в Cloud могут храниться и использоваться для оценки, улучшения, тонкой настройки и обучения. Отключите его в разделе «Общие», чтобы исключить будущие взаимодействия с Cloud из такого использования. <u>WebBrain никогда не собирает запросы к локальным моделям и запросы, отправленные с вашими собственными учётными данными API.</u> {privacyLink}. Для большего объёма оформите подписку на {subscribeLink}. Управляйте оплатой на {accountLink}.",
   'st.providers.compat.title': 'Расширенная совместимость модели',
   'st.providers.compat.blurb': 'Оставляйте «Авто», если модель или endpoint не описывают другой формат запроса.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "Оставить сохранённую цель",
   "sp.workflows.healing.saved": "Обновлено локаторов в «{name}»: {count}.",
   "sp.workflows.healing.not_saved": "Одобренный локатор для «{name}» не сохранён: сценарий изменился или результат проверки оказался неоднозначным.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

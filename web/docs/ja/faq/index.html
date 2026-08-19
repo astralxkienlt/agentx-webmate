@@ -118,14 +118,6 @@
     },
     {
       "@type": "Question",
-      "name": "WebGPU が Apocalypse Mode でのみ利用できるのはなぜですか？",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "ブラウザー内の WebGPU テキスト推論は、現時点では大多数のユーザーにとって十分に良い品質ではないと考えており、低品質な体験を強いたくないためです。同じ LFM2.5 2.6B モデルをローカルで使用したい場合は、ご自身のマシンで llama.cpp または Ollama を使って推論を実行し、WebGPU に依存する代わりに netMind Extension をそのローカルエンドポイントへ接続してください。 WebGPU によるビジョンフォールバックは、モデルがはるかに小さく、フォールバックがたまにしか使われないため、引き続き利用できます。"
-      }
-    },
-    {
-      "@type": "Question",
       "name": "ネットワーク上のローカル LLM サーバー (vLLM、Ollama、llama.cpp) に接続すると「Failed to fetch」が出ます",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>モデルとローカル設定</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>netMind Extension は完全にオフラインで使えますか?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>いちばんおすすめのモデルは?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p><strong>2026 年 4 月 21 日</strong> 時点でのトップ推奨は <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a> です。理由: 当方のビジョンベンチマーク (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>) で、スクリーンショット理解において Gemma 4 を上回り、ローカル推論でも実用的なままでした。</p><p>コンシューマー GPU なら RTX 5090 が理想で、RTX 4090 でも <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a> による INT4 AutoRound 量子化で多くの場合実用に足ります。</p><p>最高速度を狙うなら <strong>vLLM</strong> でサーブすることをおすすめします。コマンド例:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculative decoding は任意です。</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>WebGPU が Apocalypse Mode でのみ利用できるのはなぜですか？</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>ブラウザー内の WebGPU テキスト推論は、現時点では大多数のユーザーにとって十分に良い品質ではないと考えており、低品質な体験を強いたくないためです。同じ LFM2.5 2.6B モデルをローカルで使用したい場合は、ご自身のマシンで <strong>llama.cpp</strong> または <strong>Ollama</strong> を使って推論を実行し、WebGPU に依存する代わりに netMind Extension をそのローカルエンドポイントへ接続してください。</p><p>WebGPU によるビジョンフォールバックは、モデルがはるかに小さく、フォールバックがたまにしか使われないため、引き続き利用できます。</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>ネットワーク上のローカル LLM サーバー (vLLM、Ollama、llama.cpp) に接続すると「Failed to fetch」が出ます</span><span class="faq-question-mark" aria-hidden="true"></span></summary>

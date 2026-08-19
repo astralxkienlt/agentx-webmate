@@ -1,30 +1,29 @@
 diff --git a/src/ui/settings.html b/src/ui/settings.html
 --- a/src/ui/settings.html
 +++ b/src/ui/settings.html
-@@ -1286,6 +1286,7 @@
+@@ -1088,6 +1088,7 @@
+     :root[data-theme="light"] .btn-sign-out:hover  { background: rgba(89,55,25,0.06); }
+     :root[data-theme="light"] .info-box code       { background: rgba(89,55,25,0.08); }
    </style>
-   <link rel="stylesheet" href="apocalypse-comm.css">
-   <link rel="stylesheet" href="download-tracker.css">
 +  <link rel="stylesheet" href="agentx-cloud.css">
  </head>
  <body>
-   <div class="header-row">
+   <header class="page-header">
 diff --git a/src/ui/settings.js b/src/ui/settings.js
 --- a/src/ui/settings.js
 +++ b/src/ui/settings.js
-@@ -57,6 +57,7 @@ import {
-   WEBGPU_VISION_ENABLED_KEY,
- } from '../providers/webgpu.js';
+@@ -53,6 +53,7 @@
+ import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
+ import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
  import { AUTO_GROUP_TABS_KEY } from '../tab-group-preference.js';
 +import { createAgentXCloudSettingsController } from './agentx-cloud-settings.js';
  
  const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
  
-@@ -329,7 +330,19 @@ let activeProviderId = '';
+@@ -292,6 +293,18 @@
  let providerActivationRequestId = 0;
  let requestedActiveProviderId = '';
  let currentVisionConfig = {};
- let webgpuVisionEnabled = false;
 +const agentxCloudController = createAgentXCloudSettingsController({
 +  api: globalThis.chrome,
 +  locale: getLocale,
@@ -40,18 +39,18 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
  
  if (globalThis.chrome?.storage?.onChanged) {
    chrome.storage.onChanged.addListener((changes, area) => {
-@@ -350,9 +363,6 @@ if (globalThis.chrome?.storage?.onChanged) {
+@@ -310,9 +323,6 @@
    });
  }
  
 -const WEBBRAIN_SUBSCRIBE_URL = 'https://webbrain.one/subscribe';
 -const WEBBRAIN_ACCOUNT_URL = 'https://api.webbrain.one/account';
 -
- const DEFAULT_COST_ALLOWANCE_USD = 10;
  const MAX_AGENT_STEPS_DEFAULT = 130;
  const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
-@@ -607,22 +617,6 @@ function renderCostAllowanceSpent(spent, limit) {
-   costSpentValueLabel.textContent = `${formatUsd(spent)} / ${formatUsd(limit)}`;
+ const PLAN_BEFORE_ACT_MODES = new Set(['try', 'strict', 'off']);
+@@ -350,22 +360,6 @@
+   }
  }
  
 -function webbrainSubscribeUrl(deviceGuid) {
@@ -73,8 +72,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
  function isUnlimitedMaxAgentSteps(value) {
    const n = Number(value);
    return Number.isFinite(n) && (n === 0 || n >= MAX_AGENT_STEPS_UNLIMITED_SENTINEL);
-@@ -818,7 +814,8 @@ async function init() {
-   const res = await sendToBackground('get_providers');
+@@ -516,6 +510,7 @@
    providersData = res.providers;
    activeProviderId = res.active;
    renderProviders();
@@ -82,7 +80,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
  }
  
  // --- Site permissions (capability × origin grants) ---
-@@ -2841,7 +2838,7 @@ function renderProviders() {
+@@ -2345,7 +2340,7 @@
    let visibleCount = 0;
    for (const [id, config] of entries) {
      const isSelected = id === activeProviderId;
@@ -91,7 +89,8 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
      const definitionId = providerDefinitionId(id, config);
      const fieldDefs = providerConfigs[definitionId]?.fields || [];
  
-@@ -2948,24 +2945,4 @@ function renderProviders() {
+@@ -2451,26 +2446,6 @@
+       }
      }
  
 -    const subscribeHref = id === 'webbrain_cloud' ? webbrainSubscribeUrl(config.deviceGuid) : '';
@@ -116,7 +115,8 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
 -    }
      const extensionOrigin = chrome.runtime.getURL('').replace(/\/$/, '');
      const ollamaWarningTitleId = `ollama-warning-title-${id}`;
-@@ -2989,7 +2966,8 @@ function renderProviders() {
+     const ollamaWarning = definitionId === 'ollama'
+@@ -2493,15 +2468,15 @@
          ? 'st.providers.duplicate_unavailable'
          : ((!isConfigured || dirtyProviderIds.has(id)) ? 'st.providers.duplicate_inactive' : ''));
  
@@ -127,7 +127,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
        ${fieldsHTML}
 -      ${providerNote}
        ${ollamaWarning}
-@@ -2997,7 +2975,6 @@ function renderProviders() {
+       ${compatibilitySettings}
        <div class="btn-row">
          <button class="btn-primary btn-save" data-provider="${id}">${escapeHtml(t('st.providers.save'))}</button>
          <button class="btn-secondary btn-test" data-provider="${id}">${escapeHtml(t('st.providers.test'))}</button>
@@ -135,7 +135,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
          ${!isSelected ? `<button class="btn-secondary btn-activate" data-provider="${id}">${escapeHtml(t('st.providers.select_for_chat'))}</button>` : ''}
          ${config.isDuplicate
            ? `<button class="btn-secondary btn-remove-duplicate" data-provider="${id}">${escapeHtml(t('st.providers.remove_duplicate'))}</button>`
-@@ -3006,7 +2983,11 @@ function renderProviders() {
+@@ -2510,7 +2485,11 @@
        <div class="test-result" id="test-${id}"></div>
      `;
  
@@ -148,10 +148,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
    }
  
    // If the filter would leave the list empty (no cards match and no selected
-@@ -3042,14 +3023,7 @@ function renderProviders() {
-   document.querySelectorAll('.btn-remove-duplicate').forEach(btn => {
-     btn.addEventListener('click', () => removeDuplicateProvider(btn.dataset.provider));
-   });
+@@ -2549,13 +2528,6 @@
    document.querySelectorAll('.btn-load-models').forEach(btn => {
      btn.addEventListener('click', () => loadProviderModels(btn.dataset.provider));
    });
@@ -163,7 +160,9 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
 -    });
 -  });
    document.querySelectorAll('.model-select').forEach(sel => {
-@@ -3280,7 +3254,9 @@ function wrapCollapsibleCard(id, config, isSelected, isConfigured, bodyHtml) {
+     sel.addEventListener('change', () => {
+       const providerId = sel.dataset.modelFor;
+@@ -2783,7 +2755,9 @@
  }
  
  function providerIsActive(id, config) {
@@ -177,7 +176,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
 diff --git a/src/providers/manager.js b/src/providers/manager.js
 --- a/src/providers/manager.js
 +++ b/src/providers/manager.js
-@@ -55,6 +55,7 @@ import {
+@@ -45,6 +45,7 @@
    loadTranscriptionConnectionTestAudio,
    loadVisionConnectionTestImage,
  } from './connection-test-assets.js';
@@ -185,31 +184,17 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
  
  const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
  const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
-@@ -240,7 +241,8 @@ export class ProviderManager {
+@@ -222,9 +223,10 @@
+         type: 'openai',
          category: 'cloud',
          label: 'WebBrain Cloud',
 -        providerName: 'webbrain-cloud',
-+        providerName: 'agentx-cloud',
 -        baseUrl: 'https://api.webbrain.one/v1',
 -        model: 'webbrain-cloud 1.0',
++        providerName: 'agentx-cloud',
 +        baseUrl: AGENTX_RUNTIME_CONFIG.litellmBaseUrl,
 +        model: '',
 +        requiresModel: true,
          contextWindow: WEBBRAIN_CLOUD_CONTEXT_WINDOW,
          inputCostPerMillionUsd: 0.20,
-diff --git a/src/agent/agent.js b/src/agent/agent.js
---- a/src/agent/agent.js
-+++ b/src/agent/agent.js
-@@ -1667,9 +1667,9 @@ export class Agent {
-   _isCostMeteredProvider(provider) {
-     const config = provider?.config || {};
--    // WebBrain Cloud is billed and allowance-controlled by the managed
--    // service, not by the user's per-provider API account. Its upstream token
-+    // Managed cloud providers enforce budgets at their gateway, not through
-+    // the user's per-provider API account. Their upstream token
-     // cost must not consume the extension's user-configured spend allowance.
--    if (config.providerName === 'webbrain-cloud') return false;
-+    if (config.providerName === 'webbrain-cloud' || config.agentxCloudManaged === true) return false;
-     if (this._isLocalBaseUrl(config.baseUrl)) return false;
-     if (config.type === 'anthropic_oauth') return false;
-     return config.category === 'cloud' || config.category === 'router';
+         outputCostPerMillionUsd: 1.15,

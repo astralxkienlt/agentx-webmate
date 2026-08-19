@@ -1,8 +1,6 @@
 // Dutch (nl).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -507,10 +505,6 @@ export default {
   'st.display.search.placeholder': 'Zoek in Algemene instellingen',
   'st.display.search.empty': 'Geen algemene instellingen gevonden.',
   'st.display.advanced': 'Geavanceerd',
-  ...getApocalypseModeCopy('nl'),
-  ...getEmergencyBoxCopy('nl'),
-  'st.display.help_improve.label': 'Help WebBrain verbeteren',
-  'st.display.help_improve.desc_html': 'Sta toe dat geschikte WebBrain Cloud-tekst- en toolinteracties worden bewaard en gebruikt voor evaluatie, verbetering, fine-tuning en training. Standaard ingeschakeld. Als u dit uitschakelt, wordt het huidige gesprek permanent uitgesloten; opnieuw inschakelen geldt vanaf het volgende nieuwe gesprek. Screenshots en afbeeldingsbytes worden niet bewaard in de WebBrain-verbeteringsdatabase. <u>Verzoeken aan lokale modellen en verzoeken met uw eigen API worden nooit door WebBrain verzameld.</u> <a href="https://webbrain.one/privacy" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Privacybeleid →</a>',
   'st.display.clarify_timeout.label': 'Verduidelijkingstime-out',
   'st.display.clarify_timeout.desc': 'Hoelang wachten op een antwoord op een verduidelijkingsprompt...',
   'st.display.clarify_timeout.off': 'Uit',
@@ -553,11 +547,6 @@ export default {
   'st.display.auto_screenshot.every_step': 'Elke stap',
   'st.display.tracing.label': 'Traces opslaan (voor modelvergelijking)',
   'st.display.tracing.desc_html': 'Sla elke uitvoering op in lokale IndexedDB... <a href="traces.html" target="_blank" style="color:var(--accent);">Traces openen →</a>',
-  'st.display.cost_session_limit.label': 'Cloudkostensessietegoed',
-  'st.display.cost_session_limit.desc': 'Stopt cloud- en OpenRouter-uitvoeringen voordat nog een betaald modelaanroep plaatsvindt...',
-  'st.display.cost_total_limit.label': 'Cloudkostentotaaltegoed',
-  'st.display.cost_total_limit.desc': 'Volgt gerapporteerde of geschatte cloud-/OpenRouter-modeluitgaven...',
-  'st.display.cost_reset': 'Uitgaven resetten',
   'st.display.strict_secret.label': 'Strikte geheimhouding',
   'st.display.strict_secret.desc': 'Weiger om inloggegevens te citeren in samenvattingen of assistenttekst...',
   'st.display.allow_local_network.label': 'Sta agent toe om lokaal netwerk te bereiken',
@@ -947,6 +936,4 @@ export default {
   "sp.workflows.healing.keep": "Opgeslagen doel behouden",
   "sp.workflows.healing.saved": "{count} locator(s) in ‘{name}’ bijgewerkt.",
   "sp.workflows.healing.not_saved": "De goedgekeurde locator voor ‘{name}’ is niet opgeslagen omdat de workflow was gewijzigd of de verificatie niet overtuigend was.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

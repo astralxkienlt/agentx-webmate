@@ -249,6 +249,144 @@
       "from": "  { code: 'vi', label: 'Tiếng Việt', englishLabel: 'Vietnamese', flagCode: 'vn' },\n];",
       "to": "];",
       "only": ["src/ui/i18n.js"]
+    },
+    {
+      "_why": "Settings > Skills opens on a paragraph that spells out the WebMCP fence names `webbrain-tools` and `webbrain-skill` inside <code> tags, so the upstream brand reaches the screen however the display-name rules are scoped. Those two are protocol identifiers external sites rely on — they stay put in src/agent/skills.js and in the packaged skills, and only the visible copy can move. Rewriting the whole sentence also sheds the catalog/planner/semantic-intent wording it opened with, which is loader detail nobody reading that tab for the first time needs. One rule per locale, since each carries its own translation; the pattern matches the key and whatever value trails it, so an upstream rewording is swallowed rather than quietly restoring the old text.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Kỹ năng chỉ hoạt động ở hạng Mid và Full; hạng Compact không nạp kỹ năng. Ban đầu mô hình chỉ thấy tên và tóm tắt ngắn của mỗi kỹ năng, đủ để biết khi nào cần dùng. Hướng dẫn đầy đủ cùng công cụ đi kèm chỉ được nạp sau khi kỹ năng được chọn cho lượt chạy hiện tại.\"",
+      "only": ["src/ui/locales/vi.js"]
+    },
+    {
+      "_why": "Same rewrite, en translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Skills work only in the Mid and Full tiers — Compact does not load them. The model first sees just each skill's name and short summary, enough to tell when one is relevant. Full instructions and any bundled tools load only after a skill is picked for the current run.\"",
+      "only": ["src/ui/locales/en.js"]
+    },
+    {
+      "_why": "Same rewrite, ar translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"تعمل المهارات في المستويين المتوسط والكامل فقط؛ أما المستوى المضغوط فلا يحمّلها. يرى النموذج في البداية اسم كل مهارة وملخصها القصير فحسب، وهو ما يكفي لمعرفة متى تلزم إحداها. أما التعليمات الكاملة والأدوات المرفقة فلا تُحمَّل إلا بعد اختيار المهارة للتشغيل الحالي.\"",
+      "only": ["src/ui/locales/ar.js"]
+    },
+    {
+      "_why": "Same rewrite, bn translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"দক্ষতা শুধু মধ্য ও সম্পূর্ণ স্তরে কাজ করে; কমপ্যাক্ট স্তর সেগুলো লোড করে না। শুরুতে মডেল প্রতিটি দক্ষতার শুধু নাম আর ছোট সারাংশ দেখে — কোনটি কখন দরকার তা বোঝার জন্য এটুকুই যথেষ্ট। পুরো নির্দেশনা আর সঙ্গের টুলগুলো তখনই লোড হয় যখন কোনো দক্ষতা চলতি রানের জন্য বেছে নেওয়া হয়।\"",
+      "only": ["src/ui/locales/bn.js"]
+    },
+    {
+      "_why": "Same rewrite, de translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Skills funktionieren nur in den Stufen Mid und Full — Compact lädt keine Skills. Das Modell sieht zunächst nur Name und Kurzbeschreibung jedes Skills, gerade genug, um zu erkennen, wann einer passt. Die vollständige Anleitung und mitgelieferte Tools werden erst geladen, wenn ein Skill für den aktuellen Durchlauf ausgewählt wurde.\"",
+      "only": ["src/ui/locales/de.js"]
+    },
+    {
+      "_why": "Same rewrite, es translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Las habilidades solo funcionan en los niveles Medio y Completo; Compacto no las carga. Al principio el modelo solo ve el nombre y un resumen breve de cada habilidad, lo justo para saber cuándo viene bien. Las instrucciones completas y las herramientas incluidas se cargan solo después de elegir una habilidad para la ejecución actual.\"",
+      "only": ["src/ui/locales/es.js"]
+    },
+    {
+      "_why": "Same rewrite, fa translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"مهارت‌ها فقط در سطح‌های متوسط و کامل کار می‌کنند؛ سطح فشرده مهارتی بارگذاری نمی‌کند. مدل در ابتدا تنها نام و خلاصهٔ کوتاه هر مهارت را می‌بیند؛ همین برای تشخیص اینکه چه زمانی به کدام مهارت نیاز است کافی است. دستورالعمل کامل و ابزارهای همراه فقط پس از انتخاب آن مهارت برای اجرای فعلی بارگذاری می‌شوند.\"",
+      "only": ["src/ui/locales/fa.js"]
+    },
+    {
+      "_why": "Same rewrite, fr translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Les compétences ne fonctionnent qu'aux niveaux Intermédiaire et Complet — Compact n'en charge aucune. Le modèle ne voit d'abord que le nom et le résumé court de chaque compétence, de quoi repérer celle qui convient. Les instructions complètes et les outils fournis ne sont chargés qu'une fois la compétence retenue pour l'exécution en cours.\"",
+      "only": ["src/ui/locales/fr.js"]
+    },
+    {
+      "_why": "Same rewrite, he translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"מיומנויות פועלות רק בשכבות בינוני ומלא; קומפקטי אינו טוען מיומנויות. בהתחלה המודל רואה רק את השם והתקציר הקצר של כל מיומנות, מספיק כדי לדעת מתי אחת מהן מתאימה. ההוראות המלאות והכלים הנלווים נטענים רק אחרי שמיומנות נבחרה עבור ההרצה הנוכחית.\"",
+      "only": ["src/ui/locales/he.js"]
+    },
+    {
+      "_why": "Same rewrite, hi translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"कौशल केवल मध्य और पूर्ण स्तर पर काम करते हैं; कॉम्पैक्ट स्तर उन्हें लोड नहीं करता। शुरुआत में मॉडल हर कौशल का सिर्फ़ नाम और छोटा सारांश देखता है, इतना ही काफ़ी है कि कब कौन-सा कौशल चाहिए। पूरे निर्देश और साथ आने वाले टूल तभी लोड होते हैं जब कोई कौशल मौजूदा रन के लिए चुन लिया जाता है।\"",
+      "only": ["src/ui/locales/hi.js"]
+    },
+    {
+      "_why": "Same rewrite, id translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Keterampilan hanya berjalan di tingkat Menengah dan Penuh; tingkat Ringkas tidak memuatnya. Awalnya model hanya melihat nama dan ringkasan singkat tiap keterampilan, cukup untuk tahu kapan salah satunya cocok. Instruksi lengkap dan alat bawaannya baru dimuat setelah sebuah keterampilan dipilih untuk proses yang sedang berjalan.\"",
+      "only": ["src/ui/locales/id.js"]
+    },
+    {
+      "_why": "Same rewrite, ja translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"スキルはミッドとフルの階層でのみ動作し、コンパクトでは読み込まれません。モデルは最初、各スキルの名前と短い要約だけを見て、どれが役立つかを判断します。詳しい手順と付属のツールは、そのスキルが今回の実行に選ばれてから読み込まれます。\"",
+      "only": ["src/ui/locales/ja.js"]
+    },
+    {
+      "_why": "Same rewrite, ko translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"스킬은 중간과 전체 등급에서만 작동하며, 컴팩트 등급에서는 불러오지 않습니다. 모델은 처음에 각 스킬의 이름과 짧은 요약만 보고 어떤 스킬이 필요한지 판단합니다. 전체 지침과 함께 제공되는 도구는 해당 스킬이 이번 실행에 선택된 뒤에야 불러옵니다.\"",
+      "only": ["src/ui/locales/ko.js"]
+    },
+    {
+      "_why": "Same rewrite, ms translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Kemahiran hanya berfungsi pada tahap Sederhana dan Penuh; tahap Padat tidak memuatkannya. Pada mulanya model hanya melihat nama dan ringkasan pendek setiap kemahiran, cukup untuk tahu bila satu daripadanya sesuai. Arahan penuh dan alatan yang disertakan hanya dimuatkan selepas sesuatu kemahiran dipilih untuk larian semasa.\"",
+      "only": ["src/ui/locales/ms.js"]
+    },
+    {
+      "_why": "Same rewrite, nl translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Vaardigheden werken alleen op de niveaus Middel en Volledig — Compact laadt ze niet. Het model ziet eerst alleen de naam en korte samenvatting van elke vaardigheid, genoeg om te zien wanneer er een van pas komt. De volledige instructies en bijbehorende tools worden pas geladen nadat een vaardigheid voor de huidige run is gekozen.\"",
+      "only": ["src/ui/locales/nl.js"]
+    },
+    {
+      "_why": "Same rewrite, pl translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Umiejętności działają tylko na poziomach Średnim i Pełnym — Kompaktowy ich nie ładuje. Na początku model widzi jedynie nazwę i krótkie streszczenie każdej umiejętności, tyle, by rozpoznać, kiedy któraś się przyda. Pełne instrukcje i dołączone narzędzia ładują się dopiero po wybraniu umiejętności na bieżące uruchomienie.\"",
+      "only": ["src/ui/locales/pl.js"]
+    },
+    {
+      "_why": "Same rewrite, pt translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"As habilidades só funcionam nos níveis Médio e Completo; o Compacto não as carrega. No início o modelo vê apenas o nome e um resumo curto de cada habilidade, o suficiente para saber quando uma serve. As instruções completas e as ferramentas incluídas só são carregadas depois que uma habilidade é escolhida para a execução atual.\"",
+      "only": ["src/ui/locales/pt.js"]
+    },
+    {
+      "_why": "Same rewrite, ru translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Навыки работают только на уровнях Средний и Полный — Компактный их не загружает. Сначала модель видит лишь название и краткое описание каждого навыка: этого хватает, чтобы понять, когда он нужен. Полные инструкции и идущие с навыком инструменты загружаются только после того, как навык выбран для текущего запуска.\"",
+      "only": ["src/ui/locales/ru.js"]
+    },
+    {
+      "_why": "Same rewrite, th translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"ทักษะทำงานเฉพาะในระดับกลางและเต็มเท่านั้น ระดับกะทัดรัดจะไม่โหลดทักษะ ตอนแรกโมเดลจะเห็นเพียงชื่อและสรุปสั้น ๆ ของแต่ละทักษะ ซึ่งพอให้รู้ว่าควรใช้อันไหน ส่วนคำแนะนำฉบับเต็มและเครื่องมือที่มากับทักษะจะโหลดก็ต่อเมื่อทักษะนั้นถูกเลือกใช้ในรอบการทำงานปัจจุบัน\"",
+      "only": ["src/ui/locales/th.js"]
+    },
+    {
+      "_why": "Same rewrite, tl translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Gumagana lang ang mga kasanayan sa antas na Mid at Full; hindi naglo-load ng kasanayan ang Compact. Sa simula, ang pangalan at maikling buod lang ng bawat kasanayan ang nakikita ng modelo — sapat na iyon para malaman kung kailan kailangan ang isa. Ang buong tagubilin at kasamang mga tool ay naglo-load lang matapos mapili ang isang kasanayan para sa kasalukuyang run.\"",
+      "only": ["src/ui/locales/tl.js"]
+    },
+    {
+      "_why": "Same rewrite, tr translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Skill'ler yalnızca Orta ve Tam düzeylerinde çalışır; Kompakt skill yüklemez. Model önce her skill'in yalnızca adını ve kısa özetini görür; hangisinin işe yarayacağını anlamaya bu yeter. Tam talimatlar ve skill ile gelen araçlar, ancak o skill geçerli çalışma için seçildikten sonra yüklenir.\"",
+      "only": ["src/ui/locales/tr.js"]
+    },
+    {
+      "_why": "Same rewrite, uk translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"Навички працюють лише на рівнях Середній і Повний — Компактний їх не завантажує. Спочатку модель бачить тільки назву та короткий опис кожної навички: цього досить, щоб зрозуміти, коли вона потрібна. Повні інструкції та вбудовані інструменти завантажуються лише після того, як навичку обрано для поточного запуску.\"",
+      "only": ["src/ui/locales/uk.js"]
+    },
+    {
+      "_why": "Same rewrite, zh translation.",
+      "regex": "([\"'])st\\.skills\\.desc_html\\1\\s*:\\s*([\"'])(?:\\\\.|(?!\\2)[^\\\\])*\\2",
+      "to": "\"st.skills.desc_html\": \"技能只在中等和完整级别下生效，紧凑级别不会加载技能。模型一开始只看到每个技能的名称和简短说明，足以判断何时该用哪一个。完整说明和随附的工具，要等技能被选中用于本次运行后才会加载。\"",
+      "only": ["src/ui/locales/zh.js"]
     }
   ],
 

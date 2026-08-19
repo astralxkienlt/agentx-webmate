@@ -13,7 +13,6 @@ import {
   refreshBuiltInSkillRecord,
 } from './agent/skills.js';
 import { ScheduledJobManager } from './agent/scheduler.js';
-import { APOCALYPSE_DOWNLOAD_ALARM, APOCALYPSE_UPDATE_ALARM, createApocalypseController } from './agent/apocalypse-mode.js';
 import {
   compileWorkflowFromDemonstration,
   compileLatestSuccessfulWorkflow,
@@ -93,13 +92,6 @@ import {
  */
 
 const providerManager = new ProviderManager();
-const apocalypseController = createApocalypseController(browser);
-Promise.all([
-  apocalypseController.syncUpdateSchedule(),
-  apocalypseController.syncDownloadSchedule(),
-]).catch((error) => {
-  console.warn('[WebBrain] Apocalypse Mode schedules could not be restored:', error);
-});
 const agent = new Agent(providerManager);
 const ALWAYS_ALLOW_API_MUTATIONS_KEY = 'alwaysAllowApiMutations';
 const alwaysAllowApiMutationsReady = browser.storage.local
@@ -683,15 +675,14 @@ async function drainUserMemoryExtractionQueue() {
         if (providerManager.providers.size === 0) await providerManager.load();
         const store = await userMemoryStore.load();
         const provider = providerManager.getActive();
-        const costState = agent._newCostRunState();
-        const result = await agent._chatWithCostAllowance(provider, buildUserMemoryExtractionMessages({
+        const result = await agent._chat(provider, buildUserMemoryExtractionMessages({
           userText: job.userText,
           assistantText: job.assistantText,
           memories: store.records,
           mode: job.mode,
           succeeded: job.succeeded,
           sourceContext: job.sourceContext,
-        }), { maxTokens: 600, temperature: 0 }, costState, {
+        }), { maxTokens: 600, temperature: 0 }, {
           conversationId: job.conversationId || null,
           generationName: 'memory',
         });
@@ -702,7 +693,7 @@ async function drainUserMemoryExtractionQueue() {
           if (applied.created) notifyUserMemoryCreated();
         }
       } catch (error) {
-        if (agent._isCostAllowanceError?.(error)) {
+        if (agent._isUsageLimitError?.(error)) {
           await removeUserMemoryExtractionJob(job.id);
           return;
         }
@@ -921,7 +912,7 @@ browser.storage.onChanged.addListener((changes) => {
     selectionShortcutLocale = normalizeSelectionShortcutLocale(changes.wbLocale.newValue);
     createContextMenus().catch(() => {});
   }
-  if (changes.providers || changes.activeProvider || changes.helpImproveWebBrain) providerManager.load().catch(() => {});
+  if (changes.providers || changes.activeProvider) providerManager.load().catch(() => {});
   if (changes.maxAgentSteps) {
     agent.maxSteps = normalizeMaxAgentSteps(changes.maxAgentSteps.newValue);
   }
@@ -1016,18 +1007,6 @@ browser.storage.onChanged.addListener((changes) => {
     });
   }
   if (refreshPrompts) agent._refreshSystemPrompts();
-});
-
-browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm?.name === APOCALYPSE_DOWNLOAD_ALARM) {
-    apocalypseController.manager.processNext().catch((error) => {
-      console.warn('[WebBrain] Apocalypse Mode archive download failed:', error);
-    });
-  } else if (alarm?.name === APOCALYPSE_UPDATE_ALARM) {
-    apocalypseController.checkForUpdates().catch((error) => {
-      console.warn('[WebBrain] Apocalypse Mode update check failed:', error);
-    });
-  }
 });
 
 // ────────────────────────────────────────────────────────────────────────
@@ -1960,8 +1939,6 @@ async function handleMessage(msg, sender) {
   }
 
   switch (msg.action) {
-    case 'apocalypse_mode':
-      return await apocalypseController.handle(msg.command, msg);
     case 'get_user_memory': {
       const store = await userMemoryStore.load();
       const settings = await browser.storage.local.get([

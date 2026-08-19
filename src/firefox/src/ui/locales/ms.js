@@ -1,8 +1,6 @@
 // Malay (ms).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Konteks dipadatkan secara automatik",
   'sp.context_compacted_detail': "{summarized} mesej terdahulu diringkaskan · {remaining} dikekalkan",
   'ob.tokens.context_hint': "Untuk pelaksanaan ejen yang boleh dipercayai, pilih model dengan tetingkap konteks sekurang-kurangnya 16k token. 8k boleh berfungsi dengan mod Padat didayakan; 4k terlalu kecil untuk set alat. WebBrain memadatkan perbualan secara automatik apabila menghampiri had tetingkap.",
-  'st.display.cost_session_limit.label': "Peruntukan kos awan setiap sesi",
-  'st.display.cost_session_limit.desc': "Menghentikan pelaksanaan awan dan OpenRouter sebelum panggilan model berbayar seterusnya apabila sesi ini mencapai peruntukan kos yang dilaporkan atau dianggarkan. Lalai $10.",
-  'st.display.cost_total_limit.label': "Peruntukan kos awan keseluruhan",
-  'st.display.cost_total_limit.desc': "Menjejaki perbelanjaan model awan/OpenRouter yang dilaporkan atau dianggarkan merentas sambungan dan menghentikan panggilan berbayar selanjutnya pada peruntukan. Penyedia tempatan tidak dikira.",
-  'st.display.cost_reset': "Tetap semula perbelanjaan",
   'st.provider.field.prompt_tier': "Tahap gesaan",
   'st.provider.field.prompt_tier.compact': "Padat — model sangat kecil (bawah 8B): paling sedikit alat, peraturan ringkas",
   'st.provider.field.prompt_tier.mid': "Sederhana — model kecil/tempatan (~9B–32B): gesaan lebih ringkas, alat dikurangkan (lalai untuk tempatan)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'Cari tetapan Umum',
   'st.display.search.empty': 'Tiada tetapan Umum yang sepadan.',
   'st.display.advanced': 'Lanjutan',
-  ...getApocalypseModeCopy('ms'),
-  ...getEmergencyBoxCopy('ms'),
   'st.display.clarify_timeout.label': 'Tamat masa penjelasan',
   'st.display.clarify_timeout.desc': 'Berapa lama menunggu balasan soalan penjelasan sebelum memilih pilihan pertama secara automatik (atau tamat masa jika tiada pilihan). 0 = Segera (sentiasa auto-pilih). Melebihi 1200s tunggu tanpa had (Mati). Lalai 60s. Tidak digunakan untuk kebenaran atau pengesahan hantar borang.',
   'st.display.clarify_timeout.off': 'Mati',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "Tiada lagi yang dieksport — mulakan perbualan dahulu.",
   "sp.export_traces.partial": "Rantaian alat dieksport, tetapi sesetengah peristiwa giliran tidak dapat dibaca.",
   "sp.export_traces.truncated": "Rantaian alat dieksport. Giliran lama mungkin hilang jika perbualan ini mempunyai banyak jejak.",
-  "st.display.help_improve.label": "Bantu Tingkatkan WebBrain",
-  "st.display.help_improve.desc_html": "Benarkan interaksi WebBrain Cloud terpilih disimpan dan digunakan untuk penilaian, penambahbaikan, penalaan halus dan latihan. Dihidupkan secara lalai. Matikan untuk menghalang interaksi Cloud pada masa hadapan daripada digunakan bagi tujuan tersebut. <u>WebBrain tidak pernah mengumpul permintaan model setempat atau permintaan yang dihantar terus menggunakan kelayakan API anda sendiri.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Dasar privasi →</a>",
   "st.providers.webbrain_data_use.body": "Penggunaan harian percuma WebBrain Cloud disertakan. Semasa Bantu Tingkatkan WebBrain dihidupkan secara lalai, perbualan Cloud terpilih mungkin disimpan dan digunakan untuk penilaian, penambahbaikan, penalaan halus dan latihan. Matikan di Umum untuk mengecualikan interaksi Cloud pada masa hadapan daripada penggunaan tersebut. <u>WebBrain tidak pernah mengumpul permintaan model setempat atau permintaan yang dihantar terus menggunakan kelayakan API anda sendiri.</u> {privacyLink}. Untuk penggunaan tambahan, langgan di {subscribeLink}. Urus pengebilan di {accountLink}.",
   'st.providers.compat.title': 'Keserasian model lanjutan',
   'st.providers.compat.blurb': 'Biarkan pada Auto melainkan model atau titik akhir mendokumentasikan kontrak permintaan yang berbeza.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "Kekalkan sasaran tersimpan",
   "sp.workflows.healing.saved": "Mengemas kini {count} pencari dalam “{name}”.",
   "sp.workflows.healing.not_saved": "Pencari yang diluluskan untuk “{name}” tidak disimpan kerana aliran kerja berubah atau pengesahan tidak muktamad.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

@@ -1,10 +1,12 @@
 diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 --- a/src/agent/transcribe.js
 +++ b/src/agent/transcribe.js
-@@ -82,6 +82,18 @@ function pickProvider(providers) {
+@@ -80,6 +80,18 @@
+     return { id, sourceProviderId, baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
+   }
    return null;
- }
- 
++}
++
 +function pickProviderById(providers, providerId) {
 +  const provider = providers.get?.(providerId) ?? providers[providerId];
 +  const config = provider?.config || provider;
@@ -15,12 +17,10 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 +    baseUrl: config.baseUrl,
 +    apiKey: config.apiKey || '',
 +  };
-+}
-+
+ }
+ 
  /**
-  * Read the user's explicit transcription override from storage if set.
-  *
-@@ -121,6 +133,8 @@ async function readTranscriptionOverride() {
+@@ -121,6 +133,8 @@
   * @param {object} opts
   * @param {string} [opts.filename='recording.webm']
   * @param {string} [opts.modelOverride]  — if you want to force a specific model.
@@ -29,7 +29,7 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
   * @returns {Promise<{ok:true,text,providerId,model,latencyMs}|{ok:false,error}>}
   */
  export async function transcribeAudio(providers, audioBlob, opts = {}) {
-@@ -131,8 +145,11 @@ export async function transcribeAudio(providers, audioBlob, opts = {}) {
+@@ -131,8 +145,11 @@
    // auto-pick path. When the user has bothered to fill in a base URL +
    // model, that's a strong signal that they want THOSE rather than the
    // first OpenAI-compatible provider in their list.
@@ -43,7 +43,7 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
    if (!picked) {
      return {
        ok: false,
-@@ -141,7 +158,19 @@ export async function transcribeAudio(providers, audioBlob, opts = {}) {
+@@ -141,7 +158,19 @@
    }
  
    const sourceProviderId = picked.sourceProviderId || picked.id;
@@ -56,7 +56,7 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 +    if (!requestedModel || !allowedModels.includes(requestedModel)) {
 +      return {
 +        ok: false,
-+        error: 'Transcription blocked: the active netMind Extension model is not in the gateway model list.',
++        error: 'Transcription blocked: choose a netMind Extension transcription model in Settings \u2192 Multimodal \u2192 Transcription, then re-record.',
 +      };
 +    }
 +  }
@@ -67,16 +67,19 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 diff --git a/src/providers/manager.js b/src/providers/manager.js
 --- a/src/providers/manager.js
 +++ b/src/providers/manager.js
-@@ -183,6 +183,7 @@ import {
+@@ -46,6 +46,10 @@
    loadVisionConnectionTestImage,
  } from './connection-test-assets.js';
  import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
-+import { resolveCloudVisionSidecar } from '../agentx/cloud-models.js';
++import {
++  resolveCloudTranscriptionSidecar,
++  resolveCloudVisionSidecar,
++} from '../agentx/cloud-models.js';
  
  const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
  const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
-@@ -1137,6 +1138,13 @@ export class ProviderManager {
-    * separate local preference so toggling it never destroys that endpoint.
+@@ -1104,6 +1108,13 @@
+    * OpenAI-compatible endpoint the user configured under Multimodal.
     */
    async getVisionProvider() {
 +    // Cloud mode is gateway-contained: screenshots may use a selected Cloud
@@ -87,12 +90,45 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
 +    if (cloudSidecar) return new OpenAICompatibleProvider(cloudSidecar);
 +    if (this.activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID) return null;
      try {
-       const stored = await chrome.storage.local.get(['visionModel', WEBGPU_VISION_ENABLED_KEY]);
-       const { visionModel } = stored;
+       const { visionModel } = await chrome.storage.local.get('visionModel');
+       if (!visionModel) return null;
+@@ -1408,12 +1419,26 @@
+    * while lacking a Whisper-compatible audio route entirely.
+    */
+   async testTranscriptionProvider() {
+-    let cfg;
+-    try {
+-      const stored = await chrome.storage.local.get(['transcriptionModel']);
+-      cfg = stored?.transcriptionModel;
+-    } catch (e) {
+-      return { ok: false, error: 'Failed to read transcription config: ' + e.message };
++    // Cloud mode is gateway-contained, same rule as vision: test the selected
++    // Cloud transcription model on the stored model key rather than whatever
++    // manual endpoint the user had filled in before signing in.
++    const cloudSidecar = resolveCloudTranscriptionSidecar(
++      this.providers.get(WEBBRAIN_CLOUD_PROVIDER_ID)?.config,
++    );
++    let cfg = cloudSidecar;
++    if (!cfg && this.activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID) {
++      return {
++        ok: false,
++        error: 'Choose a netMind Extension transcription model in Settings \u2192 Multimodal \u2192 Transcription first.',
++      };
++    }
++    if (!cfg) {
++      try {
++        const stored = await chrome.storage.local.get(['transcriptionModel']);
++        cfg = stored?.transcriptionModel;
++      } catch (e) {
++        return { ok: false, error: 'Failed to read transcription config: ' + e.message };
++      }
+     }
+     if (!cfg || !cfg.baseUrl || !cfg.model) {
+       return { ok: false, error: 'Transcription model not configured (Base URL and Model are required).' };
 diff --git a/src/providers/openai.js b/src/providers/openai.js
 --- a/src/providers/openai.js
 +++ b/src/providers/openai.js
-@@ -77,7 +77,20 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
+@@ -77,7 +77,20 @@
    }
  
    get model() {
@@ -117,20 +153,35 @@ diff --git a/src/providers/openai.js b/src/providers/openai.js
 diff --git a/src/recorder/host.js b/src/recorder/host.js
 --- a/src/recorder/host.js
 +++ b/src/recorder/host.js
-@@ -569,8 +569,18 @@ async function runTranscription({ dataUrl, mimeType, baseFilename }) {
+@@ -28,6 +28,7 @@
+ 
+ import { ensureOffscreen } from '../offscreen/ensure.js';
+ import { transcribeAudio } from '../agent/transcribe.js';
++import { resolveCloudTranscriptionSidecar } from '../agentx/cloud-models.js';
+ import {
+   RECORDING_DOWNLOAD_TIMEOUT_MS,
+   resolveSavedDownload,
+@@ -569,8 +570,25 @@
    }
  
    const ext = mimeType?.startsWith('audio/') ? 'webm' : 'webm';
 +  const activeProvider = providerManagerRef.getActive?.();
 +  const activeConfig = activeProvider?.config || {};
 +  const agentxCloudActive = String(activeConfig.providerName || '').toLowerCase() === 'agentx-cloud';
++  // The gateway serves transcription too, but on its own selected model — the
++  // chat model almost never accepts audio. This resolves to null until the
++  // user picks one in Settings -> Multimodal -> Transcription, which makes
++  // transcribeAudio report that instead of failing deep inside the gateway.
++  const cloudTranscription = agentxCloudActive
++    ? resolveCloudTranscriptionSidecar(activeConfig)
++    : null;
    const result = await transcribeAudio(providerManagerRef.providers, blob, {
      filename: `${baseFilename}.${ext}`,
 +    ...(agentxCloudActive
 +      ? {
 +        providerId: providerManagerRef.activeProviderId,
-+        modelOverride: activeConfig.model,
-+        allowedModels: activeConfig.models,
++        modelOverride: cloudTranscription?.model || '',
++        allowedModels: cloudTranscription?.models || [],
 +      }
 +      : {}),
    });

@@ -1,8 +1,6 @@
 // Thai (th).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "บีบอัดบริบทโดยอัตโนมัติแล้ว",
   'sp.context_compacted_detail': "สรุปข้อความก่อนหน้า {summarized} ข้อความ · เก็บไว้ {remaining} ข้อความ",
   'ob.tokens.context_hint': "เพื่อการทำงานของเอเจนต์ที่เชื่อถือได้ ให้เลือกโมเดลที่มีหน้าต่างบริบทอย่างน้อย 16k โทเค็น โดย 8k อาจใช้งานได้เมื่อเปิดโหมดกะทัดรัด ส่วน 4k เล็กเกินไปสำหรับชุดเครื่องมือ WebBrain จะบีบอัดบทสนทนาโดยอัตโนมัติเมื่อใกล้ถึงขีดจำกัดของหน้าต่าง",
-  'st.display.cost_session_limit.label': "วงเงินค่าใช้จ่ายคลาวด์ต่อเซสชัน",
-  'st.display.cost_session_limit.desc': "หยุดการทำงานบนคลาวด์และ OpenRouter ก่อนการเรียกโมเดลแบบเสียเงินครั้งถัดไป เมื่อเซสชันนี้ถึงวงเงินค่าใช้จ่ายที่รายงานหรือประมาณการไว้ ค่าเริ่มต้น $10",
-  'st.display.cost_total_limit.label': "วงเงินค่าใช้จ่ายคลาวด์รวม",
-  'st.display.cost_total_limit.desc': "ติดตามค่าใช้จ่ายของโมเดลคลาวด์/OpenRouter ที่รายงานหรือประมาณการไว้ทั่วทั้งส่วนขยาย และหยุดการเรียกแบบเสียเงินเพิ่มเติมเมื่อถึงวงเงิน ผู้ให้บริการในเครื่องจะไม่ถูกนับรวม",
-  'st.display.cost_reset': "รีเซ็ตค่าใช้จ่าย",
   'st.provider.field.prompt_tier': "ระดับพรอมต์",
   'st.provider.field.prompt_tier.compact': "กะทัดรัด — โมเดลขนาดจิ๋ว (ต่ำกว่า 8B): เครื่องมือน้อยที่สุด กฎกระชับ",
   'st.provider.field.prompt_tier.mid': "กลาง — โมเดลขนาดเล็ก/ในเครื่อง (~9B–32B): พรอมต์เบาลง เครื่องมือลดลง (ค่าเริ่มต้นสำหรับในเครื่อง)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'ค้นหาการตั้งค่าทั่วไป',
   'st.display.search.empty': 'ไม่พบการตั้งค่าทั่วไปที่ตรงกัน',
   'st.display.advanced': 'ขั้นสูง',
-  ...getApocalypseModeCopy('th'),
-  ...getEmergencyBoxCopy('th'),
   'st.display.clarify_timeout.label': 'หมดเวลา clarify',
   'st.display.clarify_timeout.desc': 'ระยะเวลารอคำตอบ clarify ก่อนเลือกตัวเลือกแรกอัตโนมัติ (หรือหมดเวลาหากไม่มีตัวเลือก) 0 = ทันที (เลือกอัตโนมัติเสมอ) เกิน 1200 วินาที = รอไม่จำกัด (ปิด) ค่าเริ่มต้น 60 วินาที ไม่ใช้กับสิทธิ์หรือการยืนยันส่งฟอร์ม',
   'st.display.clarify_timeout.off': 'ปิด',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "ยังไม่มีอะไรให้ส่งออก — เริ่มการสนทนาก่อน",
   "sp.export_traces.partial": "ส่งออกลำดับเครื่องมือแล้ว แต่บางเหตุการณ์ของเทิร์นอ่านไม่ได้",
   "sp.export_traces.truncated": "ส่งออกลำดับเครื่องมือแล้ว เทิร์นเก่าอาจหายถ้าการสนทนานี้มี trace มาก",
-  "st.display.help_improve.label": "ช่วยปรับปรุง WebBrain",
-  "st.display.help_improve.desc_html": "อนุญาตให้เก็บการโต้ตอบกับ WebBrain Cloud บางรายการและใช้เพื่อการประเมิน การปรับปรุง การปรับละเอียด และการฝึก โดยเปิดไว้เป็นค่าเริ่มต้น ปิดตัวเลือกนี้เพื่อไม่ให้การโต้ตอบกับ Cloud ในอนาคตถูกใช้เพื่อวัตถุประสงค์เหล่านี้ <u>WebBrain จะไม่เก็บคำขอของโมเดลภายในเครื่องหรือคำขอที่ส่งโดยตรงด้วยข้อมูลรับรอง API ของคุณเอง</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">นโยบายความเป็นส่วนตัว →</a>",
   "st.providers.webbrain_data_use.body": "WebBrain Cloud มีโควตาใช้งานฟรีรายวัน ขณะที่ “ช่วยปรับปรุง WebBrain” เปิดไว้เป็นค่าเริ่มต้น การสนทนา Cloud บางรายการอาจถูกเก็บและใช้เพื่อการประเมิน การปรับปรุง การปรับละเอียด และการฝึก ปิดได้ที่ ทั่วไป เพื่อไม่ให้การโต้ตอบ Cloud ในอนาคตถูกใช้ในลักษณะดังกล่าว <u>WebBrain จะไม่เก็บคำขอของโมเดลภายในเครื่องหรือคำขอที่ส่งโดยตรงด้วยข้อมูลรับรอง API ของคุณเอง</u> {privacyLink} หากต้องการใช้งานเพิ่ม สมัครที่ {subscribeLink} จัดการการเรียกเก็บเงินที่ {accountLink}",
   'st.providers.compat.title': 'ความเข้ากันได้ของโมเดลขั้นสูง',
   'st.providers.compat.blurb': 'ปล่อยเป็นอัตโนมัติ เว้นแต่โมเดลหรือเอนด์พอยต์จะระบุสัญญาคำขอที่แตกต่าง',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "ใช้เป้าหมายที่บันทึกไว้ต่อไป",
   "sp.workflows.healing.saved": "อัปเดตตัวระบุตำแหน่ง {count} รายการใน “{name}” แล้ว",
   "sp.workflows.healing.not_saved": "ไม่ได้บันทึกตัวระบุตำแหน่งที่อนุมัติสำหรับ “{name}” เพราะเวิร์กโฟลว์เปลี่ยนแปลงหรือผลการยืนยันไม่ชัดเจน",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

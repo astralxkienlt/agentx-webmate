@@ -233,9 +233,6 @@ const THEME_HTML = new Set([
   'traces.html',
   'install.html',
   'mic-permission.html',
-  'emergency-box.html',
-  'emergency-pdf.html',
-  'emergency-communication.html',
 ]);
 
 const FONT_HTML_SKIP = new Set(['sidepanel.html']);

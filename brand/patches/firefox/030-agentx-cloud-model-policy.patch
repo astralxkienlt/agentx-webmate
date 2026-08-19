@@ -1,15 +1,18 @@
 diff --git a/src/providers/manager.js b/src/providers/manager.js
 --- a/src/providers/manager.js
 +++ b/src/providers/manager.js
-@@ -40,6 +40,7 @@ import {
+@@ -40,6 +40,10 @@
    loadVisionConnectionTestImage,
  } from './connection-test-assets.js';
  import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
-+import { resolveCloudVisionSidecar } from '../agentx/cloud-models.js';
++import {
++  resolveCloudTranscriptionSidecar,
++  resolveCloudVisionSidecar,
++} from '../agentx/cloud-models.js';
  
  const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
  const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
-@@ -1072,6 +1073,13 @@ export class ProviderManager {
+@@ -1072,6 +1076,13 @@
     * active provider when this returns null.
     */
    async getVisionProvider() {
@@ -23,10 +26,43 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
      try {
        const { visionModel } = await browser.storage.local.get(['visionModel']);
        if (!visionModel || !visionModel.baseUrl || !visionModel.model) return null;
+@@ -1379,12 +1390,26 @@
+    */
+   async testTranscriptionProvider() {
+     const api = (typeof browser !== 'undefined' ? browser : chrome);
+-    let cfg;
+-    try {
+-      const stored = await api.storage.local.get(['transcriptionModel']);
+-      cfg = stored?.transcriptionModel;
+-    } catch (e) {
+-      return { ok: false, error: 'Failed to read transcription config: ' + e.message };
++    // Cloud mode is gateway-contained, same rule as vision: test the selected
++    // Cloud transcription model on the stored model key rather than whatever
++    // manual endpoint the user had filled in before signing in.
++    const cloudSidecar = resolveCloudTranscriptionSidecar(
++      this.providers.get(WEBBRAIN_CLOUD_PROVIDER_ID)?.config,
++    );
++    let cfg = cloudSidecar;
++    if (!cfg && this.activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID) {
++      return {
++        ok: false,
++        error: 'Choose a netMind Extension transcription model in Settings \u2192 Multimodal \u2192 Transcription first.',
++      };
++    }
++    if (!cfg) {
++      try {
++        const stored = await api.storage.local.get(['transcriptionModel']);
++        cfg = stored?.transcriptionModel;
++      } catch (e) {
++        return { ok: false, error: 'Failed to read transcription config: ' + e.message };
++      }
+     }
+     if (!cfg || !cfg.baseUrl || !cfg.model) {
+       return { ok: false, error: 'Transcription model not configured (Base URL and Model are required).' };
 diff --git a/src/providers/openai.js b/src/providers/openai.js
 --- a/src/providers/openai.js
 +++ b/src/providers/openai.js
-@@ -77,7 +77,20 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
+@@ -77,7 +77,20 @@
    }
  
    get model() {

@@ -423,7 +423,7 @@ tracks as a successful video or hand ffmpeg work to the user.
 | Draft or rewrite an email reply, message, or post the user will send | Humanizer | Ask, Act, Dev | Prompt-only; preactivated on webmail adapters and on the explicit Humanize selected-text shortcut, otherwise routed by catalog. Returns final text only. |
 | Look up weather or a short forecast | Open-Meteo weather | Ask, Act, Dev | Read-only tools remain subject to their manifest filters. |
 | Find books, ISBNs, authors, or publication data | Open Library | Ask, Act, Dev | Read-only tools remain subject to their manifest filters. |
-| Search or summarize an encyclopedia topic | Wikipedia | Ask, Act, Dev | Live Wikipedia APIs plus explicitly installed local Kiwix/ZIM archives; all results are untrusted. |
+| Search or summarize an encyclopedia topic | Wikipedia | Ask, Act, Dev | Live Wikipedia APIs; all results are untrusted. |
 | Restore Turkish characters in ASCII Turkish text after an explicit user request | Turkish deasciifier | Ask, Act, Dev | Prompt-only and opt-in; ordinary form-entry tools continue to type their text argument verbatim. |
 | Upload one non-sensitive file to a short-lived public link | Temporary file share (Litterbox) | Act, Dev | Not shown to Ask; the skill uses existing browser upload tools. |
 
@@ -437,14 +437,7 @@ distinct summaries; a broad skill such as FreeSkillz deliberately loads one
 instruction bundle for several related capabilities.
 
 The packaged Wikipedia skill keeps its existing `search_wikipedia` and
-`get_wikipedia_summary` interface. When a live request fails, the exact
-built-in tool may query archives that the user explicitly installed through
-the ☢ Apocalypse Mode link in the Settings header. `apocalypse-mode.js` owns catalog
-metadata, resumable piece verification, durable lifecycle state, OPFS or
-user-selected archive bytes, and the local openZIM reader. IndexedDB contains only configuration,
-archive metadata, and restart cursors—not multi-gigabyte archive bodies.
-Kiwix content remains on the dynamic skill's `resultPolicy: "untrusted"` path.
-See [Apocalypse Mode](apocalypse-mode.md) for storage and browser limits.
+`get_wikipedia_summary` interface, served by the live Wikipedia APIs.
 
 The optional metadata format is a separate prompt-stripped fence:
 
@@ -525,7 +518,7 @@ Act/Dev runs it also directs missing required values to `clarify` after useful
 inspection; planner guidance treats `done` as terminal, never as a way to ask
 for information needed to continue.
 
-Planner calls are traced with `phase: "planner"` when trace recording is enabled. They also use the cost allowance guard, abort checks, a JSON-repair retry, and Qwen/DeepSeek no-think handling. A failed repair cannot authorize actions: Try falls back to an Ask/read-only turn, while Strict stops.
+Planner calls are traced with `phase: "planner"` when trace recording is enabled. They also use abort checks, a JSON-repair retry, and Qwen/DeepSeek no-think handling. A failed repair cannot authorize actions: Try falls back to an Ask/read-only turn, while Strict stops.
 
 LLM-request trace events include privacy-safe prompt provenance: the controlled
 prompt variant, system-prompt and aggregate message character counts, message
@@ -569,9 +562,9 @@ Optional auto-learning is off by default. After successful `chat`,
 `chat_stream`, or `continue` completion, the background script queues a small
 extractor job with only the latest user text, final assistant text, current
 memory list, mode, and success state. The response path does not await this
-job. A short queue drains best-effort through the active provider using the
-existing cost allowance guard; cost exhaustion skips extraction silently, and
-other failures retry once.
+job. A short queue drains best-effort through the active provider; a
+terminal cloud usage limit skips extraction silently, and other failures retry
+once.
 
 ### Saved workflows (`agent/workflows.js`)
 
@@ -828,7 +821,7 @@ Firefox uses `browser.storage.session`.
 | Events | CDP-trusted (`isTrusted=true`) | Synthetic (`isTrusted=false`) |
 | Screenshots | CDP `Page.captureScreenshot` with run-scoped focus emulation for background tabs | `browser.tabs.captureTab()` for direct inactive-tab capture |
 | Conversation/UI persistence | `chrome.storage.session` | `browser.storage.session` |
-| Offscreen document | Yes (fetch proxy + recorder + local WebGPU models) | Not available |
+| Offscreen document | Yes (fetch proxy + recorder + download staging) | Not available |
 | Trace recorder | IndexedDB (opt-in) | IndexedDB (opt-in) — same `trace/recorder.js` |
 | Duplicate-submit guard | Yes | Not available |
 | `execute_js` | Dev mode through CDP `Runtime.evaluate` | Dev mode through the MV2 content-script evaluator |
@@ -841,8 +834,7 @@ Firefox uses `browser.storage.session`.
 | Side panel | `sidePanel` API (MV3) | `sidebar_action` (MV2) |
 | File upload | CDP path or `downloadId` | `downloadId` re-fetch or WebBrain file picker; no arbitrary local path |
 
-Apart from the Chromium-only endpoint-free WebGPU provider and vision sidecar,
-the agent loop, tools, adapters, providers, loop detection, context management,
+The agent loop, tools, adapters, providers, loop detection, context management,
 and system prompts are architecturally identical between the two builds.
 
 ---
@@ -860,7 +852,7 @@ src/
 │       ├── cdp/      # CDP client (Chrome only)
 │       ├── content/  # accessibility-tree.js, content.js, ...
 │       ├── network/  # network-tools.js
-│       ├── offscreen/# Fetch proxy + recorder + local WebGPU models (Chrome only)
+│       ├── offscreen/# Fetch proxy + recorder + download staging (Chrome only)
 │       ├── providers/# BaseLLMProvider + implementations
 │       ├── recorder/ # Recording orchestration
 │       ├── trace/    # IndexedDB recorder

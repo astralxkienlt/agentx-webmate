@@ -1,8 +1,6 @@
 // Ukrainian (uk).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Контекст автоматично ущільнено",
   'sp.context_compacted_detail': "{summarized} попередніх повідомлень підсумовано · {remaining} збережено",
   'ob.tokens.context_hint': "Для надійної роботи агента виберіть модель із вікном контексту щонайменше 16k токенів. 8k може підійти з увімкненим компактним режимом; 4k замало для набору інструментів. WebBrain автоматично ущільнює розмову в міру наближення до межі вікна.",
-  'st.display.cost_session_limit.label': "Ліміт витрат на хмару за сесію",
-  'st.display.cost_session_limit.desc': "Зупиняє хмарні запуски та OpenRouter перед наступним платним викликом моделі, коли ця сесія досягає вказаного або орієнтовного ліміту витрат. За замовчуванням 10 $.",
-  'st.display.cost_total_limit.label': "Загальний ліміт витрат на хмару",
-  'st.display.cost_total_limit.desc': "Відстежує вказані або орієнтовні витрати на хмарні моделі/OpenRouter у всьому розширенні та зупиняє подальші платні виклики при досягненні ліміту. Локальні провайдери не враховуються.",
-  'st.display.cost_reset': "Скинути витрати",
   'st.provider.field.prompt_tier': "Рівень промпту",
   'st.provider.field.prompt_tier.compact': "Компактний — крихітні моделі (до 8B): найменше інструментів, стислі правила",
   'st.provider.field.prompt_tier.mid': "Середній — невеликі/локальні моделі (~9B–32B): легший промпт, менше інструментів (за замовчуванням для локальних)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'Пошук у загальних налаштуваннях',
   'st.display.search.empty': 'Немає збігів у загальних налаштуваннях.',
   'st.display.advanced': 'Розширені',
-  ...getApocalypseModeCopy('uk'),
-  ...getEmergencyBoxCopy('uk'),
   'st.display.clarify_timeout.label': 'Таймаут уточнення',
   'st.display.clarify_timeout.desc': 'Скільки чекати відповіді на уточнювальне запитання, перш ніж автоматично обрати перший варіант (або зафіксувати таймаут без варіантів). 0 — миттєво (завжди автовибір). Понад 1200 с — чекати необмежено (Вимк.). За замовчуванням 60 с. Не застосовується до дозволів і підтверджень надсилання форм.',
   'st.display.clarify_timeout.off': 'Вимк.',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "Поки немає що експортувати — спочатку почніть розмову.",
   "sp.export_traces.partial": "Ланцюг інструментів експортовано, але деякі події ходу не вдалося прочитати.",
   "sp.export_traces.truncated": "Ланцюг інструментів експортовано. Старі ходи можуть бути відсутні, якщо в розмові багато трасувань.",
-  "st.display.help_improve.label": "Допомагати вдосконалювати WebBrain",
-  "st.display.help_improve.desc_html": "Дозволити зберігати вибрані взаємодії з WebBrain Cloud і використовувати їх для оцінювання, вдосконалення, тонкого налаштування та навчання. Увімкнено за замовчуванням. Вимкніть, щоб майбутні взаємодії з Cloud не використовувалися для цих цілей. <u>WebBrain ніколи не збирає запити до локальних моделей і запити, надіслані з вашими власними обліковими даними API.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Політика конфіденційності →</a>",
   "st.providers.webbrain_data_use.body": "Безкоштовне щоденне використання WebBrain Cloud включено. Поки параметр «Допомагати вдосконалювати WebBrain» увімкнено за замовчуванням, вибрані розмови Cloud можуть зберігатися й використовуватися для оцінювання, вдосконалення, тонкого налаштування та навчання. Вимкніть його в розділі «Загальні», щоб виключити майбутні взаємодії з Cloud із такого використання. <u>WebBrain ніколи не збирає запити до локальних моделей і запити, надіслані з вашими власними обліковими даними API.</u> {privacyLink}. Для більшого обсягу оформіть підписку на {subscribeLink}. Керуйте оплатою на {accountLink}.",
   'st.providers.compat.title': 'Розширена сумісність моделі',
   'st.providers.compat.blurb': 'Залишайте «Авто», якщо модель або endpoint не описують інший формат запиту.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "Залишити збережену ціль",
   "sp.workflows.healing.saved": "Оновлено локаторів у «{name}»: {count}.",
   "sp.workflows.healing.not_saved": "Схвалений локатор для «{name}» не збережено: робочий процес змінився або результат перевірки був неоднозначним.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

@@ -118,14 +118,6 @@
     },
     {
       "@type": "Question",
-      "name": "WebGPU neden yalnızca Kıyamet Modu'nda kullanılabiliyor?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Tarayıcı içi WebGPU metin çıkarımını henüz çoğu kullanıcı için yeterince iyi bulmuyoruz ve kötü bir deneyim yaşamanızı istemiyoruz. Aynı LFM2.5 2.6B modelini yerel olarak kullanmak istiyorsanız çıkarımı kendi makinenizde llama.cpp veya Ollama ile çalıştırın ve WebGPU'ya güvenmek yerine netMind Extension'i bu yerel uç noktaya yönlendirin. WebGPU görüntü yedeği kullanılabilir olmaya devam ediyor; çünkü modeli çok daha küçük ve bu yedek yalnızca ara sıra kullanılıyor."
-      }
-    },
-    {
-      "@type": "Question",
       "name": "Ağımdaki yerel bir LLM sunucusuna (vLLM, Ollama, llama.cpp) bağlanırken «Failed to fetch» alıyorum",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>Modeller ve yerel kurulum</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>netMind Extension&#39;i tamamen çevrimdışı kullanabilir miyim?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>En çok önerilen model nedir?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p><strong>21 Nisan 2026</strong> itibarıyla en çok önerdiğimiz model <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a>. Nedeni: görme kıyaslamamızda (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>) ekran görüntüsü anlamada Gemma 4'ü geçti ve yerel çıkarım için hâlâ pratik.</p><p>Tüketici GPU'larında RTX 5090 ideal; RTX 4090 ise <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a> üzerinden INT4 AutoRound niceleme ile sıklıkla çalıştırılabilir.</p><p>Maksimum hız için <strong>vLLM</strong> ile servis etmeni öneririz. Örnek komut:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash spekülatif çözümleme isteğe bağlıdır.</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>WebGPU neden yalnızca Kıyamet Modu&#39;nda kullanılabiliyor?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>Tarayıcı içi WebGPU metin çıkarımını henüz çoğu kullanıcı için yeterince iyi bulmuyoruz ve kötü bir deneyim yaşamanızı istemiyoruz. Aynı LFM2.5 2.6B modelini yerel olarak kullanmak istiyorsanız çıkarımı kendi makinenizde <strong>llama.cpp</strong> veya <strong>Ollama</strong> ile çalıştırın ve WebGPU'ya güvenmek yerine netMind Extension'i bu yerel uç noktaya yönlendirin.</p><p>WebGPU görüntü yedeği kullanılabilir olmaya devam ediyor; çünkü modeli çok daha küçük ve bu yedek yalnızca ara sıra kullanılıyor.</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>Ağımdaki yerel bir LLM sunucusuna (vLLM, Ollama, llama.cpp) bağlanırken «Failed to fetch» alıyorum</span><span class="faq-question-mark" aria-hidden="true"></span></summary>

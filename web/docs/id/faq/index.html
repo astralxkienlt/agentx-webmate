@@ -118,14 +118,6 @@
     },
     {
       "@type": "Question",
-      "name": "Mengapa WebGPU hanya tersedia di Mode Apocalypse?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Karena kami belum menilai inferensi teks WebGPU di browser cukup baik untuk sebagian besar pengguna, dan kami tidak ingin Anda mengalami pengalaman yang buruk. Jika ingin menggunakan model LFM2.5 2.6B yang sama secara lokal, jalankan inferensi di komputer Anda dengan llama.cpp atau Ollama lalu arahkan netMind Extension ke endpoint lokal tersebut alih-alih mengandalkan WebGPU. Fallback visi WebGPU tetap tersedia karena modelnya jauh lebih kecil dan fallback ini hanya digunakan sesekali."
-      }
-    },
-    {
-      "@type": "Question",
       "name": "Saya mendapat \"Failed to fetch\" saat menghubungkan ke server LLM lokal (vLLM, Ollama, llama.cpp) di jaringan saya",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>Model dan penyiapan lokal</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>Bisakah saya menggunakan netMind Extension sepenuhnya offline?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>Model apa yang paling direkomendasikan?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p>Per <strong>21 April 2026</strong>, rekomendasi teratas adalah <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a>. Alasannya: pada tolok ukur visi kami (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>), ia mengungguli Gemma 4 pada pemahaman tangkapan layar sembari tetap praktis untuk inferensi lokal.</p><p>Untuk GPU konsumen, RTX 5090 ideal, dan RTX 4090 sering kali bisa dijalankan dengan kuantisasi INT4 AutoRound via <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a>.</p><p>Untuk kecepatan maksimal, kami merekomendasikan menyajikan melalui <strong>vLLM</strong>. Contoh perintah:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculative decoding bersifat opsional.</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>Mengapa WebGPU hanya tersedia di Mode Apocalypse?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>Karena kami belum menilai inferensi teks WebGPU di browser cukup baik untuk sebagian besar pengguna, dan kami tidak ingin Anda mengalami pengalaman yang buruk. Jika ingin menggunakan model LFM2.5 2.6B yang sama secara lokal, jalankan inferensi di komputer Anda dengan <strong>llama.cpp</strong> atau <strong>Ollama</strong> lalu arahkan netMind Extension ke endpoint lokal tersebut alih-alih mengandalkan WebGPU.</p><p>Fallback visi WebGPU tetap tersedia karena modelnya jauh lebih kecil dan fallback ini hanya digunakan sesekali.</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>Saya mendapat &quot;Failed to fetch&quot; saat menghubungkan ke server LLM lokal (vLLM, Ollama, llama.cpp) di jaringan saya</span><span class="faq-question-mark" aria-hidden="true"></span></summary>

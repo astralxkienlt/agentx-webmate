@@ -1,8 +1,6 @@
 // Korean (ko).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "컨텍스트가 자동으로 압축되었습니다",
   'sp.context_compacted_detail': "이전 메시지 {summarized}개 요약됨 · {remaining}개 유지됨",
   'ob.tokens.context_hint': "안정적인 에이전트 실행을 위해 최소 16k 토큰 컨텍스트 창을 가진 모델을 선택하세요. 8k는 압축 모드를 켜면 작동할 수 있으며, 4k는 도구 세트에 비해 너무 작습니다. WebBrain은 창 한계에 가까워지면 대화를 자동으로 압축합니다.",
-  'st.display.cost_session_limit.label': "클라우드 비용 세션 한도",
-  'st.display.cost_session_limit.desc': "이 세션이 보고되거나 추정된 비용 한도에 도달하면 다음 유료 모델 호출 전에 클라우드 및 OpenRouter 실행을 중지합니다. 기본값 10달러.",
-  'st.display.cost_total_limit.label': "클라우드 비용 총 한도",
-  'st.display.cost_total_limit.desc': "확장 프로그램 전반에서 보고되거나 추정된 클라우드/OpenRouter 모델 지출을 추적하고 한도에 도달하면 이후 유료 호출을 중지합니다. 로컬 제공자는 집계되지 않습니다.",
-  'st.display.cost_reset': "지출 재설정",
   'st.provider.field.prompt_tier': "프롬프트 등급",
   'st.provider.field.prompt_tier.compact': "컴팩트 — 초소형 모델(8B 미만): 최소 도구, 간결한 규칙",
   'st.provider.field.prompt_tier.mid': "중간 — 소형/로컬 모델(약 9B–32B): 더 가벼운 프롬프트, 도구 축소(로컬 기본값)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': '일반 설정 검색',
   'st.display.search.empty': '일치하는 일반 설정이 없습니다.',
   'st.display.advanced': '고급',
-  ...getApocalypseModeCopy('ko'),
-  ...getEmergencyBoxCopy('ko'),
   'st.display.clarify_timeout.label': '명확화 제한 시간',
   'st.display.clarify_timeout.desc': '명확화 질문에 대한 답변 대기 시간입니다. 시간이 지나면 첫 번째 옵션을 자동 선택합니다(옵션이 없으면 시간 초과). 0은 즉시(항상 자동 선택). 1200초 초과는 무제한(끔). 기본 60초. 권한 또는 양식 제출 확인에는 적용되지 않습니다.',
   'st.display.clarify_timeout.off': '끔',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "아직 내보낼 내용이 없습니다 — 먼저 대화를 시작하세요.",
   "sp.export_traces.partial": "도구 체인을 내보냈지만 일부 턴 이벤트를 읽지 못했습니다.",
   "sp.export_traces.truncated": "도구 체인을 내보냈습니다. 이 대화에 트레이스가 많으면 이전 턴이 빠질 수 있습니다.",
-  "st.display.help_improve.label": "WebBrain 개선에 참여",
-  "st.display.help_improve.desc_html": "선택된 WebBrain Cloud 상호작용을 보관하고 평가, 개선, 미세 조정 및 학습에 사용하도록 허용합니다. 기본적으로 켜져 있습니다. 향후 Cloud 상호작용이 이러한 목적으로 사용되지 않도록 하려면 끄세요. <u>로컬 모델 요청과 사용자의 API 자격 증명으로 직접 전송한 요청은 WebBrain이 수집하지 않습니다.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">개인정보 처리방침 →</a>",
   "st.providers.webbrain_data_use.body": "WebBrain Cloud에는 일일 무료 사용량이 포함됩니다. ‘WebBrain 개선에 참여’가 기본적으로 켜져 있는 동안 선택된 Cloud 대화가 보관되어 평가, 개선, 미세 조정 및 학습에 사용될 수 있습니다. 향후 Cloud 상호작용을 이러한 사용에서 제외하려면 일반에서 끄세요. <u>로컬 모델 요청과 사용자의 API 자격 증명으로 직접 전송한 요청은 WebBrain이 수집하지 않습니다.</u> {privacyLink}. 더 많은 사용량이 필요하면 {subscribeLink}에서 구독하세요. 청구는 {accountLink}에서 관리하세요.",
   'st.providers.compat.title': '고급 모델 호환성',
   'st.providers.compat.blurb': '모델이나 엔드포인트가 다른 요청 계약을 문서화하지 않는 한 Auto로 두세요.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "저장된 대상 유지",
   "sp.workflows.healing.saved": "“{name}”에서 로케이터 {count}개를 업데이트했습니다.",
   "sp.workflows.healing.not_saved": "워크플로가 변경되었거나 검증 결과가 불확실하여 “{name}”에서 승인한 로케이터를 저장하지 않았습니다.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

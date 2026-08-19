@@ -118,14 +118,6 @@
     },
     {
       "@type": "Question",
-      "name": "Waarom is WebGPU alleen beschikbaar in de Apocalypse-modus?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Omdat we tekstinferentie via WebGPU in de browser nog niet goed genoeg vinden voor de meeste gebruikers, en we willen niet dat je met een slechte ervaring wordt opgezadeld. Als je hetzelfde LFM2.5 2.6B-model lokaal wilt gebruiken, voer de inferentie dan op je eigen machine uit met llama.cpp of Ollama en laat netMind Extension dat lokale endpoint gebruiken in plaats van op WebGPU te vertrouwen. De WebGPU-visionfallback blijft beschikbaar omdat het model veel kleiner is en de fallback slechts af en toe wordt gebruikt."
-      }
-    },
-    {
-      "@type": "Question",
       "name": "Ik krijg \"Failed to fetch\" bij het verbinden met een lokale LLM-server (vLLM, Ollama, llama.cpp) op mijn netwerk",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>Modellen en lokale installatie</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>Kan ik netMind Extension volledig offline gebruiken?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>Wat is het meest aanbevolen model?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p>Per <strong>21 april 2026</strong> is de topaanbeveling <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a>. Waarom: in onze vision benchmark (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>) presteerde het beter dan Gemma 4 bij screenshotbegrip terwijl het praktisch bleef voor lokale inferentie.</p><p>Voor consumenten-GPU's is de RTX 5090 ideaal, en de RTX 4090 is vaak werkbaar met INT4 AutoRound-kwantisatie via <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a>.</p><p>Voor maximale snelheid raden we aan te serveren op <strong>vLLM</strong>. Voorbeeldopdracht:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculatieve decoding is optioneel.</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>Waarom is WebGPU alleen beschikbaar in de Apocalypse-modus?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>Omdat we tekstinferentie via WebGPU in de browser nog niet goed genoeg vinden voor de meeste gebruikers, en we willen niet dat je met een slechte ervaring wordt opgezadeld. Als je hetzelfde LFM2.5 2.6B-model lokaal wilt gebruiken, voer de inferentie dan op je eigen machine uit met <strong>llama.cpp</strong> of <strong>Ollama</strong> en laat netMind Extension dat lokale endpoint gebruiken in plaats van op WebGPU te vertrouwen.</p><p>De WebGPU-visionfallback blijft beschikbaar omdat het model veel kleiner is en de fallback slechts af en toe wordt gebruikt.</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>Ik krijg &quot;Failed to fetch&quot; bij het verbinden met een lokale LLM-server (vLLM, Ollama, llama.cpp) op mijn netwerk</span><span class="faq-question-mark" aria-hidden="true"></span></summary>

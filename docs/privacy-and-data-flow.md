@@ -17,7 +17,7 @@ The user's message, the current page content (AX tree, screenshot, or extracted 
 | Tool call history | Yes | Previous tool results are context for the next LLM call |
 | User memory | Yes, if enabled | Active records are injected into the system prompt; disabled memory is not sent |
 | User credentials (passwords, API keys) | Yes | If the user types them in chat or the agent fills them and they appear in tool results |
-| Provider API key | Yes, when applicable | Sent as an HTTP header to endpoint-based providers; the in-browser WebGPU provider has no key or endpoint |
+| Provider API key | Yes, when applicable | Sent as an HTTP header to endpoint-based providers |
 
 When **Plan before Act** is enabled, action-mode turns (Act or Dev) make an additional planner
 call to the same configured provider before any browser tools run. That call
@@ -30,28 +30,19 @@ make a best-effort background extractor call to the same configured provider
 after the assistant response has already completed. That call includes only the
 latest user text, the final assistant text, the current saved memory list, mode,
 and success state. It does not include page/tool results, raw trace events,
-screenshots, or attachment bodies. If the provider cost allowance is exhausted,
-the extractor is skipped silently.
+screenshots, or attachment bodies. If the provider reports a terminal usage
+limit, the extractor is skipped silently.
 
 **No separate analytics payload is added to provider requests.** The request data above is sent only as needed to run the selected provider and agent features.
-
-When either Chromium in-browser WebGPU path is used, first use downloads the
-public model, tokenizer, and configuration files from Hugging Face. That
-request contains only ordinary model-download metadata; screenshots, page
-content, and conversation data are not included. The downloaded files are
-cached by the browser, and both general text/tool inference and screenshot
-inference stay on-device.
 
 ### Which provider receives the data?
 
 The user chooses their provider in Settings. Options include:
 
-- **WebBrain Cloud**: requests go through `api.webbrain.one`; selected interactions may be retained and used for evaluation, improvement, fine-tuning, and training while Help Improve WebBrain is enabled
+- **WebBrain Cloud**: requests go through `api.webbrain.one`; selected interactions may be retained and used for evaluation, improvement, fine-tuning, and training
 - **Bring-your-own cloud providers**: OpenAI, Anthropic, Google Gemini, Mistral, DeepSeek, xAI, Groq, OpenRouter, etc. — requests go directly to the provider using the user's credentials and are never collected by WebBrain
 - **Local model runtimes**: llama.cpp, Ollama, LM Studio, Jan, vLLM, SGLang,
   LocalAI, and GPT4All — inference requests stay on the user's machine
-- **WebGPU (In-browser), Chromium only**: the selected text model runs in an extension
-  Worker with no API key, base URL, localhost server, or model endpoint
 - **Local OpenAI-compatible Proxy**: WebBrain connects only to the configured
   local gateway, but the gateway may forward the request context to an upstream
   account. Its configuration and privacy policy determine where data goes.
@@ -60,39 +51,25 @@ Local-model and bring-your-own API requests are never collected by WebBrain. Web
 
 ### WebBrain Cloud improvement data
 
-Help Improve WebBrain is available under Settings -> General and is
-on by default. When it is on, WebBrain may retain eligible Cloud prompts, model
-responses, relevant page text, tool calls, browser-agent actions, feedback, and
-task outcome information for evaluation, development, improvement, fine-tuning,
-training, safety, and browser-automation research. Screenshots and uploaded
-images may be processed to answer the request, but image bytes, base64 media,
-and image URLs are excluded from WebBrain's improvement database. The extension
-sends the current preference, stable conversation id, and an allowlisted
-generation label with every WebBrain Cloud model request. It never attaches
-those collection fields to local or bring-your-own providers.
+WebBrain may retain eligible Cloud prompts, model responses, relevant page
+text, tool calls, browser-agent actions, feedback, and task outcome information
+for evaluation, development, improvement, fine-tuning, training, safety, and
+browser-automation research. Screenshots and uploaded images may be processed to
+answer the request, but image bytes, base64 media, and image URLs are excluded
+from WebBrain's improvement database. The extension sends a stable conversation
+id and an allowlisted generation label with every WebBrain Cloud model request.
+It never attaches those collection fields to local or bring-your-own providers.
 
-Current clients explicitly send `X-WebBrain-Help-Improve: 1` or `0`. Older
-WebBrain Cloud clients that send neither the preference header nor a session id
-are treated as using the default-on setting. The Cloud service derives a
-best-effort opaque legacy session from the device and the first user message;
-the raw device and prompt-derived fingerprint are not stored or sent upstream.
-Repeated identical opening messages can be grouped together, and compaction can
-split a legacy conversation, so current clients' explicit conversation ids are
-authoritative. Users of older clients must install the latest client to disable
-future collection under Settings -> General.
+The extension no longer ships a per-conversation opt-out control, and it no
+longer sends a preference header with Cloud requests. Choosing a local model or
+a bring-your-own API key is the way to keep a request out of WebBrain Cloud
+entirely.
 
-An explicit `0` is always opted out. Once any explicit opt-out reaches a
-derived or client-provided session, the Cloud service permanently marks that
-opaque session ineligible. Turning the setting back on applies to the next new
-conversation; it cannot make the current conversation eligible again.
-
-Help Improve-off content is not retained in the improvement database and is
-routed through an OpenRouter workspace where content logging is disabled. This
-does not prevent the minimal metadata-only operational logging required to
-provide the service, enforce quotas, prevent abuse, maintain security, or debug
-failures. Requests sent to local models or directly to providers using the
-user's own credentials never pass through WebBrain Cloud and are never eligible
-for WebBrain training.
+Requests sent to local models or directly to providers using the user's own
+credentials never pass through WebBrain Cloud and are never eligible for
+WebBrain training. Metadata-only operational logging required to provide the
+service, enforce quotas, prevent abuse, maintain security, or debug failures is
+unaffected.
 
 For eligible completed generations, MySQL is WebBrain's canonical store. The
 service strips media, compresses the request/response payload, encrypts it with
@@ -227,9 +204,7 @@ WebBrain Cloud or to the configured LLM provider.
 Active WebBrain Cloud subscribers may explicitly enable encrypted profile sync in
 Settings. The extension combines user memory, profile autofill, and provider
 configuration (including API keys, but excluding legacy OAuth access/refresh
-token stores) into one vault. Chromium-only WebGPU provider configuration and
-selection remain device-local so a Firefox sync cannot replace that local choice.
-The extension
+token stores) into one vault. The extension
 encrypts it in the browser with AES-256-GCM. Its key is derived from the sync
 password with PBKDF2-HMAC-SHA-256 (600,000 iterations). The password and derived
 key are retained in memory only for the browser session.
@@ -277,7 +252,7 @@ terms above. Operational request metadata is retained separately for quota,
 security, abuse prevention, and debugging.
 
 The only outbound HTTP requests are:
-1. **WebBrain Cloud model calls** to `https://api.webbrain.one/v1` (when WebBrain Cloud is selected; the Help Improve WebBrain preference is sent with each request)
+1. **WebBrain Cloud model calls** to `https://api.webbrain.one/v1` (when WebBrain Cloud is selected)
 2. **Other LLM provider API calls** (directly to URLs the user configured)
 3. **CapSolver API calls** (if the user enables CAPTCHA solving)
 4. **Content fetches** via `fetch_url` / `research_url` tools (to URLs the agent is asked to fetch)
@@ -368,26 +343,6 @@ in the skill manifest — not browsing history or unrelated chat — and treat
 responses as untrusted unless the manifest says otherwise. Removing or
 disabling a skill stops that data flow. See [Skills](skills.md#bundled-skills)
 for the full packaged catalog.
-
-The packaged Wikipedia skill does not silently create an offline corpus.
-Apocalypse Mode is disabled by default and requires a separate opt-in under
-Settings → Advanced. Catalog browsing sends the selected archive language to
-Kiwix; resolving an archive fetches its Metalink. Archive bytes are downloaded
-only after a second confirmation that displays the exact size, date, source,
-license notice, integrity pieces, and reported storage availability.
-
-Downloaded or imported `.zim` bytes live in extension-owned OPFS storage by
-default. Chromium users can instead select an external file through the File
-System Access API; Firefox uses OPFS. IndexedDB stores only settings, archive
-metadata, progress, retry state, and storage references (including a persisted
-file handle where supported). Each downloaded piece is checked before writing.
-Pause, cancellation, deletion, corruption, restart, and bounded retry states
-are durable. A ready archive that becomes unreadable is marked as an error and
-requires reinstall or re-import. Live Wikipedia results are not copied into this store. When an
-installed archive answers a later request, only the relevant extracted passage
-and its canonical Wikipedia attribution enter the normal untrusted tool-result
-path and are sent to the user's configured LLM. See
-[Apocalypse Mode](apocalypse-mode.md) for browser-specific limits.
 
 ---
 

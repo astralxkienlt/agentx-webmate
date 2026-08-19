@@ -52,10 +52,6 @@ import {
 import { ADDITIONAL_PROVIDER_UI } from '../providers/provider-catalog.js';
 import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
 import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
-import {
-  WEBGPU_VISION_AUTO_SELECTED_KEY,
-  WEBGPU_VISION_ENABLED_KEY,
-} from '../providers/webgpu.js';
 import { AUTO_GROUP_TABS_KEY } from '../tab-group-preference.js';
 
 const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
@@ -69,12 +65,9 @@ const displaySettings = document.getElementById('display-settings');
 const generalSearchInput = document.getElementById('input-general-search');
 const generalSearchEmpty = document.getElementById('general-search-empty');
 const advancedSettings = document.querySelector('.advanced-settings');
-const apocalypseModeLink = document.getElementById('apocalypse-mode-link');
-const apocalypseModeStatus = document.getElementById('apocalypse-mode-status');
 const verboseToggle = document.getElementById('toggle-verbose');
 const selectionShortcutToggle = document.getElementById('toggle-selection-shortcut');
 const autoGroupTabsToggle = document.getElementById('toggle-auto-group-tabs');
-const helpImproveToggle = document.getElementById('toggle-help-improve');
 const screenshotToggle = document.getElementById('toggle-screenshot-fallback');
 const maxStepsRange = document.getElementById('range-max-steps');
 const stepsValueLabel = document.getElementById('steps-value');
@@ -82,10 +75,6 @@ const requestTimeoutRange = document.getElementById('range-request-timeout');
 const requestTimeoutValueLabel = document.getElementById('timeout-value');
 const clarifyTimeoutRange = document.getElementById('range-clarify-timeout');
 const clarifyTimeoutValueLabel = document.getElementById('clarify-timeout-value');
-const costSessionLimitInput = document.getElementById('input-cost-session-limit');
-const costTotalLimitInput = document.getElementById('input-cost-total-limit');
-const costSpentValueLabel = document.getElementById('cost-spent-value');
-const btnResetCostSpend = document.getElementById('btn-reset-cost-spend');
 const autoScreenshotSelect = document.getElementById('select-auto-screenshot');
 const imageDetailSelect = document.getElementById('select-image-detail');
 const maxScreenshotsSelect = document.getElementById('select-max-screenshots');
@@ -106,19 +95,12 @@ const completionConfettiToggle = document.getElementById('toggle-completion-conf
 const tracingToggle = document.getElementById('toggle-tracing');
 const strictSecretToggle = document.getElementById('toggle-strict-secret');
 const allowLocalNetworkToggle = document.getElementById('toggle-allow-local-network');
-const cloudBridgeToggle = document.getElementById('toggle-cloud-bridge');
-const cloudBridgeUrlInput = document.getElementById('input-cloud-bridge-url');
-const cloudBridgeStatus = document.getElementById('cloud-bridge-status');
-const cloudBridgeStatusText = document.getElementById('cloud-bridge-status-text');
 const scheduledTasksToggle = document.getElementById('toggle-scheduled-tasks');
 const scheduledConfirmToggle = document.getElementById('toggle-scheduled-confirm');
 const visionBaseUrlInput = document.getElementById('vision-base-url');
 const visionApiKeyInput = document.getElementById('vision-api-key');
 const visionModelInput = document.getElementById('vision-model');
 const btnSaveVision = document.getElementById('btn-save-vision');
-const webgpuVisionOption = document.getElementById('webgpu-vision-option');
-const btnUseWebgpuVision = document.getElementById('btn-use-webgpu-vision');
-const visionEndpointFields = document.getElementById('vision-endpoint-fields');
 const skillNameInput = document.getElementById('skill-name');
 const skillUrlInput = document.getElementById('skill-url');
 const skillTextArea = document.getElementById('skill-text');
@@ -294,11 +276,9 @@ if (languageSelect) {
     if (providersContainer) renderProviders();
     renderSkills();
     renderPermissions();
-    refreshApocalypseModeStatus();
   });
 }
 globalThis.addEventListener('focus', () => {
-  refreshApocalypseModeStatus();
   loadVisionConfig().catch(() => {});
 });
 
@@ -312,12 +292,10 @@ let activeProviderId = '';
 let providerActivationRequestId = 0;
 let requestedActiveProviderId = '';
 let currentVisionConfig = {};
-let webgpuVisionEnabled = false;
 
 if (globalThis.chrome?.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    if (changes[WEBGPU_VISION_ENABLED_KEY]) loadVisionConfig().catch(() => {});
     if (!changes.providers?.newValue) return;
     for (const [id, next] of Object.entries(changes.providers.newValue)) {
       if (!providersData[id] || next.visionDetection === undefined) continue;
@@ -335,16 +313,10 @@ if (globalThis.chrome?.storage?.onChanged) {
 const WEBBRAIN_SUBSCRIBE_URL = 'https://webbrain.one/subscribe';
 const WEBBRAIN_ACCOUNT_URL = 'https://api.webbrain.one/account';
 
-const DEFAULT_COST_ALLOWANCE_USD = 10;
 const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
 const PLAN_BEFORE_ACT_MODES = new Set(['try', 'strict', 'off']);
 const PLAN_REVIEW_MODES = new Set(['confidence', 'always', 'never']);
-const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';
-const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';
-const DEFAULT_CLOUD_BRIDGE_URL = 'ws://127.0.0.1:17373/extension';
-let cloudBridgeStatusPollTimer = null;
-let cloudBridgeStatusRequestPending = false;
 // Product default: auto-approve plans at 75% confidence to reduce review stops.
 // Planner prompt still tells the LLM to reserve 90%+ for straightforward plans;
 // that intentional gap keeps model scoring conservative without over-pausing.
@@ -376,217 +348,6 @@ function updatePlanReviewConfidenceUI() {
   if (planReviewConfidenceRow) {
     planReviewConfidenceRow.classList.toggle('setting-row-muted', !thresholdEnabled);
   }
-}
-
-function normalizeCostAmount(value, fallback = DEFAULT_COST_ALLOWANCE_USD) {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-}
-
-function normalizeCloudBridgeSettingsUrl(value) {
-  const url = new URL(String(value || DEFAULT_CLOUD_BRIDGE_URL));
-  const host = url.hostname.toLowerCase();
-  if (url.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) {
-    throw new Error(t('st.display.cloud_bridge.invalid_url'));
-  }
-  return url.href;
-}
-
-function setCloudBridgeStatus(state, message) {
-  if (!cloudBridgeStatus || !cloudBridgeStatusText) return;
-  cloudBridgeStatus.dataset.state = state;
-  cloudBridgeStatusText.textContent = message;
-}
-
-function renderCloudBridgeStatus(status = {}) {
-  if (!cloudBridgeToggle?.checked || status.enabled === false) {
-    setCloudBridgeStatus('disabled', t('st.display.cloud_bridge.status_disabled'));
-    return;
-  }
-  if (status.connected) {
-    setCloudBridgeStatus('connected', t('st.display.cloud_bridge.status_connected'));
-    return;
-  }
-  if (status.lastError === 'WebSocket error') {
-    setCloudBridgeStatus('waiting', t('st.display.cloud_bridge.status_unreachable', {
-      url: status.url || cloudBridgeUrlInput?.value || DEFAULT_CLOUD_BRIDGE_URL,
-    }));
-    return;
-  }
-  if (status.lastError) {
-    setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: status.lastError }));
-    return;
-  }
-  if (Number(status.reconnectAttempt) > 0) {
-    setCloudBridgeStatus('waiting', t('st.display.cloud_bridge.status_reconnecting', {
-      attempt: status.reconnectAttempt,
-    }));
-    return;
-  }
-  setCloudBridgeStatus('waiting', t('st.display.cloud_bridge.status_connecting'));
-}
-
-function validateCloudBridgeUrl({ report = false } = {}) {
-  if (!cloudBridgeUrlInput) return '';
-  try {
-    const normalized = normalizeCloudBridgeSettingsUrl(cloudBridgeUrlInput.value);
-    cloudBridgeUrlInput.setCustomValidity('');
-    cloudBridgeUrlInput.removeAttribute('aria-invalid');
-    return normalized;
-  } catch (error) {
-    const message = error?.message || t('st.display.cloud_bridge.invalid_url');
-    cloudBridgeUrlInput.setCustomValidity(message);
-    cloudBridgeUrlInput.setAttribute('aria-invalid', 'true');
-    setCloudBridgeStatus('error', message);
-    if (report) cloudBridgeUrlInput.reportValidity();
-    return '';
-  }
-}
-
-function setCloudBridgeControlsBusy(busy) {
-  if (cloudBridgeToggle) cloudBridgeToggle.disabled = busy;
-  if (cloudBridgeUrlInput) cloudBridgeUrlInput.disabled = busy;
-  const setting = document.getElementById('cloud-bridge-setting');
-  if (busy) setting?.setAttribute('aria-busy', 'true');
-  else setting?.removeAttribute('aria-busy');
-}
-
-async function refreshCloudBridgeStatus() {
-  if (!cloudBridgeToggle?.checked || cloudBridgeUrlInput?.getAttribute('aria-invalid') === 'true' || document.hidden || cloudBridgeStatusRequestPending) return;
-  cloudBridgeStatusRequestPending = true;
-  try {
-    renderCloudBridgeStatus(await sendToBackground('cloud_bridge_status'));
-  } catch (error) {
-    setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-  } finally {
-    cloudBridgeStatusRequestPending = false;
-  }
-}
-
-function startCloudBridgeStatusPolling() {
-  if (cloudBridgeStatusPollTimer) return;
-  cloudBridgeStatusPollTimer = setInterval(refreshCloudBridgeStatus, 2000);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshCloudBridgeStatus();
-  });
-}
-
-async function saveCloudBridgeUrl() {
-  const normalized = validateCloudBridgeUrl({ report: true });
-  if (!normalized) return;
-  cloudBridgeUrlInput.value = normalized;
-  try {
-    await chrome.storage.local.set({ [CLOUD_BRIDGE_URL_KEY]: normalized });
-    if (!cloudBridgeToggle.checked) {
-      renderCloudBridgeStatus({ enabled: false });
-      return;
-    }
-    renderCloudBridgeStatus(await sendToBackground('cloud_bridge_start', { url: normalized }));
-  } catch (error) {
-    setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-  }
-}
-
-async function toggleCloudBridge() {
-  if (!cloudBridgeToggle || !cloudBridgeUrlInput) return;
-  if (!cloudBridgeToggle.checked) {
-    setCloudBridgeControlsBusy(true);
-    try {
-      await chrome.storage.local.set({ [CLOUD_BRIDGE_ENABLED_KEY]: false });
-      await sendToBackground('cloud_bridge_stop').catch(() => null);
-      renderCloudBridgeStatus({ enabled: false });
-    } catch (error) {
-      cloudBridgeToggle.checked = true;
-      setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-    } finally {
-      setCloudBridgeControlsBusy(false);
-    }
-    return;
-  }
-
-  const normalized = validateCloudBridgeUrl({ report: true });
-  if (!normalized) {
-    cloudBridgeToggle.checked = false;
-    return;
-  }
-  cloudBridgeUrlInput.value = normalized;
-  setCloudBridgeControlsBusy(true);
-  try {
-    await chrome.storage.local.set({
-      [CLOUD_BRIDGE_ENABLED_KEY]: true,
-      [CLOUD_BRIDGE_URL_KEY]: normalized,
-    });
-    renderCloudBridgeStatus(await sendToBackground('cloud_bridge_start', { url: normalized }));
-  } catch (error) {
-    cloudBridgeToggle.checked = false;
-    await chrome.storage.local.set({ [CLOUD_BRIDGE_ENABLED_KEY]: false }).catch(() => {});
-    setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-  } finally {
-    setCloudBridgeControlsBusy(false);
-  }
-}
-
-async function initCloudBridgeSettings(stored) {
-  if (!cloudBridgeToggle || !cloudBridgeUrlInput) return;
-  cloudBridgeToggle.checked = stored[CLOUD_BRIDGE_ENABLED_KEY] === true;
-  cloudBridgeUrlInput.value = stored[CLOUD_BRIDGE_URL_KEY] || DEFAULT_CLOUD_BRIDGE_URL;
-
-  const normalized = validateCloudBridgeUrl();
-  if (normalized) cloudBridgeUrlInput.value = normalized;
-  if (cloudBridgeToggle.checked && normalized) {
-    try {
-      renderCloudBridgeStatus(await sendToBackground('cloud_bridge_start', { url: normalized }));
-    } catch (error) {
-      setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-    }
-  } else if (normalized) {
-    renderCloudBridgeStatus({ enabled: false });
-  }
-
-  cloudBridgeToggle.addEventListener('change', () => {
-    toggleCloudBridge().catch((error) => {
-      setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-    });
-  });
-  cloudBridgeUrlInput.addEventListener('input', () => {
-    cloudBridgeUrlInput.setCustomValidity('');
-    cloudBridgeUrlInput.removeAttribute('aria-invalid');
-  });
-  cloudBridgeUrlInput.addEventListener('change', () => {
-    saveCloudBridgeUrl().catch((error) => {
-      setCloudBridgeStatus('error', t('st.display.cloud_bridge.status_error', { error: error.message }));
-    });
-  });
-  cloudBridgeUrlInput.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    cloudBridgeUrlInput.blur();
-  });
-  document.addEventListener('wb-locale-changed', () => {
-    if (cloudBridgeToggle.checked) refreshCloudBridgeStatus();
-    else renderCloudBridgeStatus({ enabled: false });
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (changes[CLOUD_BRIDGE_URL_KEY]?.newValue) {
-      cloudBridgeUrlInput.value = changes[CLOUD_BRIDGE_URL_KEY].newValue;
-    }
-    if (changes[CLOUD_BRIDGE_ENABLED_KEY]) {
-      cloudBridgeToggle.checked = changes[CLOUD_BRIDGE_ENABLED_KEY].newValue === true;
-      if (cloudBridgeToggle.checked) refreshCloudBridgeStatus();
-      else renderCloudBridgeStatus({ enabled: false });
-    }
-  });
-  startCloudBridgeStatusPolling();
-}
-
-function formatUsd(value) {
-  return '$' + normalizeCostAmount(value, 0).toFixed(2);
-}
-
-function renderCostAllowanceSpent(spent, limit) {
-  if (!costSpentValueLabel) return;
-  costSpentValueLabel.textContent = `${formatUsd(spent)} / ${formatUsd(limit)}`;
 }
 
 function webbrainSubscribeUrl(deviceGuid) {
@@ -628,43 +389,6 @@ let customSkills = [];
 let skillPreviewRequestId = 0;
 const DEFAULT_SKILL_IDS = new Set(DEFAULT_SKILL_SOURCES.map((source) => source.id));
 
-function formatArchiveBytes(value) {
-  const number = Math.max(0, Number(value) || 0);
-  if (number < 1024) return `${number} B`;
-  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
-  let amount = number;
-  let unit = -1;
-  do { amount /= 1024; unit += 1; } while (amount >= 1024 && unit < units.length - 1);
-  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[unit]}`;
-}
-
-async function refreshApocalypseModeStatus() {
-  if (!apocalypseModeStatus) return;
-  try {
-    const status = await sendToBackground('apocalypse_mode', { command: 'status' });
-    const enabled = status?.enabled === true;
-    const summary = enabled
-      ? t('st.display.apocalypse_mode.status.summary', {
-        count: Number(status.installedCount) || 0,
-        size: formatArchiveBytes(status.totalBytes),
-        policy: t(status.updatePolicy === 'automatic' ? 'ap.metric.automatic' : 'ap.metric.manual'),
-      })
-      : t('st.display.apocalypse_mode.status.off');
-    apocalypseModeStatus.textContent = summary;
-    if (apocalypseModeLink) {
-      apocalypseModeLink.dataset.enabled = String(enabled);
-      apocalypseModeLink.title = summary;
-    }
-  } catch {
-    const unavailable = t('st.display.apocalypse_mode.status.unavailable');
-    apocalypseModeStatus.textContent = unavailable;
-    if (apocalypseModeLink) {
-      delete apocalypseModeLink.dataset.enabled;
-      apocalypseModeLink.title = unavailable;
-    }
-  }
-}
-
 // --- Init ---
 
 async function init() {
@@ -674,14 +398,13 @@ async function init() {
   chrome.storage.local.remove(['authToken', 'authEmail', 'authDefaultModel']).catch(() => {});
 
   // Load display settings
-  const stored = await chrome.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'helpImproveWebBrain', 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'webMcpEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'strictSecretMode', 'agentAllowLocalNetwork', CLOUD_BRIDGE_ENABLED_KEY, CLOUD_BRIDGE_URL_KEY, 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'costAllowanceSessionUsd', 'costAllowanceTotalUsd', 'meteredProviderCostSpentUsd', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension']);
+  const stored = await chrome.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'webMcpEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'strictSecretMode', 'agentAllowLocalNetwork', 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension']);
   if (typeof stored.providerFilter === 'string' && ['all','active','local','cloud','router'].includes(stored.providerFilter)) {
     providerFilter = stored.providerFilter;
   }
   verboseToggle.checked = stored.verboseMode || false;
   if (selectionShortcutToggle) selectionShortcutToggle.checked = stored.selectionShortcutEnabled !== false;
   if (autoGroupTabsToggle) autoGroupTabsToggle.checked = stored[AUTO_GROUP_TABS_KEY] !== false;
-  if (helpImproveToggle) helpImproveToggle.checked = stored.helpImproveWebBrain !== false; // on by default
   screenshotToggle.checked = stored.screenshotFallback ?? true; // on by default
   if (isUnlimitedMaxAgentSteps(stored.maxAgentSteps)) {
     maxStepsRange.value = MAX_AGENT_STEPS_UNLIMITED_SENTINEL;
@@ -745,19 +468,12 @@ async function init() {
   notifySoundToggle.checked = stored.notifySound ?? true; // on by default
   completionConfettiToggle.checked = stored.completionConfetti ?? true; // on by default
   tracingToggle.checked = stored.tracingEnabled === true;
-  const sessionLimit = normalizeCostAmount(stored.costAllowanceSessionUsd);
-  const totalLimit = normalizeCostAmount(stored.costAllowanceTotalUsd);
-  const totalSpent = normalizeCostAmount(stored.meteredProviderCostSpentUsd, 0);
-  if (costSessionLimitInput) costSessionLimitInput.value = sessionLimit.toFixed(2);
-  if (costTotalLimitInput) costTotalLimitInput.value = totalLimit.toFixed(2);
-  renderCostAllowanceSpent(totalSpent, totalLimit);
   if (strictSecretToggle) {
     strictSecretToggle.checked = stored.strictSecretMode === true; // off by default
   }
   if (allowLocalNetworkToggle) {
     allowLocalNetworkToggle.checked = stored.agentAllowLocalNetwork === true; // off by default
   }
-  await initCloudBridgeSettings(stored);
   if (scheduledTasksToggle) {
     scheduledTasksToggle.checked = stored.scheduledTasksEnabled !== false; // on by default
   }
@@ -794,7 +510,6 @@ async function init() {
   await initPermissionGateToggle();
   await renderPermissions();
   await initScreenshotRedactionToggle();
-  await refreshApocalypseModeStatus();
 
   // Load providers
   const res = await sendToBackground('get_providers');
@@ -1275,10 +990,6 @@ autoGroupTabsToggle?.addEventListener('change', async () => {
   await chrome.storage.local.set({ [AUTO_GROUP_TABS_KEY]: autoGroupTabsToggle.checked }).catch(() => {});
 });
 
-helpImproveToggle?.addEventListener('change', async () => {
-  await chrome.storage.local.set({ helpImproveWebBrain: helpImproveToggle.checked }).catch(() => {});
-});
-
 screenshotToggle.addEventListener('change', async () => {
   await chrome.storage.local.set({ screenshotFallback: screenshotToggle.checked }).catch(() => {});
 });
@@ -1427,25 +1138,6 @@ tracingToggle.addEventListener('change', async () => {
   await chrome.storage.local.set({ tracingEnabled: tracingToggle.checked }).catch(() => {});
 });
 
-costSessionLimitInput?.addEventListener('change', async () => {
-  const value = normalizeCostAmount(costSessionLimitInput.value);
-  costSessionLimitInput.value = value.toFixed(2);
-  await chrome.storage.local.set({ costAllowanceSessionUsd: value }).catch(() => {});
-});
-
-costTotalLimitInput?.addEventListener('change', async () => {
-  const value = normalizeCostAmount(costTotalLimitInput.value);
-  costTotalLimitInput.value = value.toFixed(2);
-  const stored = await chrome.storage.local.get(['meteredProviderCostSpentUsd']);
-  renderCostAllowanceSpent(normalizeCostAmount(stored.meteredProviderCostSpentUsd, 0), value);
-  await chrome.storage.local.set({ costAllowanceTotalUsd: value }).catch(() => {});
-});
-
-btnResetCostSpend?.addEventListener('click', async () => {
-  await chrome.storage.local.set({ meteredProviderCostSpentUsd: 0 });
-  renderCostAllowanceSpent(0, normalizeCostAmount(costTotalLimitInput?.value));
-});
-
 if (strictSecretToggle) {
   strictSecretToggle.addEventListener('change', async () => {
     await chrome.storage.local.set({ strictSecretMode: strictSecretToggle.checked }).catch(() => {});
@@ -1472,72 +1164,27 @@ if (scheduledConfirmToggle) {
 
 // --- Vision Model ---
 
-function isWebgpuVisionEnabled() {
-  return webgpuVisionEnabled;
-}
-
-function renderVisionConfig(config = {}, localEnabled = webgpuVisionEnabled) {
-  currentVisionConfig = config && typeof config === 'object' && config.type !== 'webgpu'
-    ? config
-    : {};
-  webgpuVisionEnabled = localEnabled === true;
-  const isWebgpu = isWebgpuVisionEnabled();
+function renderVisionConfig(config = {}) {
+  currentVisionConfig = config && typeof config === 'object' ? config : {};
   visionBaseUrlInput.value = currentVisionConfig.baseUrl || '';
   visionApiKeyInput.value = currentVisionConfig.apiKey || '';
   visionModelInput.value = currentVisionConfig.model || '';
-  webgpuVisionOption?.classList.toggle('enabled', isWebgpu);
-  btnUseWebgpuVision?.setAttribute('aria-pressed', String(isWebgpu));
-  if (btnUseWebgpuVision) {
-    const buttonKey = isWebgpu
-      ? 'st.vision.local.disable'
-      : 'st.vision.local.enable';
-    btnUseWebgpuVision.dataset.i18n = buttonKey;
-    btnUseWebgpuVision.textContent = t(buttonKey);
-  }
-  if (visionEndpointFields) visionEndpointFields.disabled = isWebgpu;
   updateMultimodalDetectedProvider('vision');
 }
 
 async function saveVisionConfig(config) {
   if (config && Object.keys(config).length) {
     await chrome.storage.local.set({ visionModel: config });
-    renderVisionConfig(config, webgpuVisionEnabled);
+    renderVisionConfig(config);
     return;
   }
   await chrome.storage.local.remove('visionModel');
-  renderVisionConfig({}, webgpuVisionEnabled);
+  renderVisionConfig({});
 }
 
 async function loadVisionConfig() {
-  const stored = await chrome.storage.local.get(['visionModel', WEBGPU_VISION_ENABLED_KEY]);
-  let vision = stored.visionModel || {};
-  let localEnabled = stored[WEBGPU_VISION_ENABLED_KEY] === true;
-  if (vision?.type === 'webgpu') {
-    // Early PR builds stored the Chromium-only choice in the portable endpoint
-    // slot. Migrate that shape once so it cannot sync to Firefox again.
-    localEnabled = true;
-    vision = {};
-    await chrome.storage.local.set({ [WEBGPU_VISION_ENABLED_KEY]: true });
-    await chrome.storage.local.remove('visionModel');
-  }
-  renderVisionConfig(vision, localEnabled);
-}
-
-async function setWebgpuVisionEnabled(enabled) {
-  const nextEnabled = enabled === true;
-  if (nextEnabled) {
-    await chrome.storage.local.set({ [WEBGPU_VISION_ENABLED_KEY]: true });
-    await chrome.storage.local.remove(WEBGPU_VISION_AUTO_SELECTED_KEY);
-  } else {
-    // Release GPU allocations, but keep the browser-cached model download so
-    // re-enabling does not require another ~770 MB transfer.
-    await sendToBackground('dispose_webgpu_vision').catch(() => {});
-    await chrome.storage.local.remove([
-      WEBGPU_VISION_ENABLED_KEY,
-      WEBGPU_VISION_AUTO_SELECTED_KEY,
-    ]);
-  }
-  renderVisionConfig(currentVisionConfig, nextEnabled);
+  const { visionModel } = await chrome.storage.local.get('visionModel');
+  renderVisionConfig(visionModel || {});
 }
 
 function updateMultimodalDetectedProvider(kind) {
@@ -1571,16 +1218,6 @@ function flashVisionResult(className, text) {
   setTimeout(() => resultEl.classList.remove('show'), 2000);
 }
 
-btnUseWebgpuVision?.addEventListener('click', async () => {
-  if (isWebgpuVisionEnabled()) {
-    await setWebgpuVisionEnabled(false);
-    flashVisionResult('ok', t('st.vision.cleared'));
-    return;
-  }
-  await setWebgpuVisionEnabled(true);
-  flashVisionResult('ok', t('st.vision.local.saved'));
-});
-
 btnSaveVision.addEventListener('click', async () => {
   const baseUrl = normalizeOpenAICompatibleBaseUrl(visionBaseUrlInput.value);
   const apiKey = visionApiKeyInput.value.trim();
@@ -1597,23 +1234,19 @@ btnSaveVision.addEventListener('click', async () => {
 });
 
 btnTestVision.addEventListener('click', async () => {
-  const isWebgpu = isWebgpuVisionEnabled();
   const baseUrl = normalizeOpenAICompatibleBaseUrl(visionBaseUrlInput.value);
   const apiKey = visionApiKeyInput.value.trim();
   const model = visionModelInput.value.trim();
 
-  if (!isWebgpu && (!baseUrl || !model)) {
+  if (!baseUrl || !model) {
     const resultEl = showVisionResult('fail', t('st.vision.fill_required'));
     setTimeout(() => resultEl.classList.remove('show'), 2500);
     return;
   }
 
-  if (!isWebgpu) {
-    await saveVisionConfig({ type: 'openai', baseUrl, apiKey, model });
-  }
+  await saveVisionConfig({ type: 'openai', baseUrl, apiKey, model });
 
   showVisionResult('', t('st.vision.testing'), 'var(--text2)');
-  if (isWebgpu) visionTestResult.textContent = t('st.vision.local.testing');
 
   try {
     const res = await sendToBackground('test_vision_provider');
@@ -1628,11 +1261,6 @@ btnTestVision.addEventListener('click', async () => {
 });
 
 btnClearVision.addEventListener('click', async () => {
-  if (isWebgpuVisionEnabled()) {
-    await setWebgpuVisionEnabled(false);
-    flashVisionResult('ok', t('st.vision.cleared'));
-    return;
-  }
   await saveVisionConfig(null);
   flashVisionResult('ok', t('st.vision.cleared'));
 });
@@ -2702,7 +2330,7 @@ function renderProviders() {
 
   providersContainer.appendChild(renderProviderFilterBar());
 
-  let entries = Object.entries(providersData).filter(([id]) => id !== 'webgpu');
+  let entries = Object.entries(providersData);
   const providerQuery = normalizeGeneralSearchText(providerSearchQuery);
   if (providerQuery) {
     entries = entries
@@ -3031,7 +2659,6 @@ function renderProviderFilterBar() {
     { key: 'router', labelKey: 'st.providers.filter.router' },
   ];
   const filterCounts = Object.entries(providersData).reduce((counts, [id, config]) => {
-    if (id === 'webgpu') return counts;
     counts.all += 1;
     if (providerIsActive(id, config)) counts.active += 1;
     const category = config.category || 'cloud';
@@ -3167,7 +2794,7 @@ function markProviderDirty(id) {
 
 function refreshActiveProviderFilterCount() {
   const count = Object.entries(providersData)
-    .filter(([id, config]) => id !== 'webgpu' && providerIsActive(id, config))
+    .filter(([id, config]) => providerIsActive(id, config))
     .length;
   const countEl = document.querySelector('.provider-filter-pill[data-filter="active"] .provider-filter-count');
   if (countEl) countEl.textContent = String(count);

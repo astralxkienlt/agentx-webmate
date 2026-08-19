@@ -1,6 +1,4 @@
 // Vietnamese — native UI copy, written for Vietnamese software conventions.
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   "sp.message_info.sent": "đã gửi {time}",
@@ -504,10 +502,6 @@ export default {
   "st.display.search.placeholder": "Tìm cài đặt Chung",
   "st.display.search.empty": "Không tìm thấy mục cài đặt nào khớp.",
   "st.display.advanced": "Nâng cao",
-  ...getApocalypseModeCopy('vi'),
-  ...getEmergencyBoxCopy('vi'),
-  "st.display.help_improve.label": "Giúp cải thiện WebBrain",
-  "st.display.help_improve.desc_html": "Cho phép giữ lại phần văn bản và thao tác công cụ đủ điều kiện trên WebBrain Cloud để đánh giá, cải thiện, tinh chỉnh và huấn luyện mô hình. Mặc định bật. Tắt đi là cuộc trò chuyện hiện tại vĩnh viễn không được dùng; bật lại thì chỉ áp dụng từ cuộc trò chuyện mới. Ảnh chụp màn hình và dữ liệu ảnh không được lưu vào kho dữ liệu cải thiện của WebBrain. <u>Yêu cầu gửi tới mô hình chạy trên máy hoặc qua khóa API riêng của bạn thì WebBrain không bao giờ thu thập.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Chính sách quyền riêng tư →</a>",
   "st.display.clarify_timeout.label": "Thời gian chờ khi hỏi lại",
   "st.display.clarify_timeout.desc": "Khi trợ lý hỏi lại cho rõ, nó chờ bạn trả lời trong bao lâu trước khi tự chọn phương án đầu tiên (hoặc bỏ qua nếu không có phương án nào). Để 0 là chọn ngay lập tức. Trên 1200 giây thì chờ mãi (Tắt). Mặc định 60 giây. Không áp dụng cho hộp hỏi quyền và xác nhận gửi biểu mẫu.",
   "st.display.clarify_timeout.off": "Tắt",
@@ -550,11 +544,6 @@ export default {
   "st.display.auto_screenshot.every_step": "Mỗi bước",
   "st.display.tracing.label": "Ghi nhật ký chạy (để so sánh mô hình)",
   "st.display.tracing.desc_html": "Lưu lại mọi lượt chạy (yêu cầu gửi LLM, phản hồi, lệnh gọi công cụ, ảnh chụp) vào IndexedDB trên máy để bạn xem lại và so sánh các mô hình cạnh nhau. Nội dung mở ở tab Nhật ký chạy riêng. Mặc định tắt vì mỗi bước đều phải ghi xuống ổ đĩa. <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">Mở trang Nhật ký chạy →</a>",
-  "st.display.cost_session_limit.label": "Hạn mức chi phí Cloud theo phiên",
-  "st.display.cost_session_limit.desc": "Khi phiên làm việc này chạm hạn mức chi phí (theo số nhà cung cấp báo về hoặc theo ước tính), tiện ích sẽ dừng các lượt Cloud và bộ định tuyến trước khi gọi thêm mô hình trả phí. Mặc định 10$.",
-  "st.display.cost_total_limit.label": "Tổng hạn mức chi phí Cloud",
-  "st.display.cost_total_limit.desc": "Cộng dồn chi phí đã báo hoặc ước tính cho các lần gọi mô hình Cloud và bộ định tuyến trên toàn tiện ích, rồi ngừng gọi trả phí khi chạm hạn mức.",
-  "st.display.cost_reset": "Đặt lại mức chi tiêu",
   "st.display.strict_secret.label": "Siết chặt việc lộ thông tin bí mật",
   "st.display.strict_secret.desc": "Không trích mật khẩu, khóa API, token hay OTP vào phần tóm tắt và câu trả lời của trợ lý — kể cả khi bạn hỏi thẳng. Hữu ích nếu bạn hay chia sẻ tệp nhật ký chạy hoặc chia sẻ màn hình. Mặc định tắt: webbrain chạy ngay trong trình duyệt của bạn, nên bình thường trợ lý vẫn đưa giá trị bạn hỏi và chỉ giữ phần tóm tắt `done` cho gọn.",
   "st.display.allow_local_network.label": "Cho phép trợ lý truy cập mạng nội bộ",
@@ -944,6 +933,4 @@ export default {
   "sp.workflows.healing.keep": "Giữ đối tượng đã lưu",
   "sp.workflows.healing.saved": "Đã cập nhật {count} locator trong “{name}”.",
   "sp.workflows.healing.not_saved": "Chưa lưu được locator bạn duyệt cho “{name}”, vì quy trình đã thay đổi hoặc phần kiểm tra không cho kết quả rõ ràng.",
-  "st.display.cost_allowance_scope": "Chỉ áp dụng cho các nhà cung cấp Cloud và bộ định tuyến tính tiền theo mức dùng. WebBrain Cloud và mô hình chạy trên máy không bị tính vào đây.",
-  "st.providers.webgpu_note.body": "{modelLink} chạy hoàn toàn trong Chrome, không cần endpoint API. Tải mô hình trong Apocalypse Mode, rồi dùng nút nuclear ở cửa sổ trò chuyện riêng.",
 };

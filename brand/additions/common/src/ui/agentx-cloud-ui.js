@@ -43,6 +43,23 @@ const COPY = {
     vision_model_required: 'Choose a Cloud vision model before testing the connection.',
     invalid_vision_model_selection: 'The selected vision model is not available through this gateway key.',
     gateway_vision_test_failed: 'The Cloud vision connection test failed.',
+    switchingTranscriptionModel: 'Switching transcription model…',
+    transcriptionTitle: 'Cloud transcription model',
+    transcriptionBodySignedOut: 'Sign in on the Providers tab to choose a Cloud transcription model. The same model key is used; it is never shown here.',
+    transcriptionBodyDisconnected: 'Finish connecting the Cloud gateway on the Providers tab before choosing a transcription model.',
+    transcriptionModel: 'Transcription model',
+    chooseTranscriptionModel: 'Choose transcription model',
+    transcriptionNone: 'Not selected — Tab Recorder transcription stays off',
+    transcriptionModelsAvailable: '{count} transcription models available',
+    transcriptionTest: 'Test transcription connection',
+    transcriptionTesting: 'Testing transcription connection…',
+    transcriptionTestPassed: 'Transcription connection verified with {model}.',
+    transcriptionClear: 'Clear transcription model',
+    transcriptionClearing: 'Clearing transcription model…',
+    transcriptionHint: 'Tab Recorder audio is sent to this Cloud model with the same locally stored model key.',
+    transcription_model_required: 'Choose a Cloud transcription model before testing the connection.',
+    invalid_transcription_model_selection: 'The selected transcription model is not available through this gateway key.',
+    gateway_transcription_test_failed: 'The Cloud transcription connection test failed.',
     needs_login: 'Your session is no longer valid. Sign in again; netMind Extension will fetch the account’s current key without rotating it.',
     invalid_token: 'The identity token was rejected. Sign in again.',
     missing_bearer: 'The identity request did not include a valid bearer token. Sign in again.',
@@ -100,6 +117,23 @@ const COPY = {
     vision_model_required: 'Hãy chọn mô hình đọc ảnh trên Cloud trước khi kiểm tra kết nối.',
     invalid_vision_model_selection: 'Mô hình đọc ảnh bạn chọn không có trong danh sách mà cổng này cấp.',
     gateway_vision_test_failed: 'Không kiểm tra được kết nối đọc ảnh trên Cloud.',
+    switchingTranscriptionModel: 'Đang đổi mô hình chép lời…',
+    transcriptionTitle: 'Mô hình chép lời trên Cloud',
+    transcriptionBodySignedOut: 'Hãy đăng nhập ở tab Nhà cung cấp để chọn mô hình chép lời trên Cloud. Nó dùng chung khóa mô hình, và khóa không hiện ở đây.',
+    transcriptionBodyDisconnected: 'Hãy hoàn tất kết nối cổng Cloud ở tab Nhà cung cấp trước khi chọn mô hình chép lời.',
+    transcriptionModel: 'Mô hình chép lời',
+    chooseTranscriptionModel: 'Chọn mô hình chép lời',
+    transcriptionNone: 'Chưa chọn — bộ Ghi màn hình tab sẽ không chép lời',
+    transcriptionModelsAvailable: 'Có {count} mô hình chép lời',
+    transcriptionTest: 'Kiểm tra kết nối chép lời',
+    transcriptionTesting: 'Đang kiểm tra kết nối chép lời…',
+    transcriptionTestPassed: 'Đã kiểm tra xong kết nối chép lời với {model}.',
+    transcriptionClear: 'Bỏ chọn mô hình chép lời',
+    transcriptionClearing: 'Đang bỏ chọn mô hình chép lời…',
+    transcriptionHint: 'Âm thanh từ bộ Ghi màn hình tab được gửi tới mô hình Cloud này bằng chính khóa mô hình đã lưu trên máy.',
+    transcription_model_required: 'Hãy chọn mô hình chép lời trên Cloud trước khi kiểm tra kết nối.',
+    invalid_transcription_model_selection: 'Mô hình chép lời bạn chọn không có trong danh sách mà cổng này cấp.',
+    gateway_transcription_test_failed: 'Không kiểm tra được kết nối chép lời trên Cloud.',
     needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại; netMind Extension sẽ lấy khóa hiện tại của tài khoản và không tự đổi khóa.',
     invalid_token: 'Token đăng nhập không hợp lệ. Hãy đăng nhập lại.',
     missing_bearer: 'Yêu cầu xác minh tài khoản thiếu bearer token hợp lệ. Hãy đăng nhập lại.',
@@ -154,6 +188,9 @@ function actionLabel(status, locale) {
   if (status.action === 'selecting-vision-model') return copy(locale, 'switchingVisionModel');
   if (['test-vision', 'testing-vision'].includes(status.action)) return copy(locale, 'visionTesting');
   if (['clear-vision', 'clearing-vision'].includes(status.action)) return copy(locale, 'visionClearing');
+  if (status.action === 'selecting-transcription-model') return copy(locale, 'switchingTranscriptionModel');
+  if (['test-transcription', 'testing-transcription'].includes(status.action)) return copy(locale, 'transcriptionTesting');
+  if (['clear-transcription', 'clearing-transcription'].includes(status.action)) return copy(locale, 'transcriptionClearing');
   if (['sign-out', 'signing-out'].includes(status.action)) return copy(locale, 'signingOut');
   return '';
 }
@@ -414,6 +451,104 @@ export function renderAgentXCloudVisionPanel(status = {}, locale = 'en') {
     </section>`;
 }
 
+function renderTranscriptionModelControl(status, locale) {
+  const provider = status.provider || {};
+  const transcriptionModels = Array.isArray(provider.transcriptionModels)
+    ? [...new Set(provider.transcriptionModels.map(String).map((model) => model.trim()).filter(Boolean))]
+    : [];
+  const selected = String(provider.transcriptionModel || '').trim();
+  const options = [
+    `<option value="" ${selected ? '' : 'selected'}>${escapeHtml(copy(locale, 'transcriptionNone'))}</option>`,
+    ...transcriptionModels.map((model) => `
+      <option value="${escapeHtml(model)}" ${model === selected ? 'selected' : ''}>
+        ${escapeHtml(model)}
+      </option>`),
+  ];
+  return `
+    <select
+      class="agentx-cloud-model-select"
+      data-agentx-cloud-transcription-model
+      aria-label="${escapeHtml(copy(locale, 'chooseTranscriptionModel'))}"
+      ${status.action ? 'disabled aria-disabled="true"' : ''}
+    >
+      ${options.join('')}
+    </select>
+    ${transcriptionModels.length
+      ? `<small>${escapeHtml(copy(locale, 'transcriptionModelsAvailable', { count: transcriptionModels.length }))}</small>`
+      : ''}`;
+}
+
+export function renderAgentXCloudTranscriptionPanel(status = {}, locale = 'en') {
+  if (!status.signedIn) {
+    return `
+      <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-transcription-title">
+        <div class="agentx-cloud-copy">
+          <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+          <h3 id="agentx-cloud-transcription-title">${escapeHtml(copy(locale, 'transcriptionTitle'))}</h3>
+          <p>${escapeHtml(copy(locale, 'transcriptionBodySignedOut'))}</p>
+        </div>
+      </section>`;
+  }
+  if (!status.connected) {
+    return `
+      <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-transcription-title">
+        <div class="agentx-cloud-copy">
+          <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+          <h3 id="agentx-cloud-transcription-title">${escapeHtml(copy(locale, 'transcriptionTitle'))}</h3>
+          <p>${escapeHtml(copy(locale, 'transcriptionBodyDisconnected'))}</p>
+        </div>
+        ${renderNotice('error', errorMessage(status, locale))}
+        ${renderBusy(status, locale)}
+      </section>`;
+  }
+  const testMessage = status.transcriptionTestOk
+    ? copy(locale, 'transcriptionTestPassed', {
+      model: status.transcriptionTestModel || status.provider?.transcriptionModel || 'model',
+    })
+    : '';
+  const hasTranscriptionModel = !!String(status.provider?.transcriptionModel || '').trim();
+  return `
+    <section class="agentx-cloud-auth agentx-cloud-vision" aria-labelledby="agentx-cloud-transcription-title">
+      <div class="agentx-cloud-copy">
+        <div class="agentx-cloud-eyebrow">${escapeHtml(copy(locale, 'eyebrow'))}</div>
+        <h3 id="agentx-cloud-transcription-title">${escapeHtml(copy(locale, 'transcriptionTitle'))}</h3>
+        <p>${escapeHtml(copy(locale, 'transcriptionHint'))}</p>
+      </div>
+      <dl class="agentx-cloud-details">
+        <div>
+          <dt>${escapeHtml(copy(locale, 'account'))}</dt>
+          <dd>${escapeHtml(status.provider?.account || status.user?.email || status.user?.displayName || '—')}</dd>
+        </div>
+        <div>
+          <dt>${escapeHtml(copy(locale, 'gateway'))}</dt>
+          <dd><code>${escapeHtml(displayHost(status.provider?.baseUrl || status.configuredLiteLlmBaseUrl))}</code></dd>
+        </div>
+        <div>
+          <dt>${escapeHtml(copy(locale, 'transcriptionModel'))}</dt>
+          <dd>${renderTranscriptionModelControl(status, locale)}</dd>
+        </div>
+      </dl>
+      ${renderNotice('error', errorMessage(status, locale))}
+      ${renderNotice('success', testMessage)}
+      ${renderBusy(status, locale)}
+      <p class="agentx-cloud-key-note">${escapeHtml(copy(locale, 'keyProtected'))}</p>
+      <div class="agentx-cloud-actions">
+        <button
+          type="button"
+          class="btn-secondary agentx-cloud-button"
+          data-agentx-cloud-action="test-transcription"
+          ${status.action || !hasTranscriptionModel ? 'disabled aria-disabled="true"' : ''}
+        >${escapeHtml(copy(locale, 'transcriptionTest'))}</button>
+        <button
+          type="button"
+          class="btn-secondary agentx-cloud-button"
+          data-agentx-cloud-action="clear-transcription"
+          ${status.action || !hasTranscriptionModel ? 'disabled aria-disabled="true"' : ''}
+        >${escapeHtml(copy(locale, 'transcriptionClear'))}</button>
+      </div>
+    </section>`;
+}
+
 export function bindAgentXCloudPanel(root, onAction) {
   if (!root || typeof onAction !== 'function') return;
   root.querySelectorAll('[data-agentx-cloud-action]').forEach((button) => {
@@ -441,5 +576,20 @@ export function bindAgentXCloudVisionPanel(root, onAction) {
   modelSelect?.addEventListener('change', () => {
     if (modelSelect.disabled) return;
     onAction('select-vision-model', { model: modelSelect.value });
+  });
+}
+
+export function bindAgentXCloudTranscriptionPanel(root, onAction) {
+  if (!root || typeof onAction !== 'function') return;
+  root.querySelectorAll('[data-agentx-cloud-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      onAction(button.dataset.agentxCloudAction);
+    });
+  });
+  const modelSelect = root.querySelector?.('[data-agentx-cloud-transcription-model]');
+  modelSelect?.addEventListener('change', () => {
+    if (modelSelect.disabled) return;
+    onAction('select-transcription-model', { model: modelSelect.value });
   });
 }
