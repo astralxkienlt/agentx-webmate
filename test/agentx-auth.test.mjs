@@ -37,7 +37,7 @@ const ISSUER = 'https://identity.example.test/realms/agentx';
 const CLIENT_ID = 'agentx-workmate';
 const TOKEN_ENDPOINT = `${ISSUER}/protocol/openid-connect/token`;
 const CONFIG = Object.freeze({
-  secondBrainBaseUrl: 'https://brain.dev-server.cloud',
+  backendBaseUrl: 'https://netmind.viettel.test/netmind-extension',
   litellmBaseUrl: 'https://aigw.dev-server.cloud/v1',
   oidcIssuer: ISSUER,
   oidcClientId: CLIENT_ID,
@@ -107,7 +107,7 @@ function session(overrides = {}) {
 function credential(overrides = {}) {
   return {
     subject: 'user-123',
-    authority: CONFIG.secondBrainBaseUrl,
+    authority: CONFIG.backendBaseUrl,
     key: 'sk-existing-secret',
     baseUrl: CONFIG.litellmBaseUrl,
     models: ['model-a'],
@@ -215,10 +215,23 @@ function test(name, fn) {
 }
 
 test('runtime URLs are normalized and reject unsafe credentials', () => {
+  // Appended when missing …
   assert.equal(
     normalizeHttpsBaseUrl('https://aigw.dev-server.cloud/', 'gateway', { openAiCompatible: true }),
     'https://aigw.dev-server.cloud/v1',
   );
+  // … and NOT appended twice when the operator already configured it. The real
+  // gateway is published at /aigw/ai/v1, so a normaliser that appended
+  // unconditionally would send every model lookup to /aigw/ai/v1/v1.
+  for (const configured of [
+    'https://stream-netmind.viettel.vn/aigw/ai/v1',
+    'https://stream-netmind.viettel.vn/aigw/ai/v1/',
+  ]) {
+    assert.equal(
+      normalizeHttpsBaseUrl(configured, 'gateway', { openAiCompatible: true }),
+      'https://stream-netmind.viettel.vn/aigw/ai/v1',
+    );
+  }
   assert.throws(
     () => normalizeHttpsBaseUrl('https://user:secret@example.test', 'gateway'),
     /HTTPS/,
@@ -301,6 +314,7 @@ test('AgentX transcription refuses a model outside the gateway allowlist', async
 test('authorization code + PKCE uses ID token and provisions the configured gateway', async () => {
   let authUrl;
   let modelRequest;
+  let modelRequestUrl;
   let tokenRequest;
   let providersRequested = false;
   const fake = createApi({}, {
@@ -314,7 +328,7 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
   });
   const fetchImpl = async (url, init = {}) => {
     const requestUrl = String(url);
-    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/api/auth/providers`) {
+    if (requestUrl === `${CONFIG.backendBaseUrl}/api/auth/providers`) {
       providersRequested = true;
       return jsonResponse({
         providers: [{
@@ -354,15 +368,17 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
         refresh_token: 'refresh-1',
       });
     }
-    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/v1/model-key`) {
+    if (requestUrl === `${CONFIG.backendBaseUrl}/v1/provision-keys/litellm`) {
       modelRequest = init;
+      modelRequestUrl = requestUrl;
       return jsonResponse({
-        key: 'sk-new-secret',
-        key_alias: 'agentx-kien',
+        apiKey: 'sk-new-secret',
+        vendorId: 'litellm',
+        keyAlias: 'netmind-extension-kien',
         token: 'handle-1',
-        base_url: 'https://aigw.dev-server.cloud/',
+        baseUrl: 'https://aigw.dev-server.cloud/',
         models: ['model-a', 'model-b'],
-        default_model: 'model-a',
+        defaultModel: 'model-a',
         status: 'issued',
         account: 'kien',
       });
@@ -381,6 +397,11 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
   assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(authUrl.searchParams.get('client_id'), CONFIG.oidcClientId);
   assert.equal(providersRequested, false);
+  assert.equal(
+    modelRequestUrl,
+    `${CONFIG.backendBaseUrl}/v1/provision-keys/litellm`,
+    'the backend mounts provisioning here; see deploy/netmind_extension_backend',
+  );
   assert.equal(modelRequest.headers.Authorization, `Bearer ${result.session.idToken}`);
   assert.notEqual(modelRequest.headers.Authorization, 'Bearer must-not-be-used');
   assert.deepEqual(JSON.parse(modelRequest.body), { rotate: false });
@@ -389,37 +410,71 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
   assert.equal(result.credential.model, 'model-a');
   assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].user.email, 'kien@example.test');
   assert.equal(fake.values[AGENTX_DEVICE_STORAGE_KEY].id, modelRequest.headers['X-AgentX-Device']);
+  // Every camelCase field of the backend's ProvisionResponse must land somewhere.
+  // The old Second Brain service answered in snake_case, so a half-finished
+  // rename would leave these silently empty rather than failing outright — an
+  // extension that "works" with no key alias and no account is the bug this
+  // guards.
+  assert.equal(result.credential.key, 'sk-new-secret');
+  assert.equal(result.credential.keyAlias, 'netmind-extension-kien');
+  assert.equal(result.credential.keyToken, 'handle-1');
+  assert.equal(result.credential.account, 'kien');
+  assert.equal(result.credential.status, 'issued');
+  assert.equal(result.credential.authority, CONFIG.backendBaseUrl);
 });
 
 // Drives a full sign-in against the wrapper shape. Every request is recorded so
 // a test can assert on what was *not* fetched: reaching for the discovery
 // document at all is the regression worth catching here.
-function wrapperSignIn(makeIdToken) {
+function wrapperSignIn(makeIdToken, cfg = WRAPPER_CONFIG, tokenExtras = { access_token: 'opaque-access-token' }) {
   const requested = [];
+  let backendInit;
   let authUrl;
   const fake = createApi({}, {
     onTabCreated(tab, events) {
       authUrl = new URL(tab.url);
-      const callback = new URL(WRAPPER_CONFIG.oidcRedirectUris[0]);
+      const callback = new URL(cfg.oidcRedirectUris[0]);
       callback.searchParams.set('code', 'authorization-code');
       callback.searchParams.set('state', authUrl.searchParams.get('state'));
       events.onUpdated.emit(tab.id, { url: callback.toString() });
     },
   });
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, init = {}) => {
     const requestUrl = String(url);
     requested.push(requestUrl);
+    if (requestUrl === `${CONFIG.backendBaseUrl}/api/auth/providers`) {
+      return jsonResponse({
+        providers: [{
+          name: 'viettel-sso',
+          supports_native_oidc: true,
+          native_oidc: {
+            issuer: WRAPPER_ISSUER,
+            // Same client id the configured path uses, so a token minted by
+            // `wrapperIdToken` satisfies either route through discovery.
+            client_id: WRAPPER_CONFIG.oidcClientId,
+            scopes: 'openid profile email',
+            confidential: false,
+            id_token_signed_response_alg: 'HS256',
+            authorization_endpoint: `${WRAPPER_ISSUER}/authorize`,
+            token_endpoint: WRAPPER_TOKEN_ENDPOINT,
+            bearer_token: 'access_token',
+          },
+        }],
+      });
+    }
     if (requestUrl === WRAPPER_TOKEN_ENDPOINT) {
       return jsonResponse({
         id_token: makeIdToken(authUrl.searchParams.get('nonce')),
         refresh_token: 'refresh-1',
+        ...tokenExtras,
       });
     }
-    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/v1/model-key`) {
+    if (requestUrl === `${CONFIG.backendBaseUrl}/v1/provision-keys/litellm`) {
+      backendInit = init;
       return jsonResponse({
-        key: 'sk-new-secret',
-        base_url: 'https://aigw.dev-server.cloud/',
-        default_model: 'model-a',
+        apiKey: 'sk-new-secret',
+        baseUrl: 'https://aigw.dev-server.cloud/',
+        defaultModel: 'model-a',
         status: 'issued',
       });
     }
@@ -432,9 +487,19 @@ function wrapperSignIn(makeIdToken) {
     fake,
     requested,
     authUrl: () => authUrl,
-    run: () => serviceWith(WRAPPER_CONFIG, fake.api, fetchImpl).signInAndProvision(),
+    backendInit: () => backendInit,
+    run: () => serviceWith(cfg, fake.api, fetchImpl).signInAndProvision(),
   };
 }
+
+// The wrapper signs ID tokens with a secret it gives nobody, so the backend
+// verifies by asking the wrapper's /userinfo — which recognises only the opaque
+// access token it minted and answers 401 for an ID token that was never in any
+// store to be found. These cover the extension end of that.
+const ACCESS_BEARER_CONFIG = Object.freeze({
+  ...WRAPPER_CONFIG,
+  oidcBearerToken: 'access_token',
+});
 
 function wrapperIdToken(nonce, alg) {
   return jwt({
@@ -447,6 +512,59 @@ function wrapperIdToken(nonce, alg) {
     exp: Math.floor((NOW + 10 * 60_000) / 1000),
   }, alg);
 }
+
+test('the access token is what reaches the backend when it says so', async () => {
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'), ACCESS_BEARER_CONFIG);
+  const result = await flow.run();
+
+  assert.equal(flow.backendInit().headers.Authorization, 'Bearer opaque-access-token');
+  // The ID token is still kept — it is the id_token_hint at sign-out — but it
+  // is not what authenticates, because /userinfo has never heard of it.
+  assert.notEqual(flow.backendInit().headers.Authorization, `Bearer ${result.session.idToken}`);
+  assert.equal(result.session.accessToken, 'opaque-access-token');
+  assert.equal(result.session.bearerToken, 'access_token');
+});
+
+test('the ID token still reaches a backend that verifies signatures itself', async () => {
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'));
+  const result = await flow.run();
+
+  assert.equal(flow.backendInit().headers.Authorization, `Bearer ${result.session.idToken}`);
+  assert.equal(result.session.bearerToken, 'id_token');
+});
+
+test('the backend advertising a bearer kind overrides nothing configured locally', async () => {
+  // No issuer or client id in config, so the provider — and with it the bearer
+  // kind — comes from /api/auth/providers. That is the point of advertising it:
+  // switching how the backend verifies must not need a new extension build.
+  const { oidcIssuer, oidcClientId, oidcBearerToken, ...discovered } = ACCESS_BEARER_CONFIG;
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'), discovered);
+  const result = await flow.run();
+
+  assert.ok(flow.requested.some((url) => url.endsWith('/api/auth/providers')));
+  assert.equal(result.session.bearerToken, 'access_token');
+  assert.equal(flow.backendInit().headers.Authorization, 'Bearer opaque-access-token');
+});
+
+test('a wrapper that returns no access token fails loudly when one is needed', async () => {
+  // Silently falling back to the ID token would send a bearer /userinfo always
+  // rejects, and the user would read "token không hợp lệ" with nothing to fix.
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'), ACCESS_BEARER_CONFIG, {});
+  await assert.rejects(flow.run(), (error) => error.code === 'access_token_missing');
+});
+
+test('a session stored before access tokens were kept is not restored', async () => {
+  // Such a session can produce no usable bearer, so every request would 401
+  // with nothing the user could do. One sign-in now beats that.
+  const stale = session();
+  delete stale.accessToken;
+  stale.bearerToken = 'access_token';
+  const fake = createApi({ [AGENTX_SESSION_STORAGE_KEY]: stale });
+  const restored = await service(fake.api, async () => {
+    throw new Error('no request should be made for an unusable session');
+  }).readSession();
+  assert.equal(restored, null);
+});
 
 test('a provider without a discovery document signs in from configured endpoints', async () => {
   const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'));
@@ -467,6 +585,50 @@ test('a provider without a discovery document signs in from configured endpoints
   assert.equal(result.session.endSessionEndpoint, '');
   assert.equal(result.session.revocationEndpoint, '');
   assert.equal(result.credential.model, 'model-a');
+});
+
+// ── nonce: the wrapper does not echo it, so this build does not send one ─────
+//
+// OIDC Core makes `nonce` OPTIONAL for the authorization code flow, but once a
+// client sends one the provider MUST return it and the client MUST reject a
+// mismatch (§3.1.3.7). A provider that ignores it therefore makes sign-in fail
+// permanently. Not sending it is the spec-clean accommodation; skipping the
+// check while still sending would not be.
+
+test('nonce disabled: no nonce is sent, and a token without one is accepted', async () => {
+  const flow = wrapperSignIn(
+    (nonce) => wrapperIdToken(nonce, 'HS256'),
+    { ...WRAPPER_CONFIG, oidcSendNonce: false },
+  );
+  const result = await flow.run();
+
+  // Absent entirely, never sent empty: a provider that sees no nonce owes none
+  // back, which is exactly what makes omitting it legitimate.
+  assert.equal(flow.authUrl().searchParams.has('nonce'), false);
+  assert.equal(result.session.user.subject, 'user-123');
+});
+
+test('nonce enabled: a provider that drops the nonce is rejected', async () => {
+  // The failure this deployment actually hit. Kept as the reason the flag
+  // exists — flip it back to true and sign-in breaks again until the wrapper
+  // echoes the nonce.
+  const flow = wrapperSignIn(
+    () => wrapperIdToken(undefined, 'HS256'),
+    { ...WRAPPER_CONFIG, oidcSendNonce: true },
+  );
+  await assert.rejects(flow.run(), (error) => {
+    assert.equal(error.code, 'invalid_token');
+    assert.match(error.detail, /[Nn]once/);
+    return true;
+  });
+});
+
+test('nonce enabled by default: omitting the flag still sends one', async () => {
+  // A product copying this config must not lose replay protection by omission.
+  const { oidcSendNonce, ...withoutFlag } = WRAPPER_CONFIG;
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'), withoutFlag);
+  await flow.run();
+  assert.ok(flow.authUrl().searchParams.get('nonce'));
 });
 
 test('sign-in opens its own window so the panel document survives the round trip', async () => {
@@ -494,7 +656,7 @@ test('an ID token signed with an unconfigured algorithm is refused', async () =>
   }
 });
 
-test('LiteLLM model list overrides stale Second Brain model metadata', async () => {
+test('LiteLLM model list overrides stale backend model metadata', async () => {
   const fake = createApi({
     [AGENTX_SESSION_STORAGE_KEY]: session(),
   });
@@ -502,13 +664,13 @@ test('LiteLLM model list overrides stale Second Brain model metadata', async () 
   let modelKeyRequestBody;
   const result = await service(fake.api, async (url, init = {}) => {
     const requestUrl = String(url);
-    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/v1/model-key`) {
+    if (requestUrl === `${CONFIG.backendBaseUrl}/v1/provision-keys/litellm`) {
       modelKeyRequestBody = JSON.parse(init.body);
       return jsonResponse({
-        key: 'sk-legacy-key',
-        base_url: 'https://aigw.dev-server.cloud',
+        apiKey: 'sk-legacy-key',
+        baseUrl: 'https://aigw.dev-server.cloud',
         models: ['hard-coded-external-model', 'model-secondary'],
-        default_model: 'hard-coded-external-model',
+        defaultModel: 'hard-coded-external-model',
         status: 'reused',
       });
     }
@@ -548,7 +710,7 @@ test('callback state is validated before OAuth errors or token exchange', async 
     },
   });
   const fetchImpl = async (url) => {
-    if (String(url) === `${CONFIG.secondBrainBaseUrl}/api/auth/providers`) {
+    if (String(url) === `${CONFIG.backendBaseUrl}/api/auth/providers`) {
       providersRequested = true;
       return jsonResponse({
         providers: [{
@@ -629,10 +791,10 @@ test('a rejected cached key fetches current key with rotate false', async () => 
     }
     requestBody = JSON.parse(init.body);
     return jsonResponse({
-      key: 'sk-current-secret',
-      base_url: 'https://aigw.dev-server.cloud',
+      apiKey: 'sk-current-secret',
+      baseUrl: 'https://aigw.dev-server.cloud',
       models: ['model-b'],
-      default_model: 'model-b',
+      defaultModel: 'model-b',
       status: 'reused',
     });
   }).retryProvision();
@@ -666,10 +828,10 @@ test('an authoritative empty gateway model list never falls back to a stale cach
   const cloud = service(fake.api, async (url) => {
     if (String(url).endsWith('/models')) return jsonResponse({ data: [] });
     return jsonResponse({
-      key: 'sk-current-secret',
-      base_url: CONFIG.litellmBaseUrl,
+      apiKey: 'sk-current-secret',
+      baseUrl: CONFIG.litellmBaseUrl,
       models: ['removed-model'],
-      default_model: 'removed-model',
+      defaultModel: 'removed-model',
       status: 'reused',
     });
   });
@@ -772,7 +934,7 @@ test('settings controller installs the key and persists a valid model selection'
   assert.equal(providerState.providers.webbrain_cloud.model, 'model-b');
 
   // Restoring the Cloud session must preserve a still-available user choice
-  // instead of replacing it with Second Brain's first/default model.
+  // instead of replacing it with the backend's first/default model.
   await controller.initialize();
   const updates = calls.filter((call) => call.action === 'update_provider');
   assert.equal(updates.at(-1).data.config.model, 'model-b');
@@ -1181,8 +1343,17 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.match(settings, /createAgentXCloudSettingsController/);
     assert.match(settings, /renderAgentXCloudVisionSettings/);
     assert.doesNotMatch(settings, /btn-manage-billing|api\.webbrain\.one\/account/);
-    assert.match(runtime, /https:\/\/brain\.dev-server\.cloud/);
-    assert.match(runtime, /https:\/\/aigw\.dev-server\.cloud\/v1/);
+    assert.match(
+      runtime,
+      /"backendBaseUrl": "https:\/\/netmind\.viettel\.vn\/netmind-extension"/,
+    );
+    assert.match(
+      runtime,
+      /"litellmBaseUrl": "https:\/\/stream-netmind\.viettel\.vn\/aigw\/ai\/v1"/,
+    );
+    // Already ends in /v1, so the OpenAI-compatible normaliser must not append
+    // a second one and produce .../v1/v1.
+    assert.doesNotMatch(runtime, /\/v1\/v1/);
     assert.match(runtime, /"oidcIssuer": "https:\/\/netmind\.viettel\.vn\/sso-wrapper"/);
     assert.match(runtime, /"oidcClientId": "netmind-extension"/);
     // The wrapper serves no discovery document, so these carry what discovery
@@ -1196,6 +1367,11 @@ test('both branded targets gate the side panel and keep Cloud management in sett
       /"oidcTokenEndpoint": "https:\/\/netmind\.viettel\.vn\/sso-wrapper\/token"/,
     );
     assert.match(runtime, /"oidcIdTokenAlg": "HS256"/);
+    // The wrapper's /userinfo recognises only the opaque access token it
+    // minted. A build that drops this key silently falls back to sending the
+    // ID token, and every backend call answers 401 "Token not found or
+    // expired" — a sign-in that cannot ever succeed.
+    assert.match(runtime, /"oidcBearerToken": "access_token"/);
     assert.match(manager, /baseUrl: AGENTX_RUNTIME_CONFIG\.litellmBaseUrl/);
     assert.match(manager, /providerName: 'agentx-cloud'/);
     assert.match(manager, /requiresModel: true/);

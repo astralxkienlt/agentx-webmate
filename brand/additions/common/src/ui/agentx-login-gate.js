@@ -19,14 +19,14 @@ const COPY = {
     idleExpired: 'You were signed out after a period of inactivity. Sign in again to continue.',
     signedOutElsewhere: 'You signed out of netMind. Sign in again to keep using the panel.',
     needs_login: 'Your session is no longer valid. Sign in again to continue.',
-    invalid_token: 'Second Brain rejected the identity token. Sign in again.',
+    invalid_token: 'The identity token was rejected. Sign in again.',
     missing_bearer: 'The identity request did not include a valid bearer token. Sign in again.',
     device_revoked: 'This device has been revoked. Sign in again to reconnect.',
     identity_unavailable: 'Viettel SSO verification is temporarily unavailable. Try again in a moment.',
-    store_unavailable: 'Second Brain storage is temporarily unavailable. Try again in a moment.',
+    store_unavailable: 'netMind server storage is temporarily unavailable. Try again in a moment.',
     litellm_unavailable: 'LiteLLM is temporarily unavailable. Try again in a moment.',
-    litellm_unconfigured: 'Second Brain has no LiteLLM admin key. Ask the operator to finish the server configuration.',
-    key_unreadable: 'Second Brain could not decrypt the saved key. Sign in again.',
+    litellm_unconfigured: 'The netMind server has no LiteLLM admin key. Ask the operator to finish the server configuration.',
+    key_unreadable: 'The netMind server could not decrypt the saved key. Sign in again.',
     gateway_models_empty: 'The gateway returned no models for this account. Ask the operator to grant model access.',
     sign_in_cancelled: 'Sign-in was cancelled before it completed.',
     sign_in_timeout: 'Sign-in exceeded five minutes. Start the flow again.',
@@ -47,14 +47,14 @@ const COPY = {
     idleExpired: 'Bạn đã bị đăng xuất sau một thời gian không dùng. Hãy đăng nhập lại để tiếp tục.',
     signedOutElsewhere: 'Bạn vừa đăng xuất khỏi netMind. Hãy đăng nhập lại để dùng tiếp.',
     needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại để tiếp tục.',
-    invalid_token: 'Second Brain từ chối token đăng nhập. Hãy đăng nhập lại.',
+    invalid_token: 'Token đăng nhập không hợp lệ. Hãy đăng nhập lại.',
     missing_bearer: 'Yêu cầu xác minh tài khoản thiếu bearer token hợp lệ. Hãy đăng nhập lại.',
     device_revoked: 'Thiết bị này đã bị thu hồi. Hãy đăng nhập lại để kết nối.',
     identity_unavailable: 'Viettel SSO tạm thời không xác minh được tài khoản. Hãy thử lại sau ít phút.',
-    store_unavailable: 'Kho dữ liệu Second Brain tạm thời chưa sẵn sàng. Hãy thử lại sau ít phút.',
+    store_unavailable: 'Kho dữ liệu của máy chủ netMind tạm thời chưa sẵn sàng. Hãy thử lại sau ít phút.',
     litellm_unavailable: 'LiteLLM tạm thời chưa sẵn sàng. Hãy thử lại sau ít phút.',
-    litellm_unconfigured: 'Second Brain chưa có khóa quản trị LiteLLM. Hãy nhờ quản trị viên hoàn tất cấu hình máy chủ.',
-    key_unreadable: 'Second Brain không giải mã được khóa đã lưu. Hãy đăng nhập lại.',
+    litellm_unconfigured: 'Máy chủ netMind chưa có khóa quản trị LiteLLM. Hãy nhờ quản trị viên hoàn tất cấu hình máy chủ.',
+    key_unreadable: 'Máy chủ netMind không giải mã được khóa đã lưu. Hãy đăng nhập lại.',
     gateway_models_empty: 'Cổng mô hình chưa cấp mô hình nào cho tài khoản này. Hãy nhờ quản trị viên cấp quyền.',
     sign_in_cancelled: 'Đăng nhập bị hủy giữa chừng.',
     sign_in_timeout: 'Quá 5 phút chưa đăng nhập xong. Hãy làm lại từ đầu.',
@@ -81,12 +81,33 @@ function copy(locale, key, params = {}) {
   return value;
 }
 
+/**
+ * One code covers many causes, so the specific one has to survive.
+ *
+ * `invalid_token` alone is thrown from a dozen places, most of them *inside the
+ * extension* and long before any request goes out: a mismatched audience, an
+ * issuer that does not match, a signing algorithm this build does not expect, a
+ * nonce the provider failed to echo back. Showing only the canned line for the
+ * code told the user the server had rejected them — while the server had never
+ * been asked — and threw away the one sentence that says which check failed.
+ *
+ * So the detail is appended when it adds anything, and always written to the
+ * console, where it survives the user clicking "Thử lại".
+ */
 function errorMessage(error, locale) {
   if (!error) return '';
   const code = String(error.code || '');
+  const detail = String(error.detail || error.message || '').trim();
+
+  // Untranslated on purpose: an operator reading a support screenshot needs the
+  // code, not a friendlier version of it.
+  try {
+    console.error(`[netMind] sign-in failed code=${code || 'unknown'} detail=${detail}`, error);
+  } catch { /* a console that refuses to log must not break the gate */ }
+
   const translated = COPY[language(locale)][code] || COPY.en[code];
-  if (translated) return translated;
-  return copy(locale, 'genericError', { detail: error.message || code || '' });
+  if (!translated) return copy(locale, 'genericError', { detail: detail || code || '' });
+  return detail && detail !== translated ? `${translated} (${detail})` : translated;
 }
 
 /**

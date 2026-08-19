@@ -9,8 +9,10 @@
   },
 
   "services": {
-    "secondBrainBaseUrl": "https://brain.dev-server.cloud/",
-    "litellmBaseUrl": "https://aigw.dev-server.cloud/",
+    "_whyBackendBaseUrl": "netMind Extension backend (deploy/netmind_extension_backend): verifies the Viettel SSO ID token and issues the LiteLLM model key. Replaces the former Second Brain service.",
+    "backendBaseUrl": "https://netmind.viettel.vn/netmind-extension",
+    "_whyLitellmBaseUrl": "Fallback only. The backend returns an authoritative baseUrl on every provision and that value wins, so this matters just for a client that has a key but has not provisioned yet. Already ends in /v1, so nothing is appended.",
+    "litellmBaseUrl": "https://stream-netmind.viettel.vn/aigw/ai/v1",
     "oidcIssuer": "https://netmind.viettel.vn/sso-wrapper",
     "oidcClientId": "netmind-extension",
     "oidcScopes": "openid profile email",
@@ -19,6 +21,10 @@
     "oidcTokenEndpoint": "https://netmind.viettel.vn/sso-wrapper/token",
     "_whyOidcIdTokenAlg": "The wrapper signs ID tokens with HS256 and serves no JWKS, so the extension cannot check the signature. Pinning the header alg at least refuses a token swapped to `none` or to an alg this deployment never issues.",
     "oidcIdTokenAlg": "HS256",
+    "_whyOidcBearerToken": "Which token the backend can verify. With the provider fully named in this config, sign-in never consults the backend's /api/auth/providers — this value alone decides what gets sent, so it must match how the backend verifies (the advertised bearer_token only reaches installs whose config names no provider). The wrapper signs ID tokens with a secret it gives nobody, so the backend verifies by calling the wrapper's /userinfo instead — and /userinfo recognises only the opaque access token it minted, answering 401 'Token not found or expired' for an ID token that was never in any store to be found. Set back to id_token the day the wrapper publishes a JWKS and the backend checks signatures locally again.",
+    "oidcBearerToken": "access_token",
+    "_whyOidcSendNonce": "The Viettel SSO wrapper does not echo the `nonce` back in the ID token, so sending one guarantees a failed sign-in: OIDC Core §3.1.3.7 requires the client to reject a token whose nonce does not match what it sent. `nonce` is OPTIONAL for the authorization code flow, so not sending it is spec-clean — unlike sending one and skipping the check. This DOES give up a layer of replay protection; PKCE S256, the verified `state`, and an ID token that arrives over the back channel rather than the browser redirect carry the rest. Set this back to true the day the wrapper echoes the nonce.",
+    "oidcSendNonce": false,
     "oidcRedirectUris": [
       "http://127.0.0.1:47821/callback",
       "http://127.0.0.1:47822/callback",

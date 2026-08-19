@@ -18,6 +18,10 @@ const ACTIVITY_WRITE_INTERVAL_MS = 60_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 12 * 60 * 60_000;
 const MODEL_PROBE_TIMEOUT_MS = 8_000;
 const MAX_CACHED_ACCOUNTS = 8;
+// Where the netMind backend issues model keys. `litellm` names the provisioning
+// handler; the backend answers 404 handler_not_found for anything else, so a
+// second gateway would be a new handler here rather than a new route shape.
+const MODEL_KEY_PATH = '/v1/provision-keys/litellm';
 
 export class AgentXCloudError extends Error {
   constructor(code, message, options = {}) {
@@ -221,7 +225,7 @@ export function selectPublicOidcProvider(payload) {
   if (!provider) {
     throw new AgentXCloudError(
       'oidc_provider_unavailable',
-      'Second Brain không công bố public native_oidc provider.',
+      'Máy chủ netMind không công bố public native_oidc provider.',
     );
   }
   const native = provider.native_oidc;
@@ -230,12 +234,22 @@ export function selectPublicOidcProvider(payload) {
   if (!clientId) {
     throw new AgentXCloudError('invalid_configuration', 'OIDC provider thiếu client_id.');
   }
+  // Endpoints and algorithm are carried through when the backend supplies them.
+  // The Viettel SSO wrapper serves no /.well-known/openid-configuration, so a
+  // provider fetched from the backend without these would fall through to a
+  // discovery request that 404s — advertised-but-unusable, which is worse than
+  // not advertised at all.
   return {
-    name: String(provider.name || 'keycloak'),
+    name: String(provider.name || 'oidc'),
     displayName: String(provider.display_name || 'netMind'),
     issuer,
     clientId,
     scopes: normalizeScopes(native.scopes),
+    authorizationEndpoint: String(native.authorization_endpoint || '').trim(),
+    tokenEndpoint: String(native.token_endpoint || '').trim(),
+    endSessionEndpoint: String(native.end_session_endpoint || '').trim(),
+    idTokenAlg: String(native.id_token_signed_response_alg || '').trim().toUpperCase(),
+    bearerToken: normalizeBearerKind(native.bearer_token),
   };
 }
 
@@ -261,7 +275,31 @@ function configuredOidcProvider(config) {
     tokenEndpoint: String(config.oidcTokenEndpoint || '').trim(),
     endSessionEndpoint: String(config.oidcEndSessionEndpoint || '').trim(),
     idTokenAlg: String(config.oidcIdTokenAlg || '').trim().toUpperCase(),
+    bearerToken: normalizeBearerKind(config.oidcBearerToken),
   };
+}
+
+/**
+ * Which token the backend wants presented as its bearer.
+ *
+ * Only the backend knows, because only it knows how it verifies: an issuer that
+ * is *asked* about a bearer recognises the opaque access token it minted, while
+ * one whose signature is checked locally needs the ID token. The Viettel SSO
+ * wrapper is the first kind — it answers 401 for an ID token, which is never in
+ * any store to be found.
+ *
+ * Defaults to the ID token, which is what every build before this one sent, so
+ * a backend that advertises nothing keeps behaving exactly as it did.
+ */
+function normalizeBearerKind(value) {
+  return String(value || '').trim() === 'access_token' ? 'access_token' : 'id_token';
+}
+
+/** The token this session should present to the backend. */
+function backendBearer(session) {
+  return session?.bearerToken === 'access_token'
+    ? String(session.accessToken || '')
+    : String(session?.idToken || '');
 }
 
 async function responseBody(response) {
@@ -337,9 +375,9 @@ export function createAgentXCloudService(options = {}) {
     throw new AgentXCloudError('invalid_configuration', 'Fetch hoặc Web Crypto chưa sẵn sàng.');
   }
 
-  const secondBrainBaseUrl = normalizeHttpsBaseUrl(
-    config.secondBrainBaseUrl,
-    'Second Brain base URL',
+  const backendBaseUrl = normalizeHttpsBaseUrl(
+    config.backendBaseUrl,
+    'netMind backend base URL',
   );
   const configuredLiteLlmBaseUrl = normalizeHttpsBaseUrl(
     config.litellmBaseUrl,
@@ -350,6 +388,12 @@ export function createAgentXCloudService(options = {}) {
   if (!redirectUris.length) {
     throw new AgentXCloudError('invalid_configuration', 'Không có OIDC redirect URI.');
   }
+  // Defaults to ON. Turning it off is a deliberate accommodation for a provider
+  // that does not echo the nonce back — see the note in brand.config.json.
+  // OIDC Core makes `nonce` OPTIONAL for the authorization code flow, but once
+  // sent the provider MUST return it (§3.1.3.7), so the only spec-clean way to
+  // work with such a provider is to stop sending it rather than stop checking.
+  const sendNonce = config.oidcSendNonce !== false;
   // A session that has sat unused past this window is treated as gone, even
   // though the SSO server would still refresh it. Zero disables the idle
   // window and falls back to plain token lifetime.
@@ -434,7 +478,11 @@ export function createAgentXCloudService(options = {}) {
 
   async function readSession() {
     const stored = await readStorage(AGENTX_SESSION_STORAGE_KEY);
-    const valid = stored && typeof stored === 'object' && stored.idToken && stored.user?.subject
+    // A session stored by a build that discarded the access token cannot
+    // authenticate against a backend that verifies by asking the issuer. Better
+    // one sign-in now than every request failing 401 with nothing to fix.
+    const valid = stored && typeof stored === 'object' && stored.user?.subject &&
+      stored.idToken && backendBearer(stored)
       ? stored
       : null;
     if (!memorySession) {
@@ -464,7 +512,7 @@ export function createAgentXCloudService(options = {}) {
     if (!advertised) {
       const providersUrl = new URL(
         String(config.oidcProvidersPath || '/api/auth/providers').replace(/^\//, ''),
-        `${secondBrainBaseUrl}/`,
+        `${backendBaseUrl}/`,
       ).toString();
       const providersResponse = await fetchWithTimeout(providersUrl, {
         headers: { Accept: 'application/json' },
@@ -663,8 +711,19 @@ export function createAgentXCloudService(options = {}) {
     validateIdTokenAlg(body.json.id_token, oidc.idTokenAlg);
     const claims = decodeJwtPayload(body.json.id_token);
     validateIdTokenClaims(claims, oidc, { nonce: details.nonce, now: now() });
+    if (oidc.bearerToken === 'access_token' && !body.json.access_token) {
+      throw new AgentXCloudError(
+        'access_token_missing',
+        'Máy chủ SSO không trả về access_token, trong khi máy chủ netMind cần token này để xác minh.',
+      );
+    }
     const session = {
       idToken: body.json.id_token,
+      // Kept because the backend may verify by asking the issuer, and an issuer
+      // asked about a bearer knows only the token it minted — not a JWT it never
+      // stored. Which one is sent is `bearerToken`, decided by the backend.
+      accessToken: body.json.access_token || '',
+      bearerToken: oidc.bearerToken,
       refreshToken: body.json.refresh_token || '',
       expiresAt: Number(claims.exp) * 1000,
       issuer: oidc.issuer,
@@ -688,7 +747,9 @@ export function createAgentXCloudService(options = {}) {
     const codeVerifier = randomBase64Url(cryptoImpl, 48);
     const codeChallenge = await sha256Base64Url(codeVerifier, cryptoImpl);
     const state = randomBase64Url(cryptoImpl, 32);
-    const nonce = randomBase64Url(cryptoImpl, 32);
+    // Omitted entirely when disabled, never sent empty: a provider that sees no
+    // `nonce` owes no `nonce` claim back, which is what keeps this spec-clean.
+    const nonce = sendNonce ? randomBase64Url(cryptoImpl, 32) : null;
     const authUrl = new URL(oidc.authorizationEndpoint);
     for (const [key, value] of Object.entries({
       response_type: 'code',
@@ -696,7 +757,7 @@ export function createAgentXCloudService(options = {}) {
       redirect_uri: redirectUri,
       scope: oidc.scopes,
       state,
-      nonce,
+      ...(nonce ? { nonce } : {}),
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
     })) {
@@ -767,6 +828,10 @@ export function createAgentXCloudService(options = {}) {
     const refreshed = {
       ...session,
       idToken: body.json.id_token,
+      // A refresh that returns no access token leaves the old one in place: it
+      // may still be live, and dropping it would strand a session that is
+      // otherwise fine.
+      accessToken: body.json.access_token || session.accessToken || '',
       refreshToken: body.json.refresh_token || session.refreshToken,
       expiresAt: Number(claims.exp) * 1000,
       user: publicUser(claims),
@@ -930,11 +995,11 @@ export function createAgentXCloudService(options = {}) {
 
   async function requestModelKey(session, { rotate = false } = {}) {
     const device = await deviceIdentity();
-    const response = await fetchWithTimeout(`${secondBrainBaseUrl}/v1/model-key`, {
+    const response = await fetchWithTimeout(`${backendBaseUrl}${MODEL_KEY_PATH}`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${session.idToken}`,
+        Authorization: `Bearer ${backendBearer(session)}`,
         'Content-Type': 'application/json',
         'X-AgentX-Device': device.id,
         ...(device.name ? { 'X-AgentX-Device-Name': device.name } : {}),
@@ -952,26 +1017,27 @@ export function createAgentXCloudService(options = {}) {
       }
       throw error;
     }
-    const key = String(body.json.key || '');
-    const responseDefaultModel = String(body.json.default_model || '').trim();
+    const key = String(body.json.apiKey || '');
+    const responseDefaultModel = String(body.json.defaultModel || '').trim();
     const baseUrl = normalizeHttpsBaseUrl(
-      body.json.base_url || configuredLiteLlmBaseUrl,
+      body.json.baseUrl || configuredLiteLlmBaseUrl,
       'LiteLLM base_url',
       { openAiCompatible: true },
     );
     if (!key) {
       throw new AgentXCloudError(
         'invalid_model_key_response',
-        'Second Brain trả về khóa mô hình không hợp lệ.',
+        'Máy chủ netMind trả về khóa mô hình không hợp lệ.',
       );
     }
-    // LiteLLM is the source of truth. Second Brain metadata may be absent or
-    // stale, so never install a model until the issued key can actually see it.
+    // LiteLLM is the source of truth. The backend's model list is recorded at
+    // mint time and can be stale, so never install a model until the issued key
+    // can actually see it.
     const catalog = await discoverGatewayCatalog(key, baseUrl);
     const model = pickGatewayModel(responseDefaultModel, catalog.models);
     return {
       subject: session.user.subject,
-      authority: secondBrainBaseUrl,
+      authority: backendBaseUrl,
       key,
       baseUrl,
       models: catalog.models,
@@ -979,12 +1045,12 @@ export function createAgentXCloudService(options = {}) {
       visionFromInfo: catalog.visionFromInfo,
       visionModels: catalog.visionModels,
       visionModel: '',
-      keyAlias: String(body.json.key_alias || ''),
+      keyAlias: String(body.json.keyAlias || ''),
       keyToken: String(body.json.token || ''),
       account: String(body.json.account || ''),
       status: String(body.json.status || 'reused'),
-      createdAt: String(body.json.created_at || ''),
-      rotatedAt: body.json.rotated_at == null ? null : String(body.json.rotated_at),
+      createdAt: String(body.json.createdAt || ''),
+      rotatedAt: body.json.rotatedAt == null ? null : String(body.json.rotatedAt),
       cachedAt: now(),
       device,
       provisionOutcome: String(body.json.status || 'reused'),
@@ -997,7 +1063,7 @@ export function createAgentXCloudService(options = {}) {
     const cached = records.find((record) => credentialIsUsable(
       record,
       session.user.subject,
-      secondBrainBaseUrl,
+      backendBaseUrl,
     ));
     if (cached && options.rotate !== true) {
       const probe = await probeCredential(cached);
@@ -1118,7 +1184,7 @@ export function createAgentXCloudService(options = {}) {
         expiresAt: null,
         device: { id: device.id, name: device.name },
         redirectUri: redirectUris[0],
-        secondBrainBaseUrl,
+        backendBaseUrl,
         configuredLiteLlmBaseUrl,
       };
     }
@@ -1135,7 +1201,7 @@ export function createAgentXCloudService(options = {}) {
       expiresAt: session.expiresAt,
       device: { id: device.id, name: device.name },
       redirectUri: session.redirectUri || redirectUris[0],
-      secondBrainBaseUrl,
+      backendBaseUrl,
       configuredLiteLlmBaseUrl,
     };
   }

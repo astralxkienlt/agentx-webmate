@@ -70,7 +70,7 @@ export function createAgentXCloudSettingsController({
     error: null,
     provider: null,
     configuredLiteLlmBaseUrl: config.litellmBaseUrl,
-    secondBrainBaseUrl: config.secondBrainBaseUrl,
+    backendBaseUrl: config.backendBaseUrl,
   };
 
   function paint(patch = {}) {
