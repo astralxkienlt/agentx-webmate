@@ -1,0 +1,42 @@
+# Local development stack. Production runs the image behind nginx with a managed
+# Postgres; this file exists so `docker compose up` gives you something to curl.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: netmind_extension
+    ports:
+      - "25432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      # Overrides .env so the app finds the container, not localhost.
+      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/netmind_extension
+    ports:
+      - "9000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+        - backend
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
+    external: true
+    name: netmind-official
+  

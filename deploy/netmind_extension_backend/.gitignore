@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# Runtime logs. The rotating file sink is a convenience tail — stdout is the
+# real pipeline source — and with several workers appending it grows fast.
+# Never commit it: the sibling desktop service accumulated 645 MB this way.
+logs/
