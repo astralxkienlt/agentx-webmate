@@ -1,0 +1,91 @@
+diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
+--- a/src/ui/sidepanel.html
++++ b/src/ui/sidepanel.html
+@@ -12,6 +12,7 @@
+   <script src="theme-bootstrap.js"></script>
+   <link rel="stylesheet" href="../../styles/sidepanel.css">
+   <link rel="stylesheet" href="../../vendor/katex/katex.min.css">
++  <link rel="stylesheet" href="agentx-login-gate.css">
+   <!-- KaTeX is loaded as classic scripts (not modules). They assign to
+        window.katex and window.renderMathInElement so formatMarkdown can
+        call them after inserting message HTML. -->
+@@ -19,6 +20,33 @@
+   <script defer src="../../vendor/katex/auto-render.min.js"></script>
+ </head>
+ <body>
++  <!-- netMind sign-in gate. Deliberately rendered visible: sidepanel.js hides
++       it once the session and the model gateway both check out, so a panel
++       whose module fails to load stays locked instead of exposing the chat. -->
++  <div
++    id="agentx-login-gate"
++    class="agentx-gate"
++    role="dialog"
++    aria-modal="true"
++    aria-labelledby="agentx-gate-title"
++    tabindex="-1"
++  >
++    <div class="agentx-gate-card">
++      <img class="agentx-gate-logo" src="../../icons/icon128.png" alt="" aria-hidden="true">
++      <p class="agentx-gate-eyebrow" data-agentx-gate-eyebrow>TÀI KHOẢN NETMIND</p>
++      <h1 class="agentx-gate-title" id="agentx-gate-title" data-agentx-gate-title>Đăng nhập để bắt đầu</h1>
++      <p class="agentx-gate-body" data-agentx-gate-body>netMind Extension chạy trên cổng mô hình của tổ chức bạn. Đăng nhập một lần là dùng được ngay.</p>
++      <p class="agentx-gate-notice hidden" role="alert" data-agentx-gate-notice></p>
++      <p class="agentx-gate-busy" role="status" aria-live="polite" data-agentx-gate-busy>
++        <span class="agentx-gate-spinner" aria-hidden="true"></span>
++        <span data-agentx-gate-busy-label>Đang kiểm tra phiên đăng nhập…</span>
++      </p>
++      <button type="button" class="agentx-gate-button hidden" data-agentx-gate-signin>Đăng nhập netMind</button>
++      <button type="button" class="agentx-gate-settings hidden" data-agentx-gate-settings>Mở Cài đặt</button>
++      <p class="agentx-gate-footnote" data-agentx-gate-footnote>Trình duyệt sẽ mở trang đăng nhập của tổ chức. netMind Extension không nhận mật khẩu của bạn.</p>
++    </div>
++  </div>
++
+   <!-- Onboarding Overlay (shown on first launch only) -->
+   <div id="onboarding" class="onboarding hidden">
+     <div class="ob-card">
+diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
+--- a/src/ui/sidepanel.js
++++ b/src/ui/sidepanel.js
+@@ -64,6 +64,7 @@ import {
+   removeStagedScreenshots,
+   saveStagedScreenshot,
+ } from './staged-screenshot-store.js';
++import { createAgentXLoginGate } from './agentx-login-gate.js';
+ 
+ const isStandaloneWindow = new URLSearchParams(window.location.search).get('standalone') === 'true';
+ 
+@@ -85,8 +86,34 @@ if (globalThis.browser?.storage?.onChanged) {
+   });
+ }
+ 
++// ─── netMind sign-in gate ───────────────────────────────────────────
++// The panel is unusable until the account is signed in and the managed cloud
++// provider holds a live key, so this runs before the product tour: onboarding
++// asks which model to use, and by then the answer is already settled.
++const agentxSignedIn = (function initAgentXLoginGate() {
++  const root = document.getElementById('agentx-login-gate');
++  if (!root) return Promise.resolve();
++  try {
++    const gate = createAgentXLoginGate({
++      api: globalThis.browser,
++      root,
++      appRoot: document.getElementById('app'),
++      locale: getLocale,
++      sendToBackground,
++    });
++    return gate.start();
++  } catch (error) {
++    // A gate that cannot even be constructed would lock the panel forever.
++    // Surface it and let the panel through rather than bricking the install.
++    console.error('[netMind] sign-in gate unavailable:', error);
++    root.classList.add('hidden');
++    return Promise.resolve();
++  }
++})();
++
+ // ─── Onboarding (first-launch wizard) ───────────────────────────────
+ (async function initOnboarding() {
++  await agentxSignedIn.catch(() => {});
+   const stored = await browser.storage.local.get('onboardingComplete');
+   if (stored.onboardingComplete) return;
+ 

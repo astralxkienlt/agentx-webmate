@@ -1,0 +1,176 @@
+/* netMind sign-in gate — the side panel's first screen.
+ *
+ * Sits above the onboarding wizard (z-index 1000) and below the pin coachmark
+ * (1100), which is the order the panel walks a new user through: pin the
+ * toolbar, sign in, then the product tour.
+ *
+ * Ships visible and is hidden from JS once the session checks out, so a build
+ * whose module fails to load fails closed rather than exposing the chat. */
+
+.agentx-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  background: var(--bg-primary);
+  overflow-y: auto;
+}
+
+.agentx-gate.hidden {
+  display: none;
+}
+
+.agentx-gate-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.agentx-gate-logo {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 14px;
+}
+
+.agentx-gate-eyebrow {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.agentx-gate-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.agentx-gate-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.agentx-gate-notice {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--error-soft);
+}
+
+.agentx-gate-notice.hidden {
+  display: none;
+}
+
+.agentx-gate-busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.agentx-gate-busy.hidden {
+  display: none;
+}
+
+.agentx-gate-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--tint-medium);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: agentx-gate-spin 0.8s linear infinite;
+}
+
+@keyframes agentx-gate-spin {
+  to { transform: rotate(360deg); }
+}
+
+.agentx-gate-button {
+  width: 100%;
+  padding: 11px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.agentx-gate-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.agentx-gate-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agentx-gate-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.agentx-gate-button.hidden {
+  display: none;
+}
+
+.agentx-gate-footnote {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentx-gate-spinner {
+    animation: none;
+  }
+}
+
+.agentx-gate-settings {
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.agentx-gate-settings:hover {
+  color: var(--text-primary);
+}
+
+.agentx-gate-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agentx-gate-settings.hidden {
+  display: none;
+}
