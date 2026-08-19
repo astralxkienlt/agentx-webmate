@@ -236,3 +236,46 @@ Two plausible shapes:
    Mastodon domains without treating every `@profile` route as federated social.
 
 ---
+
+## 12. Migrate the staged-screenshot store into the Attachment Store
+
+**Status:** Planned follow-up PR from PLAN-ingestion-v2 (decision Q5 / GĐ 3
+"sau merge"). Deliberately NOT bundled with the ingestion-v2 feature so the
+fail-closed screenshot-redaction path never shares a review with platform
+plumbing.
+
+**Why it matters:** Ingestion v2 gave user uploads a claim-check store
+(`wb_attachments`): `chat_start` carries `att_…` ids + metadata instead of
+base64, chips survive reloads from IndexedDB, and `read_attachment` /
+`upload_file` resolve bytes by id. Slash-command screenshots still ride the
+older `staged-screenshot-store.js` (chrome.storage.local, per-tab keys) and
+still cross the runtime boundary as inline data URLs, so a staged screenshot
+send is the one remaining multi-megabyte `chat_start` payload. The
+Attachment Store schema is already migration-ready: records accept
+`origin: 'slash_screenshot'` and carry a reserved `redaction` field.
+
+**What the migration needs (≈1 engineer-day, its own PR):**
+- Extend the store record for send-reconciliation: screenshots need the
+  `sending` delivery state plus a bounded `requestId`, mirroring
+  `markStagedScreenshots` / `reconcilePersistedStagedScreenshots` semantics
+  (the store today has only `pending`/`sent`).
+- Preserve the verified-write contract: `saveStagedScreenshot` returns true
+  only after an exact read-back of pixels + `modelRedactionReady` +
+  `modelDataUrl`; the store `put` must gain (or be wrapped with) the same
+  read-back before the UI may claim "staged".
+- Rewire the ~15 sidepanel call sites (stage/restore/mark/reconcile/remove,
+  both trees) and the `_applyAttachments` screenshot branch to resolve
+  pixels + redaction metadata from the store by id.
+- Keep every fail-closed redaction guard byte-identical: the model-facing
+  copy, snapshot normalization, and lost-model-copy refusals must not
+  change behavior. The redaction pipeline tests and
+  `test/manual-screenshot-redaction.md` must pass as-is; the
+  staged-screenshot *storage* tests get replaced by store-backed
+  equivalents (they test storage mechanics, not redaction).
+- Delete `staged-screenshot-store.js` and its `stagedScreenshotAttachments:`
+  keys with a one-shot migration sweep on startup.
+
+**Acceptance:** screenshot chips survive panel reloads via the store, a
+staged-screenshot `chat_start` payload is ids + metadata only, and the
+manual redaction matrix in `test/manual-screenshot-redaction.md` passes
+unchanged on both browsers.

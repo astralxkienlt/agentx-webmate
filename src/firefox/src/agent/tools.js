@@ -849,7 +849,7 @@ export const AGENT_TOOLS = [
           },
           attachmentId: {
             type: 'string',
-            description: 'Opaque id from the current [UNTRUSTED USER ATTACHMENTS] notice. Reuses that exact user-selected file without another picker. Valid only during the current agent run.',
+            description: 'Opaque id from the current [UNTRUSTED USER ATTACHMENTS] notice. Reuses that exact user-selected file without another picker. att_… ids stay resolvable from local storage for up to 24 hours; other handles last only for the current agent run.',
           },
           downloadId: {
             type: 'number',
