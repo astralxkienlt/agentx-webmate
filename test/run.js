@@ -42237,13 +42237,21 @@ test('Ollama vision auto-detection is model-bound, single-flight, and overrideab
       }], mgr.getActive());
       assert.equal(prunedHistory[0].content.some((block) => block?.type === 'image_url'), false,
         `${label}: historical screenshots should be removed for auto-detected text-only Ollama`);
-      const rejectedAttachment = await agent._applyAttachments(
-        { role: 'user', content: 'describe this' },
+      const skippedEnriched = { role: 'user', content: 'describe this' };
+      const skippedAttachment = await agent._applyAttachments(
+        skippedEnriched,
         [{ kind: 'image', dataUrl: 'data:image/png;base64,AA==', name: 'explicit.png' }],
         mgr.getActive(),
       );
-      assert.equal(rejectedAttachment.ok, false, `${label}: an explicit image should be rejected, not silently dropped`);
-      assert.match(rejectedAttachment.error, /Force on/, `${label}: Ollama rejection should explain the override`);
+      // Ingestion v2: a capability miss is a per-file outcome, never a
+      // blocked send — but it must stay loud, not a silent drop.
+      assert.equal(skippedAttachment.ok, true, `${label}: the send must no longer be blocked by a capability miss`);
+      assert.equal(skippedAttachment.outcomes[0].skipped, 'capability', `${label}: an explicit image should be reported as a capability skip`);
+      assert.equal(skippedAttachment.outcomes[0].reasonKey, 'vision_required', `${label}: the skip reason should name the missing capability`);
+      const skipNotice = skippedEnriched.content.find(block => block?.text?.startsWith('[UNTRUSTED USER ATTACHMENTS'));
+      assert.match(skipNotice?.text || '', /Force on/, `${label}: the Ollama delivery note should explain the override`);
+      assert.equal(skippedEnriched.content.some(block => block?.type === 'image_url'), false,
+        `${label}: no image block may reach a text-only Ollama`);
 
       await mgr.updateProvider('ollama', { model: 'gemma3:4b' });
       assert.equal(mgr.getActive().supportsVision, false, `${label}: changing models should invalidate old detection immediately`);
@@ -61929,7 +61937,9 @@ test('user attachments expose run-scoped upload handles in both browser agents',
     const notice = enriched.content.find(block => block?.text?.startsWith('[UNTRUSTED USER ATTACHMENTS'));
     const attachmentId = [...agent._userAttachmentHandles.get(tabId).keys()][0];
     assert.ok(notice, `${label} should add the attachment boundary`);
-    assert.ok(notice.text.includes(`${attachmentId} (../demo.gif)`), `${label} should pair the opaque handle with the visible name`);
+    // Ingestion v2 tightened display names to a positive allowlist over the
+    // path basename, so the traversal prefix is gone from the notice.
+    assert.ok(notice.text.includes(`${attachmentId} (demo.gif)`), `${label} should pair the opaque handle with the visible name`);
     assert.match(notice.text, /upload_file with its attachmentId/, `${label} should direct the model to reuse the handle`);
     assert.match(notice.text, /Do not open another picker, navigate to a separate upload route/, `${label} should avoid the J27 workaround`);
 

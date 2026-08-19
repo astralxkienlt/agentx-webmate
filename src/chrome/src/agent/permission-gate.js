@@ -76,6 +76,9 @@ export const UNTRUSTED_CONTENT_TOOLS = new Set([
   'fetch_url',
   'research_url',
   'read_pdf',
+  // User-attached file contents are attacker-controllable exactly like any
+  // fetched document; read_attachment results must ride the same wrapper.
+  'read_attachment',
   'read_page_source',
   'read_downloaded_file',
   'inspect_element_styles',
