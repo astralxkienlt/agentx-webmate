@@ -12,6 +12,10 @@ export const AGENTX_CREDENTIAL_STORAGE_KEY = 'agentxModelCredentialsV1';
 
 const DEVICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const REFRESH_AHEAD_MS = 60_000;
+// Writing lastActiveAt on every keystroke would hammer storage. One write per
+// minute is far finer-grained than the multi-hour idle window it feeds.
+const ACTIVITY_WRITE_INTERVAL_MS = 60_000;
+const DEFAULT_IDLE_TIMEOUT_MS = 12 * 60 * 60_000;
 const MODEL_PROBE_TIMEOUT_MS = 8_000;
 const MAX_CACHED_ACCOUNTS = 8;
 
@@ -304,9 +308,16 @@ export function createAgentXCloudService(options = {}) {
   if (!redirectUris.length) {
     throw new AgentXCloudError('invalid_configuration', 'Không có OIDC redirect URI.');
   }
+  // A session that has sat unused past this window is treated as gone, even
+  // though Keycloak would still refresh it. Zero disables the idle window and
+  // falls back to plain token lifetime.
+  const idleTimeoutMs = Number.isFinite(Number(config.sessionIdleTimeoutMs))
+    ? Math.max(0, Number(config.sessionIdleTimeoutMs))
+    : DEFAULT_IDLE_TIMEOUT_MS;
 
   let memorySession = null;
   let refreshInFlight = null;
+  let lastActivityWriteAt = 0;
 
   async function fetchWithTimeout(url, init = {}, timeoutMs = config.requestTimeoutMs) {
     const controller = new AbortController();
@@ -334,21 +345,71 @@ export function createAgentXCloudService(options = {}) {
   }
 
   async function persistSession(session) {
-    memorySession = session;
+    const stamped = { ...session, lastActiveAt: Number(session.lastActiveAt) || now() };
+    memorySession = stamped;
+    lastActivityWriteAt = stamped.lastActiveAt;
     try {
-      await api.storage.local.set({ [AGENTX_SESSION_STORAGE_KEY]: session });
+      await api.storage.local.set({ [AGENTX_SESSION_STORAGE_KEY]: stamped });
       return { persisted: true };
     } catch {
       return { persisted: false };
     }
   }
 
+  function idleDeadline(session) {
+    if (!idleTimeoutMs) return Number.POSITIVE_INFINITY;
+    // Sessions written before this build carry no lastActiveAt. Treating a
+    // missing stamp as "issued now" would hand them a fresh idle window on
+    // every read, so fall back to when the tokens were obtained.
+    const anchor = Number(session?.lastActiveAt) || Number(session?.obtainedAt) || 0;
+    return anchor ? anchor + idleTimeoutMs : 0;
+  }
+
+  function sessionIsIdleExpired(session, at = now()) {
+    return at >= idleDeadline(session);
+  }
+
+  /**
+   * Records that the signed-in user is still around. Callers fire this from UI
+   * activity, so it must stay cheap: it only touches storage once a minute and
+   * never revives a session that has already gone idle.
+   */
+  async function touchSession({ force = false } = {}) {
+    const session = await readSession();
+    if (!session) return { signedIn: false, idleExpired: false };
+    const at = now();
+    if (sessionIsIdleExpired(session, at)) {
+      await clearSession();
+      return { signedIn: false, idleExpired: true };
+    }
+    memorySession = { ...session, lastActiveAt: at };
+    if (!force && at - lastActivityWriteAt < ACTIVITY_WRITE_INTERVAL_MS) {
+      return { signedIn: true, idleExpired: false, persisted: false };
+    }
+    const persistence = await persistSession(memorySession);
+    return { signedIn: true, idleExpired: false, persisted: persistence.persisted };
+  }
+
   async function readSession() {
-    if (memorySession) return memorySession;
     const stored = await readStorage(AGENTX_SESSION_STORAGE_KEY);
-    if (!stored || typeof stored !== 'object' || !stored.idToken || !stored.user?.subject) return null;
-    memorySession = stored;
-    return stored;
+    const valid = stored && typeof stored === 'object' && stored.idToken && stored.user?.subject
+      ? stored
+      : null;
+    if (!memorySession) {
+      memorySession = valid;
+      return memorySession;
+    }
+    // The panel and the Settings page each hold their own copy. Whichever one
+    // the user is actually working in records the activity, so adopt the newer
+    // stamp — otherwise a Settings tab left open all day would judge a busy
+    // session idle and sign everyone out.
+    //
+    // Memory still wins when storage has nothing: a failed write must not cost
+    // the user the session it could not persist.
+    if (valid && Number(valid.lastActiveAt) > Number(memorySession.lastActiveAt || 0)) {
+      memorySession = valid;
+    }
+    return memorySession;
   }
 
   async function clearSession() {
@@ -641,6 +702,12 @@ export function createAgentXCloudService(options = {}) {
   async function restoreSession() {
     const session = await readSession();
     if (!session) return { session: null, outcome: 'needs-login' };
+    // Idle expiry is checked before the token refresh: an untouched session
+    // must not be silently renewed just because Keycloak would still allow it.
+    if (sessionIsIdleExpired(session)) {
+      await clearSession();
+      return { session: null, outcome: 'idle-expired' };
+    }
     if (now() < (Number(session.expiresAt) - REFRESH_AHEAD_MS)) {
       return { session, outcome: 'stored' };
     }
@@ -953,6 +1020,9 @@ export function createAgentXCloudService(options = {}) {
       return {
         signedIn: false,
         outcome: restored.outcome,
+        idleExpired: restored.outcome === 'idle-expired',
+        idleTimeoutMs,
+        idleDeadline: null,
         user: null,
         expiresAt: null,
         device: { id: device.id, name: device.name },
@@ -961,9 +1031,13 @@ export function createAgentXCloudService(options = {}) {
         configuredLiteLlmBaseUrl,
       };
     }
+    const deadline = idleDeadline(session);
     return {
       signedIn: true,
       outcome: restored.outcome,
+      idleExpired: false,
+      idleTimeoutMs,
+      idleDeadline: Number.isFinite(deadline) ? deadline : null,
       warningCode: restored.warningCode || '',
       persistenceWarning: restored.persistenceWarning || '',
       user: session.user,
@@ -979,6 +1053,7 @@ export function createAgentXCloudService(options = {}) {
     clearSession,
     deviceIdentity,
     discoverOidc,
+    idleTimeoutMs,
     provisionModelKey,
     publicStatus,
     readSession,
@@ -987,5 +1062,6 @@ export function createAgentXCloudService(options = {}) {
     signIn,
     signInAndProvision,
     signOut,
+    touchSession,
   };
 }

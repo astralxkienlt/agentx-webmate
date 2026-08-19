@@ -1,10 +1,11 @@
 import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
 import { createAgentXCloudService, AgentXCloudError } from '../agentx/cloud-service.js';
 import {
-  pickGatewayModel,
-  pickGatewayVisionModel,
-  visionModelsFromGateway,
-} from '../agentx/cloud-models.js';
+  AGENTX_CLOUD_PROVIDER_ID,
+  installCloudCredential,
+  removeCloudCredential,
+} from '../agentx/cloud-provider-install.js';
+import { visionModelsFromGateway } from '../agentx/cloud-models.js';
 import {
   bindAgentXCloudPanel,
   bindAgentXCloudVisionPanel,
@@ -12,7 +13,7 @@ import {
   renderAgentXCloudVisionPanel,
 } from './agentx-cloud-ui.js';
 
-const PROVIDER_ID = 'webbrain_cloud';
+const PROVIDER_ID = AGENTX_CLOUD_PROVIDER_ID;
 
 function publicProvider(credential) {
   if (!credential) return null;
@@ -85,74 +86,13 @@ export function createAgentXCloudSettingsController({
   }
 
   async function installCredential(credential) {
-    const models = Array.isArray(credential.models)
-      ? [...new Set(credential.models.map(String).map((model) => model.trim()).filter(Boolean))]
-      : [String(credential.model || '').trim()].filter(Boolean);
-    const visionModels = visionModelsFromGateway(
-      models,
-      credential.visionFromInfo,
-    );
-    const current = await sendToBackground('get_providers').catch(() => null);
-    const currentConfig = current?.providers?.[PROVIDER_ID] || {};
-    const model = pickGatewayModel(
-      currentConfig.model,
-      models,
-      credential.model,
-    );
-    if (!model) {
-      throw new AgentXCloudError(
-        'gateway_models_empty',
-        'LiteLLM không trả về mô hình nào cho khóa này.',
-      );
-    }
-    const visionModel = pickGatewayVisionModel(
-      currentConfig.agentxCloudVisionModel || credential.visionModel,
-      visionModels,
-    );
-    const installedCredential = {
-      ...credential,
-      models,
-      model,
-      visionModels,
-      visionModel,
-    };
-    await sendToBackground('update_provider', {
-      providerId: PROVIDER_ID,
-      markConfigured: false,
-      config: {
-        apiKey: installedCredential.key,
-        baseUrl: installedCredential.baseUrl,
-        model: installedCredential.model,
-        providerName: 'agentx-cloud',
-        models: installedCredential.models,
-        agentxCloudManaged: true,
-        agentxCloudAuthority: installedCredential.authority,
-        agentxCloudKeyAlias: installedCredential.keyAlias,
-        agentxCloudAccount: installedCredential.account,
-        agentxCloudVisionModel: installedCredential.visionModel,
-        agentxCloudVisionModels: installedCredential.visionModels,
-      },
-    });
-    await sendToBackground('set_active_provider', { providerId: PROVIDER_ID });
+    const installedCredential = await installCloudCredential(sendToBackground, credential);
     await refreshProviders();
     return installedCredential;
   }
 
   async function removeProviderCredential() {
-    await sendToBackground('update_provider', {
-      providerId: PROVIDER_ID,
-      markConfigured: false,
-      config: {
-        apiKey: '',
-        model: '',
-        models: [],
-        agentxCloudManaged: false,
-        agentxCloudKeyAlias: '',
-        agentxCloudAccount: '',
-        agentxCloudVisionModel: '',
-        agentxCloudVisionModels: [],
-      },
-    });
+    await removeCloudCredential(sendToBackground);
     await refreshProviders();
   }
 

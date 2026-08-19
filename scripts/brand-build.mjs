@@ -341,6 +341,18 @@ async function writeRuntimeConfig(outDir, config, written) {
   if (!redirectUris.length) {
     throw new Error('brand.config.json services.oidcRedirectUris must not be empty');
   }
+  // How long a signed-in session may sit unused before the panel demands a
+  // fresh sign-in. Omit the key to accept the 12-hour default; 0 disables the
+  // idle window and leaves only Keycloak's own token lifetime.
+  const rawIdleTimeout = services.sessionIdleTimeoutMs;
+  const sessionIdleTimeoutMs = rawIdleTimeout === undefined
+    ? 12 * 60 * 60_000
+    : Number(rawIdleTimeout);
+  if (!Number.isFinite(sessionIdleTimeoutMs) || sessionIdleTimeoutMs < 0) {
+    throw new Error(
+      'brand.config.json services.sessionIdleTimeoutMs must be a non-negative number of milliseconds',
+    );
+  }
 
   const relativePath = 'src/agentx/runtime-config.js';
   const target = path.join(outDir, relativePath);
@@ -359,6 +371,7 @@ async function writeRuntimeConfig(outDir, config, written) {
         oidcRedirectUris: redirectUris,
         requestTimeoutMs: 15_000,
         authTimeoutMs: 5 * 60_000,
+        sessionIdleTimeoutMs,
       }, null, 2)});\n`,
   );
   written.add(relativePath);

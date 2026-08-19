@@ -9,6 +9,7 @@ const CHROME_ROOT = path.join(ROOT, 'brand-dist/chrome');
 const SERVICE_PATH = path.join(CHROME_ROOT, 'src/agentx/cloud-service.js');
 const CONTROLLER_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-settings.js');
 const UI_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-ui.js');
+const GATE_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-login-gate.js');
 const OPENAI_PROVIDER_PATH = path.join(CHROME_ROOT, 'src/providers/openai.js');
 const TRANSCRIBE_PATH = path.join(CHROME_ROOT, 'src/agent/transcribe.js');
 const MODELS_PATH = path.join(CHROME_ROOT, 'src/agentx/cloud-models.js');
@@ -23,6 +24,7 @@ const {
   normalizeHttpsBaseUrl,
 } = await import(pathToFileURL(SERVICE_PATH).href);
 const { createAgentXCloudSettingsController } = await import(pathToFileURL(CONTROLLER_PATH).href);
+const { createAgentXLoginGate } = await import(pathToFileURL(GATE_PATH).href);
 const { renderAgentXCloudPanel } = await import(pathToFileURL(UI_PATH).href);
 const { OpenAICompatibleProvider } = await import(pathToFileURL(OPENAI_PROVIDER_PATH).href);
 const { transcribeAudio } = await import(pathToFileURL(TRANSCRIBE_PATH).href);
@@ -46,6 +48,9 @@ const CONFIG = Object.freeze({
   authTimeoutMs: 1_000,
 });
 const NOW = 1_800_000_000_000;
+// Short enough to step over inside a test, long enough that the service's
+// once-a-minute activity write throttle still behaves as it does in the panel.
+const IDLE_MS = 30 * 60_000;
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -121,11 +126,14 @@ function createApi(seed = {}, { onTabCreated } = {}) {
   const values = structuredClone(seed);
   const onUpdated = createEvent();
   const onRemoved = createEvent();
+  const onChanged = createEvent();
   let nextTabId = 40;
   return {
     values,
+    storageChanged: onChanged,
     api: {
       storage: {
+        onChanged,
         local: {
           async get(keys) {
             const names = Array.isArray(keys) ? keys : [keys];
@@ -723,7 +731,304 @@ test('Cloud vision sidecar uses the gateway key and ignores an empty selection',
   );
 });
 
-test('both branded targets keep Cloud auth in settings without occupying the side panel', async () => {
+// ─── Sign-in gate ─────────────────────────────────────────────────────────
+// The gate runs in the side panel, so these tests stand in a DOM small enough
+// to keep the assertions about behaviour rather than about markup.
+function fakeElement(tag = 'div') {
+  const classes = new Set();
+  return {
+    tag,
+    textContent: '',
+    disabled: false,
+    inert: false,
+    attributes: {},
+    listeners: {},
+    classList: {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      contains: (name) => classes.has(name),
+      toggle: (name, force) => (force ? classes.add(name) : classes.delete(name)),
+    },
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+    addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); },
+    removeEventListener(type, handler) {
+      this.listeners[type] = (this.listeners[type] || []).filter((fn) => fn !== handler);
+    },
+    emit(type, ...args) {
+      for (const handler of [...(this.listeners[type] || [])]) handler(...args);
+    },
+  };
+}
+
+function fakeGateDom() {
+  const parts = {
+    eyebrow: fakeElement('p'),
+    title: fakeElement('h1'),
+    body: fakeElement('p'),
+    notice: fakeElement('p'),
+    busy: fakeElement('p'),
+    busyLabel: fakeElement('span'),
+    signin: fakeElement('button'),
+    footnote: fakeElement('p'),
+  };
+  const selectors = {
+    '[data-agentx-gate-eyebrow]': parts.eyebrow,
+    '[data-agentx-gate-title]': parts.title,
+    '[data-agentx-gate-body]': parts.body,
+    '[data-agentx-gate-notice]': parts.notice,
+    '[data-agentx-gate-busy]': parts.busy,
+    '[data-agentx-gate-busy-label]': parts.busyLabel,
+    '[data-agentx-gate-signin]': parts.signin,
+    '[data-agentx-gate-footnote]': parts.footnote,
+  };
+  const root = fakeElement('div');
+  root.querySelector = (selector) => selectors[selector] || null;
+  const documentRef = fakeElement('document');
+  documentRef.body = fakeElement('body');
+  documentRef.visibilityState = 'visible';
+  return { root, appRoot: fakeElement('div'), documentRef, parts };
+}
+
+function gateHarness({ seed, clock, fetchImpl }) {
+  const fake = createApi(seed);
+  const dom = fakeGateDom();
+  const calls = [];
+  const providerState = {
+    providers: { webbrain_cloud: { type: 'openai', category: 'cloud' } },
+    active: 'openai',
+  };
+  const gate = createAgentXLoginGate({
+    api: fake.api,
+    root: dom.root,
+    appRoot: dom.appRoot,
+    documentRef: dom.documentRef,
+    locale: () => 'vi',
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    async sendToBackground(action, data = {}) {
+      calls.push({ action, data });
+      if (action === 'update_provider') {
+        Object.assign(providerState.providers.webbrain_cloud, data.config);
+        return { ok: true };
+      }
+      if (action === 'set_active_provider') {
+        providerState.active = data.providerId;
+        return { ok: true };
+      }
+      if (action === 'get_providers') return structuredClone(providerState);
+      throw new Error(`Unexpected background action: ${action}`);
+    },
+    serviceOptions: {
+      fetchImpl: fetchImpl || (async () => jsonResponse({ data: [{ id: 'model-a' }] })),
+      cryptoImpl: webcrypto,
+      now: () => clock.now,
+    },
+  });
+  return { gate, dom, calls, providerState, values: fake.values, storageChanged: fake.storageChanged };
+}
+
+test('an untouched session expires on its idle deadline and reports why', async () => {
+  const clock = { now: NOW };
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+  });
+  const svc = createAgentXCloudService({
+    api: fake.api,
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    fetchImpl: async () => { throw new Error('no network expected'); },
+    cryptoImpl: webcrypto,
+    now: () => clock.now,
+  });
+
+  clock.now = NOW + IDLE_MS - 1;
+  assert.equal((await svc.publicStatus()).signedIn, true);
+
+  clock.now = NOW + IDLE_MS;
+  const expired = await svc.publicStatus();
+  assert.equal(expired.signedIn, false);
+  assert.equal(expired.idleExpired, true);
+  assert.equal(expired.outcome, 'idle-expired');
+  // The session is gone, so a later read cannot resurrect it.
+  assert.equal(Object.hasOwn(fake.values, AGENTX_SESSION_STORAGE_KEY), false);
+});
+
+test('a session stored before idle expiry shipped is anchored to when it was issued', async () => {
+  const clock = { now: NOW + IDLE_MS + 1 };
+  const stored = session();
+  delete stored.lastActiveAt;
+  const fake = createApi({ [AGENTX_SESSION_STORAGE_KEY]: stored });
+  const svc = createAgentXCloudService({
+    api: fake.api,
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    fetchImpl: async () => { throw new Error('no network expected'); },
+    cryptoImpl: webcrypto,
+    now: () => clock.now,
+  });
+  const status = await svc.publicStatus();
+  assert.equal(status.signedIn, false);
+  assert.equal(status.idleExpired, true);
+});
+
+test('touchSession pushes the idle deadline out and throttles storage writes', async () => {
+  const clock = { now: NOW };
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+  });
+  const svc = createAgentXCloudService({
+    api: fake.api,
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    fetchImpl: async () => { throw new Error('no network expected'); },
+    cryptoImpl: webcrypto,
+    now: () => clock.now,
+  });
+
+  clock.now = NOW + IDLE_MS - 1_000;
+  assert.equal((await svc.touchSession({ force: true })).persisted, true);
+  assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].lastActiveAt, clock.now);
+
+  // Past the original deadline, alive on the refreshed one.
+  clock.now = NOW + IDLE_MS + 1;
+  assert.equal((await svc.publicStatus()).signedIn, true);
+
+  // A second touch inside the write interval stays in memory only.
+  const persistedAt = fake.values[AGENTX_SESSION_STORAGE_KEY].lastActiveAt;
+  const touchedAt = clock.now + 5_000;
+  clock.now = touchedAt;
+  assert.equal((await svc.touchSession()).persisted, false);
+  assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].lastActiveAt, persistedAt);
+
+  // Touching a session that already went idle re-locks instead of reviving it.
+  // The throttled touch above still moved the in-memory stamp, so the live
+  // deadline runs from that touch rather than from the last storage write.
+  clock.now = touchedAt + IDLE_MS;
+  const dead = await svc.touchSession({ force: true });
+  assert.deepEqual(dead, { signedIn: false, idleExpired: true });
+});
+
+test('activity in one document keeps the session alive for the other', async () => {
+  const clock = { now: NOW };
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+  });
+  const options = {
+    api: fake.api,
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    fetchImpl: async () => { throw new Error('no network expected'); },
+    cryptoImpl: webcrypto,
+    now: () => clock.now,
+  };
+  // Two surfaces, two service instances — the panel and a Settings tab.
+  const panel = createAgentXCloudService(options);
+  const settings = createAgentXCloudService(options);
+
+  // Both cache the session, then only the panel sees any activity.
+  assert.equal((await panel.publicStatus()).signedIn, true);
+  assert.equal((await settings.publicStatus()).signedIn, true);
+
+  clock.now = NOW + IDLE_MS - 1_000;
+  await panel.touchSession({ force: true });
+
+  // The Settings tab has been sitting on a stale copy the whole time; it must
+  // not decide the busy session went idle.
+  clock.now = NOW + IDLE_MS + 1;
+  assert.equal((await settings.publicStatus()).signedIn, true);
+  assert.equal(Object.hasOwn(fake.values, AGENTX_SESSION_STORAGE_KEY), true);
+});
+
+test('the side panel stays locked until the cloud key is installed', async () => {
+  const clock = { now: NOW };
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+  });
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.dom.appRoot.inert, false);
+
+  await harness.gate.start();
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), false);
+  assert.equal(harness.dom.root.classList.contains('hidden'), true);
+  assert.equal(harness.dom.appRoot.inert, false);
+  assert.equal(harness.dom.appRoot.attributes['aria-hidden'], undefined);
+  assert.equal(harness.providerState.active, 'webbrain_cloud');
+  const update = harness.calls.find((call) => call.action === 'update_provider');
+  assert.equal(update.data.config.apiKey, 'sk-existing-secret');
+  assert.equal(update.data.config.agentxCloudManaged, true);
+});
+
+test('a signed-out panel offers sign-in and never unlocks on its own', async () => {
+  const clock = { now: NOW };
+  const harness = gateHarness({ clock, seed: {} });
+
+  const pending = harness.gate.start();
+  const settled = await Promise.race([
+    pending.then(() => 'unlocked'),
+    Promise.resolve('still-locked'),
+  ]);
+  harness.gate.stop();
+
+  assert.equal(settled, 'still-locked');
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.dom.root.classList.contains('hidden'), false);
+  assert.equal(harness.dom.appRoot.inert, true);
+  assert.equal(harness.dom.parts.signin.textContent, 'Đăng nhập AgentX');
+  assert.equal(harness.calls.length, 0);
+});
+
+test('the panel re-locks with an idle notice once the session times out', async () => {
+  const clock = { now: NOW };
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+  });
+  await harness.gate.start();
+  assert.equal(harness.gate.isLocked(), false);
+
+  clock.now = NOW + IDLE_MS;
+  await harness.gate.checkSession();
+  // relock() kicks off a fresh status read; let it settle before asserting.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.dom.appRoot.inert, true);
+  assert.equal(harness.dom.root.classList.contains('hidden'), false);
+  assert.match(harness.dom.parts.notice.textContent, /không dùng/);
+});
+
+test('signing out elsewhere re-locks the panel that is already open', async () => {
+  const clock = { now: NOW };
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+  });
+  await harness.gate.start();
+  assert.equal(harness.gate.isLocked(), false);
+
+  delete harness.values[AGENTX_SESSION_STORAGE_KEY];
+  harness.storageChanged.emit(
+    { [AGENTX_SESSION_STORAGE_KEY]: { oldValue: {}, newValue: undefined } },
+    'local',
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.match(harness.dom.parts.notice.textContent, /đăng xuất/);
+});
+
+test('both branded targets gate the side panel and keep Cloud management in settings', async () => {
   for (const target of ['chrome', 'firefox']) {
     const root = path.join(ROOT, 'brand-dist', target);
     const [html, settings, runtime, manager, openai, sidepanelHtml, sidepanelJs] = await Promise.all([
@@ -751,8 +1056,19 @@ test('both branded targets keep Cloud auth in settings without occupying the sid
     assert.match(manager, /activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID/);
     assert.match(openai, /not available through this gateway key/);
     assert.doesNotMatch(manager, /webbrain-cloud 1\.0|api\.webbrain\.one\/v1/);
+    // The panel carries the sign-in gate only. Model switching, connection
+    // tests and sign-out stay on the Settings card, so the gate's copy never
+    // has to duplicate them.
     assert.doesNotMatch(sidepanelHtml, /agentx-cloud-sidepanel|agentx-cloud\.css/);
     assert.doesNotMatch(sidepanelJs, /createAgentXCloudSettingsController|agentxCloudController/);
+    assert.match(sidepanelHtml, /agentx-login-gate\.css/);
+    assert.match(sidepanelHtml, /id="agentx-login-gate"/);
+    assert.match(sidepanelHtml, /data-agentx-gate-signin/);
+    // Ships without `hidden`: the gate must be up before its module parses.
+    assert.match(sidepanelHtml, /class="agentx-gate"\n/);
+    assert.match(sidepanelJs, /createAgentXLoginGate/);
+    // Onboarding must not start asking about providers before sign-in settles.
+    assert.match(sidepanelJs, /await agentxSignedIn\.catch\(\(\) => \{\}\);/);
   }
 
   const [transcribe, recorderHost] = await Promise.all([
