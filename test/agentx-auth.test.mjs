@@ -47,6 +47,18 @@ const CONFIG = Object.freeze({
   requestTimeoutMs: 250,
   authTimeoutMs: 1_000,
 });
+// The Viettel SSO wrapper shape: no /.well-known/openid-configuration to read,
+// so the endpoints discovery would have supplied are configured instead, and
+// ID tokens arrive signed with a symmetric alg the extension cannot verify.
+const WRAPPER_ISSUER = 'https://sso.example.test/sso-wrapper';
+const WRAPPER_TOKEN_ENDPOINT = `${WRAPPER_ISSUER}/token`;
+const WRAPPER_CONFIG = Object.freeze({
+  ...CONFIG,
+  oidcIssuer: WRAPPER_ISSUER,
+  oidcAuthorizationEndpoint: `${WRAPPER_ISSUER}/authorize`,
+  oidcTokenEndpoint: WRAPPER_TOKEN_ENDPOINT,
+  oidcIdTokenAlg: 'HS256',
+});
 const NOW = 1_800_000_000_000;
 // Short enough to step over inside a test, long enough that the service's
 // once-a-minute activity write throttle still behaves as it does in the panel.
@@ -59,9 +71,9 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function jwt(claims) {
+function jwt(claims, alg = 'RS256') {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  return `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode(claims)}.signature`;
+  return `${encode({ alg, typ: 'JWT' })}.${encode(claims)}.signature`;
 }
 
 function session(overrides = {}) {
@@ -128,8 +140,13 @@ function createApi(seed = {}, { onTabCreated } = {}) {
   const onRemoved = createEvent();
   const onChanged = createEvent();
   let nextTabId = 40;
+  let nextWindowId = 900;
+  const createdTabs = [];
+  const createdWindows = [];
   return {
     values,
+    createdTabs,
+    createdWindows,
     storageChanged: onChanged,
     api: {
       storage: {
@@ -157,8 +174,20 @@ function createApi(seed = {}, { onTabCreated } = {}) {
         onRemoved,
         async create(details) {
           const tab = { id: nextTabId++, ...details };
+          createdTabs.push(tab);
           setTimeout(() => onTabCreated?.(tab, { onUpdated, onRemoved }), 0);
           return tab;
+        },
+        async remove() {},
+      },
+      windows: {
+        async create(details) {
+          const id = nextWindowId++;
+          const tab = { id: nextTabId++, windowId: id, ...details };
+          const window = { id, tabs: [tab] };
+          createdWindows.push(window);
+          setTimeout(() => onTabCreated?.(tab, { onUpdated, onRemoved }), 0);
+          return window;
         },
         async remove() {},
       },
@@ -166,14 +195,18 @@ function createApi(seed = {}, { onTabCreated } = {}) {
   };
 }
 
-function service(api, fetchImpl) {
+function serviceWith(config, api, fetchImpl) {
   return createAgentXCloudService({
     api,
-    config: CONFIG,
+    config,
     fetchImpl,
     cryptoImpl: webcrypto,
     now: () => NOW,
   });
+}
+
+function service(api, fetchImpl) {
+  return serviceWith(CONFIG, api, fetchImpl);
 }
 
 const tests = [];
@@ -356,6 +389,109 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
   assert.equal(result.credential.model, 'model-a');
   assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].user.email, 'kien@example.test');
   assert.equal(fake.values[AGENTX_DEVICE_STORAGE_KEY].id, modelRequest.headers['X-AgentX-Device']);
+});
+
+// Drives a full sign-in against the wrapper shape. Every request is recorded so
+// a test can assert on what was *not* fetched: reaching for the discovery
+// document at all is the regression worth catching here.
+function wrapperSignIn(makeIdToken) {
+  const requested = [];
+  let authUrl;
+  const fake = createApi({}, {
+    onTabCreated(tab, events) {
+      authUrl = new URL(tab.url);
+      const callback = new URL(WRAPPER_CONFIG.oidcRedirectUris[0]);
+      callback.searchParams.set('code', 'authorization-code');
+      callback.searchParams.set('state', authUrl.searchParams.get('state'));
+      events.onUpdated.emit(tab.id, { url: callback.toString() });
+    },
+  });
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    requested.push(requestUrl);
+    if (requestUrl === WRAPPER_TOKEN_ENDPOINT) {
+      return jsonResponse({
+        id_token: makeIdToken(authUrl.searchParams.get('nonce')),
+        refresh_token: 'refresh-1',
+      });
+    }
+    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/v1/model-key`) {
+      return jsonResponse({
+        key: 'sk-new-secret',
+        base_url: 'https://aigw.dev-server.cloud/',
+        default_model: 'model-a',
+        status: 'issued',
+      });
+    }
+    if (requestUrl === `${CONFIG.litellmBaseUrl}/models`) {
+      return jsonResponse({ data: [{ id: 'model-a' }] });
+    }
+    throw new Error(`Unexpected request: ${requestUrl}`);
+  };
+  return {
+    fake,
+    requested,
+    authUrl: () => authUrl,
+    run: () => serviceWith(WRAPPER_CONFIG, fake.api, fetchImpl).signInAndProvision(),
+  };
+}
+
+function wrapperIdToken(nonce, alg) {
+  return jwt({
+    iss: WRAPPER_ISSUER,
+    aud: WRAPPER_CONFIG.oidcClientId,
+    sub: 'user-123',
+    email: 'kien@example.test',
+    name: 'Kien',
+    nonce,
+    exp: Math.floor((NOW + 10 * 60_000) / 1000),
+  }, alg);
+}
+
+test('a provider without a discovery document signs in from configured endpoints', async () => {
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'));
+  const result = await flow.run();
+
+  assert.equal(
+    flow.requested.some((url) => url.includes('/.well-known/openid-configuration')),
+    false,
+  );
+  const authUrl = flow.authUrl();
+  assert.equal(`${authUrl.origin}${authUrl.pathname}`, `${WRAPPER_ISSUER}/authorize`);
+  assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(authUrl.searchParams.get('client_id'), WRAPPER_CONFIG.oidcClientId);
+  assert.equal(result.session.tokenEndpoint, WRAPPER_TOKEN_ENDPOINT);
+  assert.equal(result.session.idTokenAlg, 'HS256');
+  // Nothing advertises these without a discovery document, and guessing a
+  // revocation URL would POST the refresh token somewhere that may not be one.
+  assert.equal(result.session.endSessionEndpoint, '');
+  assert.equal(result.session.revocationEndpoint, '');
+  assert.equal(result.credential.model, 'model-a');
+});
+
+test('sign-in opens its own window so the panel document survives the round trip', async () => {
+  const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, 'HS256'));
+  await flow.run();
+
+  // The side panel is enabled per tab and ships no default path. Opening the
+  // authorization page as a tab in the current window activates a tab the panel
+  // was never enabled on, so Chrome closes the panel — and the listener waiting
+  // on the loopback callback dies with the panel document. Sign-in then hangs
+  // with nothing to show the user. Its own window keeps the panel's tab active.
+  assert.equal(flow.fake.createdWindows.length, 1);
+  assert.equal(flow.fake.createdTabs.length, 0);
+  assert.match(flow.fake.createdWindows[0].tabs[0].url, /\/sso-wrapper\/authorize\?/);
+});
+
+test('an ID token signed with an unconfigured algorithm is refused', async () => {
+  for (const alg of ['RS256', 'none']) {
+    const flow = wrapperSignIn((nonce) => wrapperIdToken(nonce, alg));
+    await assert.rejects(flow.run(), (error) => {
+      assert.equal(error.code, 'invalid_token');
+      return true;
+    }, `alg ${alg} must not be accepted`);
+    assert.equal(flow.fake.values[AGENTX_SESSION_STORAGE_KEY], undefined);
+  }
 });
 
 test('LiteLLM model list overrides stale Second Brain model metadata', async () => {
@@ -976,7 +1112,7 @@ test('a signed-out panel offers sign-in and never unlocks on its own', async () 
   assert.equal(harness.gate.isLocked(), true);
   assert.equal(harness.dom.root.classList.contains('hidden'), false);
   assert.equal(harness.dom.appRoot.inert, true);
-  assert.equal(harness.dom.parts.signin.textContent, 'Đăng nhập netMind');
+  assert.equal(harness.dom.parts.signin.textContent, 'Đăng nhập bằng Viettel SSO');
   assert.equal(harness.calls.length, 0);
 });
 
@@ -1047,8 +1183,19 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.doesNotMatch(settings, /btn-manage-billing|api\.webbrain\.one\/account/);
     assert.match(runtime, /https:\/\/brain\.dev-server\.cloud/);
     assert.match(runtime, /https:\/\/aigw\.dev-server\.cloud\/v1/);
-    assert.match(runtime, /https:\/\/agentx\.astralx\.com\.vn\/auth\/realms\/agent-hub/);
-    assert.match(runtime, /"oidcClientId": "agentx-workmate"/);
+    assert.match(runtime, /"oidcIssuer": "https:\/\/netmind\.viettel\.vn\/sso-wrapper"/);
+    assert.match(runtime, /"oidcClientId": "netmind-extension"/);
+    // The wrapper serves no discovery document, so these carry what discovery
+    // would have supplied. Dropping them silently breaks sign-in.
+    assert.match(
+      runtime,
+      /"oidcAuthorizationEndpoint": "https:\/\/netmind\.viettel\.vn\/sso-wrapper\/authorize"/,
+    );
+    assert.match(
+      runtime,
+      /"oidcTokenEndpoint": "https:\/\/netmind\.viettel\.vn\/sso-wrapper\/token"/,
+    );
+    assert.match(runtime, /"oidcIdTokenAlg": "HS256"/);
     assert.match(manager, /baseUrl: AGENTX_RUNTIME_CONFIG\.litellmBaseUrl/);
     assert.match(manager, /providerName: 'agentx-cloud'/);
     assert.match(manager, /requiresModel: true/);

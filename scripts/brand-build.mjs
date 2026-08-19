@@ -240,6 +240,15 @@ const THEME_HTML = new Set([
 
 const FONT_HTML_SKIP = new Set(['sidepanel.html']);
 
+// JOSE signature algorithms services.oidcIdTokenAlg may pin an ID token to.
+// `none` is absent on purpose: it is refused outright, never configured.
+const ID_TOKEN_ALGS = [
+  'HS256', 'HS384', 'HS512',
+  'RS256', 'RS384', 'RS512',
+  'ES256', 'ES384', 'ES512',
+  'PS256', 'PS384', 'PS512',
+];
+
 async function applyTheme(outDir, config, written) {
   const fontsFile = path.join(BRAND, 'fonts.css');
   const themeFile = path.join(BRAND, 'theme.css');
@@ -379,6 +388,39 @@ async function writeRuntimeConfig(outDir, config, written) {
       .filter(Boolean),
   )];
   if (!oidcScopes.includes('openid')) oidcScopes.unshift('openid');
+  // Discovery is the norm, so these stay optional. They exist for providers
+  // that serve no /.well-known/openid-configuration — the Viettel SSO wrapper
+  // is one. Both or neither: one endpoint alone leaves the other undiscovered,
+  // which fails at sign-in rather than here.
+  const oidcAuthorizationEndpoint = services.oidcAuthorizationEndpoint
+    ? normalizedServiceUrl(services.oidcAuthorizationEndpoint, 'oidcAuthorizationEndpoint')
+    : '';
+  const oidcTokenEndpoint = services.oidcTokenEndpoint
+    ? normalizedServiceUrl(services.oidcTokenEndpoint, 'oidcTokenEndpoint')
+    : '';
+  if (Boolean(oidcAuthorizationEndpoint) !== Boolean(oidcTokenEndpoint)) {
+    throw new Error(
+      'brand.config.json services.oidcAuthorizationEndpoint and services.oidcTokenEndpoint '
+      + 'must be set together, or both left out to use OIDC discovery',
+    );
+  }
+  // Optional even when the two above are set. Left empty, signing out clears
+  // everything the extension holds but leaves the SSO server's own session
+  // standing, so the next sign-in goes through without asking for credentials.
+  const oidcEndSessionEndpoint = services.oidcEndSessionEndpoint
+    ? normalizedServiceUrl(services.oidcEndSessionEndpoint, 'oidcEndSessionEndpoint')
+    : '';
+  // The extension never verifies an ID-token signature — it has no key for a
+  // symmetric alg and the server it hands the token to is the one that must
+  // verify. Pinning the header alg is the part it can enforce: it refuses a
+  // token downgraded to `none` or signed with an alg this deployment never
+  // issues. Empty accepts any alg except `none`.
+  const oidcIdTokenAlg = String(services.oidcIdTokenAlg || '').trim().toUpperCase();
+  if (oidcIdTokenAlg && !ID_TOKEN_ALGS.includes(oidcIdTokenAlg)) {
+    throw new Error(
+      `brand.config.json services.oidcIdTokenAlg must be one of ${ID_TOKEN_ALGS.join(', ')}`,
+    );
+  }
   const redirectUris = Array.isArray(services.oidcRedirectUris)
     ? services.oidcRedirectUris.map((value) => {
         const url = new URL(String(value || ''));
@@ -428,6 +470,10 @@ async function writeRuntimeConfig(outDir, config, written) {
         oidcIssuer,
         oidcClientId,
         oidcScopes: oidcScopes.join(' '),
+        oidcAuthorizationEndpoint,
+        oidcTokenEndpoint,
+        oidcEndSessionEndpoint,
+        oidcIdTokenAlg,
         oidcProvidersPath: '/api/auth/providers',
         oidcRedirectUris: redirectUris,
         requestTimeoutMs: 15_000,

@@ -101,6 +101,42 @@ export function decodeJwtPayload(token) {
   }
 }
 
+export function decodeJwtHeader(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) {
+    throw new AgentXCloudError('invalid_token', 'ID token không có cấu trúc JWT hợp lệ.');
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[0])));
+  } catch (error) {
+    if (error instanceof AgentXCloudError) throw error;
+    throw new AgentXCloudError('invalid_token', 'Không đọc được header của ID token.');
+  }
+}
+
+/**
+ * The extension cannot check an ID token's signature: the SSO wrapper signs
+ * with HS256 and publishes no JWKS, and the secret behind a symmetric alg is
+ * exactly what an extension must never carry. Verification belongs to the
+ * service the token is handed to. What is checkable here is the header itself
+ * — `none` is always refused, and a configured alg pins the token to the one
+ * this deployment issues, so a token minted elsewhere under a different alg is
+ * rejected before any claim is read.
+ */
+function validateIdTokenAlg(token, expectedAlg) {
+  const alg = String(decodeJwtHeader(token)?.alg || '').toUpperCase();
+  if (!alg || alg === 'NONE') {
+    throw new AgentXCloudError('invalid_token', 'ID token không được ký (alg=none).');
+  }
+  const expected = String(expectedAlg || '').toUpperCase();
+  if (expected && alg !== expected) {
+    throw new AgentXCloudError(
+      'invalid_token',
+      `ID token ký bằng ${alg}, khác thuật toán ${expected} đã cấu hình.`,
+    );
+  }
+}
+
 function tokenAudienceMatches(audience, clientId) {
   return Array.isArray(audience)
     ? audience.includes(clientId)
@@ -214,11 +250,17 @@ function configuredOidcProvider(config) {
     );
   }
   return {
-    name: 'keycloak',
+    name: 'oidc',
     displayName: 'netMind',
     issuer: normalizeHttpsBaseUrl(issuerValue, 'OIDC issuer'),
     clientId,
     scopes: normalizeScopes(config.oidcScopes),
+    // Endpoints a provider without a discovery document has to be told. Empty
+    // for a provider that publishes /.well-known/openid-configuration.
+    authorizationEndpoint: String(config.oidcAuthorizationEndpoint || '').trim(),
+    tokenEndpoint: String(config.oidcTokenEndpoint || '').trim(),
+    endSessionEndpoint: String(config.oidcEndSessionEndpoint || '').trim(),
+    idTokenAlg: String(config.oidcIdTokenAlg || '').trim().toUpperCase(),
   };
 }
 
@@ -288,7 +330,7 @@ export function createAgentXCloudService(options = {}) {
   const setTimer = options.setTimeout || globalThis.setTimeout.bind(globalThis);
   const clearTimer = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
 
-  if (!api?.storage?.local || !api?.tabs || !api?.runtime) {
+  if (!api?.storage?.local || !api?.tabs || !api?.windows || !api?.runtime) {
     throw new AgentXCloudError('invalid_configuration', 'API tiện ích chưa sẵn sàng.');
   }
   if (typeof fetchImpl !== 'function' || !cryptoImpl?.subtle) {
@@ -309,8 +351,8 @@ export function createAgentXCloudService(options = {}) {
     throw new AgentXCloudError('invalid_configuration', 'Không có OIDC redirect URI.');
   }
   // A session that has sat unused past this window is treated as gone, even
-  // though Keycloak would still refresh it. Zero disables the idle window and
-  // falls back to plain token lifetime.
+  // though the SSO server would still refresh it. Zero disables the idle
+  // window and falls back to plain token lifetime.
   const idleTimeoutMs = Number.isFinite(Number(config.sessionIdleTimeoutMs))
     ? Math.max(0, Number(config.sessionIdleTimeoutMs))
     : DEFAULT_IDLE_TIMEOUT_MS;
@@ -433,6 +475,31 @@ export function createAgentXCloudService(options = {}) {
       }
       advertised = selectPublicOidcProvider(providersBody.json);
     }
+    // A provider that publishes no discovery document names its endpoints in
+    // brand config instead. Skipping the fetch is the whole point: the Viettel
+    // SSO wrapper answers /.well-known/openid-configuration with a 404, so
+    // insisting on discovery would leave sign-in permanently broken.
+    if (advertised.authorizationEndpoint && advertised.tokenEndpoint) {
+      if (
+        !isSecureEndpoint(advertised.authorizationEndpoint) ||
+        !isSecureEndpoint(advertised.tokenEndpoint)
+      ) {
+        throw new AgentXCloudError(
+          'insecure_oidc_endpoint',
+          'OIDC authorization/token endpoint phải dùng HTTPS.',
+        );
+      }
+      return {
+        ...advertised,
+        endSessionEndpoint: isSecureEndpoint(advertised.endSessionEndpoint)
+          ? advertised.endSessionEndpoint
+          : '',
+        // No discovery document means no advertised revocation endpoint, and
+        // guessing one would POST the refresh token at a URL that may not be
+        // it. Sign-out still clears everything held locally.
+        revocationEndpoint: '',
+      };
+    }
     const discoveryUrl = `${advertised.issuer}/.well-known/openid-configuration`;
     const discoveryResponse = await fetchWithTimeout(discoveryUrl, {
       headers: { Accept: 'application/json' },
@@ -477,6 +544,7 @@ export function createAgentXCloudService(options = {}) {
   function awaitAuthorizationCode(authUrl, redirectUri, expectedState) {
     return new Promise(async (resolve, reject) => {
       let authTabId = null;
+      let authWindowId = null;
       let settled = false;
       let timeoutId = null;
       const redirect = new URL(redirectUri);
@@ -490,11 +558,15 @@ export function createAgentXCloudService(options = {}) {
         if (settled) return;
         settled = true;
         cleanup();
-        if (authTabId != null) api.tabs.remove(authTabId).catch(() => {});
+        if (authWindowId != null) api.windows.remove(authWindowId).catch(() => {});
         handler(value);
       };
-      const onUpdated = (tabId, changeInfo) => {
-        if (tabId !== authTabId || !changeInfo?.url) return;
+      const onUpdated = (tabId, changeInfo, tab) => {
+        if (!changeInfo?.url) return;
+        // Window id is the backstop: a provider that bounces the flow through a
+        // second tab of its own would otherwise slip past a tab-id-only match.
+        const inAuthWindow = authWindowId != null && tab?.windowId === authWindowId;
+        if (tabId !== authTabId && !inAuthWindow) return;
         let callback;
         try {
           callback = new URL(changeInfo.url);
@@ -513,7 +585,7 @@ export function createAgentXCloudService(options = {}) {
         if (oauthError) {
           return finish(reject, new AgentXCloudError(
             oauthError,
-            callback.searchParams.get('error_description') || 'Keycloak từ chối đăng nhập.',
+            callback.searchParams.get('error_description') || 'Máy chủ SSO từ chối đăng nhập.',
           ));
         }
         const code = callback.searchParams.get('code');
@@ -537,8 +609,21 @@ export function createAgentXCloudService(options = {}) {
       try {
         api.tabs.onUpdated.addListener(onUpdated);
         api.tabs.onRemoved.addListener(onRemoved);
-        const authTab = await api.tabs.create({ url: authUrl, active: true });
-        authTabId = authTab.id;
+        // Its own window, deliberately, rather than a tab in the current one.
+        // The side panel is enabled per tab and carries no default path, so
+        // activating a fresh auth tab closes the panel — and this listener dies
+        // with the panel document, leaving the callback with nobody to catch it
+        // and sign-in hanging forever. A separate window leaves the panel's own
+        // tab active, so the panel survives the round trip.
+        const authWindow = await api.windows.create({ url: authUrl, focused: true });
+        authWindowId = authWindow?.id ?? null;
+        authTabId = authWindow?.tabs?.[0]?.id ?? null;
+        if (authWindowId == null) {
+          throw new AgentXCloudError(
+            'sign_in_window_failed',
+            'Trình duyệt không mở được cửa sổ đăng nhập.',
+          );
+        }
         timeoutId = setTimer(() => finish(reject, new AgentXCloudError(
           'sign_in_timeout',
           'Quá 5 phút chưa đăng nhập xong. Hãy làm lại từ đầu.',
@@ -573,8 +658,9 @@ export function createAgentXCloudService(options = {}) {
       throw serviceErrorFromResponse(response, body, 'token_exchange_failed');
     }
     if (!body.json.id_token) {
-      throw new AgentXCloudError('id_token_missing', 'Keycloak không trả về id_token.');
+      throw new AgentXCloudError('id_token_missing', 'Máy chủ SSO không trả về id_token.');
     }
+    validateIdTokenAlg(body.json.id_token, oidc.idTokenAlg);
     const claims = decodeJwtPayload(body.json.id_token);
     validateIdTokenClaims(claims, oidc, { nonce: details.nonce, now: now() });
     const session = {
@@ -584,6 +670,7 @@ export function createAgentXCloudService(options = {}) {
       issuer: oidc.issuer,
       clientId: oidc.clientId,
       scopes: oidc.scopes,
+      idTokenAlg: oidc.idTokenAlg || '',
       tokenEndpoint: oidc.tokenEndpoint,
       endSessionEndpoint: oidc.endSessionEndpoint,
       revocationEndpoint: oidc.revocationEndpoint,
@@ -669,6 +756,9 @@ export function createAgentXCloudService(options = {}) {
         warningCode: oauthCode || `identity_http_${response.status}`,
       };
     }
+    // Sessions stored before this build carry no idTokenAlg; an empty value
+    // still refuses `none`, which is the check that matters most.
+    validateIdTokenAlg(body.json.id_token, session.idTokenAlg);
     const claims = decodeJwtPayload(body.json.id_token);
     validateIdTokenClaims(claims, {
       issuer: session.issuer,
@@ -703,7 +793,8 @@ export function createAgentXCloudService(options = {}) {
     const session = await readSession();
     if (!session) return { session: null, outcome: 'needs-login' };
     // Idle expiry is checked before the token refresh: an untouched session
-    // must not be silently renewed just because Keycloak would still allow it.
+    // must not be silently renewed just because the SSO server would still
+    // allow it.
     if (sessionIsIdleExpired(session)) {
       await clearSession();
       return { session: null, outcome: 'idle-expired' };

@@ -9,7 +9,7 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
    <!-- KaTeX is loaded as classic scripts (not modules). They assign to
         window.katex and window.renderMathInElement so formatMarkdown can
         call them after inserting message HTML. -->
-@@ -19,6 +20,33 @@
+@@ -19,6 +20,32 @@
    <script defer src="../../vendor/katex/auto-render.min.js"></script>
  </head>
  <body>
@@ -26,17 +26,16 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
 +  >
 +    <div class="agentx-gate-card">
 +      <img class="agentx-gate-logo" src="../../icons/icon128.png" alt="" aria-hidden="true">
-+      <p class="agentx-gate-eyebrow" data-agentx-gate-eyebrow>TÀI KHOẢN NETMIND</p>
++      <p class="agentx-gate-eyebrow" data-agentx-gate-eyebrow>netMind Extension</p>
 +      <h1 class="agentx-gate-title" id="agentx-gate-title" data-agentx-gate-title>Đăng nhập để bắt đầu</h1>
-+      <p class="agentx-gate-body" data-agentx-gate-body>netMind Extension chạy trên cổng mô hình của tổ chức bạn. Đăng nhập một lần là dùng được ngay.</p>
++      <p class="agentx-gate-body" data-agentx-gate-body>Biến trình duyệt của bạn thành trình duyệt AI</p>
 +      <p class="agentx-gate-notice hidden" role="alert" data-agentx-gate-notice></p>
 +      <p class="agentx-gate-busy" role="status" aria-live="polite" data-agentx-gate-busy>
 +        <span class="agentx-gate-spinner" aria-hidden="true"></span>
 +        <span data-agentx-gate-busy-label>Đang kiểm tra phiên đăng nhập…</span>
 +      </p>
-+      <button type="button" class="agentx-gate-button hidden" data-agentx-gate-signin>Đăng nhập netMind</button>
-+      <button type="button" class="agentx-gate-settings hidden" data-agentx-gate-settings>Mở Cài đặt</button>
-+      <p class="agentx-gate-footnote" data-agentx-gate-footnote>Trình duyệt sẽ mở trang đăng nhập của tổ chức. netMind Extension không nhận mật khẩu của bạn.</p>
++      <button type="button" class="agentx-gate-button hidden" data-agentx-gate-signin>Đăng nhập bằng Viettel SSO</button>
++      <p class="agentx-gate-footnote" data-agentx-gate-footnote>Được phát triển bởi Trung tâm Nền tảng công nghệ &amp; Chuyển đổi số</p>
 +    </div>
 +  </div>
 +

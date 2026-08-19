@@ -11,9 +11,14 @@
   "services": {
     "secondBrainBaseUrl": "https://brain.dev-server.cloud/",
     "litellmBaseUrl": "https://aigw.dev-server.cloud/",
-    "oidcIssuer": "https://agentx.astralx.com.vn/auth/realms/agent-hub",
-    "oidcClientId": "agentx-workmate",
+    "oidcIssuer": "https://netmind.viettel.vn/sso-wrapper",
+    "oidcClientId": "netmind-extension",
     "oidcScopes": "openid profile email",
+    "_whyOidcEndpoints": "The Viettel SSO wrapper publishes no /.well-known/openid-configuration, so the two endpoints discovery would have supplied are named here. Set both or neither.",
+    "oidcAuthorizationEndpoint": "https://netmind.viettel.vn/sso-wrapper/authorize",
+    "oidcTokenEndpoint": "https://netmind.viettel.vn/sso-wrapper/token",
+    "_whyOidcIdTokenAlg": "The wrapper signs ID tokens with HS256 and serves no JWKS, so the extension cannot check the signature. Pinning the header alg at least refuses a token swapped to `none` or to an alg this deployment never issues.",
+    "oidcIdTokenAlg": "HS256",
     "oidcRedirectUris": [
       "http://127.0.0.1:47821/callback",
       "http://127.0.0.1:47822/callback",
