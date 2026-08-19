@@ -47,6 +47,12 @@
       "except": ["vendor/**"]
     },
     {
+      "_why": "The agent indicator's header comment describes its cursor as \"WebBrain-purple\". The colour rules further down recolour it to raspberry, so the wording has to go too — and it has to go here, ahead of the display-name rule, which would otherwise leave the dangling \"netMind Extension-purple\".",
+      "from": "a large WebBrain-purple cursor/outline",
+      "to": "a large brand-raspberry cursor/outline",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
       "_why": "Display name in UI and skill text. Guards keep it out of identifiers and protocol tokens such as ensureWebBrainGroup and X-WebBrain-Help-Improve.",
       "regex": "(?<![A-Za-z0-9_$])WebBrain(?![A-Za-z0-9_$])",
       "to": "netMind Extension",
@@ -63,6 +69,66 @@
       "regex": "(?<![A-Za-z0-9_$\\-./])webbrain(?![A-Za-z0-9_$\\-]|\\.one)",
       "to": "netMind Extension",
       "only": ["src/ui/locales/**", "src/selection-shortcut-i18n.js"]
+    },
+    {
+      "_why": "The agent's on-page indicator — the pulsing viewport border, the stop button and the target cursor — is upstream's indigo #6c63ff. It is a content script injected into the page with no imports, so it cannot read the theme's CSS variables and the colours have to be substituted literally. Rules, not a patch: this file is pure colour swapping, so replacement survives upstream rearranging it and catches any accent they add later. rgb() triples first, then the hex spellings.",
+      "from": "108, 99, 255",
+      "to": "241, 20, 60",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "Same indicator, hex spelling of the accent: the target cursor's SVG fill.",
+      "from": "#6c63ff",
+      "to": "#f1143c",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "Same indicator: the stop button's hover tint, an indigo wash on white. Brand blush is its raspberry counterpart.",
+      "from": "#f3f0ff",
+      "to": "#fce0e4",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "Same indicator: the stop button's label ink, a navy that reads cold beside raspberry. Brand ink instead.",
+      "from": "#1a1a2e",
+      "to": "#2c2020",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "Same indicator: the cursor's shadow and outline strokes, tinted with the same navy. Brand ink keeps them warm.",
+      "from": "20, 18, 48",
+      "to": "44, 32, 32",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "Keep the indicator's header comment honest about what it now draws — the rules above leave it describing a purple it no longer uses.",
+      "regex": "animated purple inset glow",
+      "to": "animated raspberry inset glow",
+      "only": ["src/content/agent-visual-indicator.js"]
+    },
+    {
+      "_why": "The highlight tool's default outline drawn on the page, indigo again. tools.js states the same value in the tool schema the model reads, so both files have to move together or the model would be told a default that no longer exists. Deliberately not applied to sidepanel.js, whose only #7c3aed is console.log styling — red there would read as an error.",
+      "from": "#7c3aed",
+      "to": "#f1143c",
+      "only": ["src/content/content.js", "src/agent/tools.js"]
+    },
+    {
+      "_why": "The Teach capture badge pinned to the page while a session records: indigo border on a near-black violet chip. Brand raspberry on the dark theme's ink, with paper for the label.",
+      "from": "#8b5cf6",
+      "to": "#f1143c",
+      "only": ["src/content/teacher-capture.js"]
+    },
+    {
+      "_why": "Same badge, its violet-black chip background.",
+      "from": "#241b3d",
+      "to": "#1c1416",
+      "only": ["src/content/teacher-capture.js"]
+    },
+    {
+      "_why": "Same badge, its lilac-tinted label text.",
+      "from": "#f7f3ff",
+      "to": "#f7f3f4",
+      "only": ["src/content/teacher-capture.js"]
     },
     {
       "_why": "Fallback prefix for downloaded screenshot filenames.",
