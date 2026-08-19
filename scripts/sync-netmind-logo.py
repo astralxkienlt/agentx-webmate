@@ -65,6 +65,13 @@ def main() -> None:
     for size in (16, 48, 128):
         save_png(mark.resize((size, size), Image.Resampling.LANCZOS), BRAND_ICONS / f"icon{size}.png")
 
+    # The cloud provider's entry in the model picker. Keeps the upstream
+    # filename because PROVIDER_ICON_FILES maps it from the provider id
+    # webbrain_cloud, which brand.config.json pins in `preserve` — renaming the
+    # file here would silently drop the icon, not rebrand it. 64×64 RGBA to
+    # match every other icon in icons/providers/.
+    save_png(mark.resize((64, 64), Image.Resampling.LANCZOS), BRAND_ICONS / "providers" / "webbrain_cloud.png")
+
     save_png(mark.resize((64, 64), Image.Resampling.LANCZOS), WEB / "favicon.png")
     save_png(mark.resize((512, 512), Image.Resampling.LANCZOS), WEB / "logo-github.png")
     print(f"Wrote netMind icons from {SOURCE.relative_to(ROOT)} ({mark.size[0]}×{mark.size[1]} mark)")
