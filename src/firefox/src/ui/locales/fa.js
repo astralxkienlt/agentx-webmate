@@ -604,7 +604,6 @@ export default {
   'st.display.history_link.open': "تاریخچه را باز کنید",
   'st.display.traces_link.open': "Traces → را باز کنید",
 
-  'st.providers.info.html': "<strong>شروع کار با مدل های محلی:</strong><br>اجرا کنید <code>llama-server -m your-model.gguf --port 8080</code>، Jan / LM Studio / Ollama / LocalAI را شروع کنید یا vLLM / SGLang را با یک سرور سازگار با OpenAI راه اندازی کنید.<br>هیچ کلید API مورد نیاز نیست مگر اینکه سرور محلی شما با auth راه اندازی شده باشد.",
   'st.providers.filter.all': "همه",
   'st.providers.filter.local': "محلی",
   'st.providers.filter.cloud': "ابر",

@@ -432,7 +432,6 @@ export default {
   'st.display.traces_link.label': 'Ślady',
   'st.display.traces_link.desc': 'Analizuj nagrane wykonania obok siebie. Dostępne tylko, gdy rejestrowanie śladów jest włączone.',
   'st.display.traces_link.open': 'Otwórz Ślady →',
-  'st.providers.info.html': '<strong>Pierwsze kroki z modelami lokalnymi:</strong><br>Uruchom <code>llama-server -m twoj-model.gguf --port 8080</code>, uruchom Jan / LM Studio / Ollama lub uruchom vLLM / SGLang z serwerem zgodnym z OpenAI.<br>Klucz API nie jest potrzebny, chyba że Twój serwer lokalny został uruchomiony z uwierzytelnianiem.',
   'st.providers.filter.all': 'Wszystkie',
   'st.providers.filter.local': 'Lokalne',
   'st.providers.filter.cloud': 'Chmura',

@@ -599,7 +599,6 @@ export default {
   'st.display.history_link.open': 'Verlauf öffnen',
   'st.display.traces_link.open': 'Traces öffnen →',
   // --- Providers settings ---
-  'st.providers.info.html': '<strong>Erste Schritte mit lokalen Modellen:</strong><br>Starten Sie <code>llama-server -m Ihr-Modell.gguf --port 8080</code>...',
   'st.providers.filter.all': 'Alle',
   'st.providers.filter.local': 'Lokal',
   'st.providers.filter.cloud': 'Cloud',

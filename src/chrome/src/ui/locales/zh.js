@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': '并排查看已记录的运行。仅在轨迹记录开启时可用。',
   'st.display.traces_link.open': '打开轨迹 →',
 
-  'st.providers.info.html': '<strong>llama.cpp 快速上手：</strong><br>运行 <code>llama-server -m 你的模型.gguf --port 8080</code> 启动本地服务器。<br>无需 API 密钥 — 完全在你的机器上运行。',
   'st.providers.save': '保存',
   'st.providers.webbrain_note.body': '免费的每日 WebBrain Cloud 用量已包含在内。请求通过 api.webbrain.one 处理；默认情况下，我们仅记录用于配额和调试的元数据，不记录提示文本、页面内容、屏幕截图或模型响应。{privacyLink}。如需更多用量，请在 {subscribeLink} 订阅。在 {accountLink} 管理账单。',
   'st.providers.webbrain_note.privacy_link': '隐私政策',

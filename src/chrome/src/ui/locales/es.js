@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': 'Inspecciona las ejecuciones grabadas lado a lado. Solo está disponible cuando el registro de trazas está activo.',
   'st.display.traces_link.open': 'Abrir Trazas →',
 
-  'st.providers.info.html': '<strong>Primeros pasos con llama.cpp:</strong><br>Ejecuta <code>llama-server -m tu-modelo.gguf --port 8080</code> para iniciar un servidor local.<br>No se necesita clave de API — se ejecuta enteramente en tu máquina.',
   'st.providers.save': 'Guardar',
   'st.providers.webbrain_note.body': 'El uso diario gratuito de WebBrain Cloud está incluido. Las solicitudes pasan por api.webbrain.one; de forma predeterminada registramos metadatos para la cuota y la depuración, no el texto de las indicaciones, el contenido de la página, las capturas de pantalla ni las respuestas del modelo. {privacyLink}. Para más uso, suscríbete en {subscribeLink}. Gestiona la facturación en {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Política de privacidad',

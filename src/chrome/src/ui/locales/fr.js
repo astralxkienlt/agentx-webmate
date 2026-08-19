@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': 'Inspectez les exécutions enregistrées côte à côte. Disponible uniquement quand l\'enregistrement des traces est activé.',
   'st.display.traces_link.open': 'Ouvrir les traces →',
 
-  'st.providers.info.html': '<strong>Premiers pas avec llama.cpp :</strong><br>Exécutez <code>llama-server -m votre-modele.gguf --port 8080</code> pour démarrer un serveur local.<br>Pas besoin de clé d\'API — il fonctionne entièrement sur votre machine.',
   'st.providers.save': 'Enregistrer',
   'st.providers.webbrain_note.body': 'Une utilisation quotidienne gratuite de WebBrain Cloud est incluse. Les requêtes passent par api.webbrain.one ; par défaut, nous enregistrons des métadonnées pour le quota et le débogage, pas le texte des invites, le contenu des pages, les captures d\'écran ni les réponses du modèle. {privacyLink}. Pour en faire plus, abonnez-vous sur {subscribeLink}. Gérez la facturation sur {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Politique de confidentialité',

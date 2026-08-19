@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'Suriin ang mga naitalang run nang magkatabi. Available lamang kapag naka-on ang tracing.',
   'st.display.traces_link.open': 'Buksan ang Traces →',
 
-  'st.providers.info.html': '<strong>Pagsisimula sa llama.cpp:</strong><br>Patakbuhin ang <code>llama-server -m your-model.gguf --port 8080</code> para magsimula ng lokal na server.<br>Hindi na kailangan ng API key — ganap itong tumatakbo sa iyong makina.',
   'st.providers.save': 'I-save',
   'st.providers.webbrain_note.body': 'Kasama ang libreng pang-araw-araw na paggamit ng WebBrain Cloud. Dumadaan ang mga request sa api.webbrain.one; bilang default ay nagla-log kami ng metadata para sa quota at debugging, hindi ang teksto ng prompt, nilalaman ng pahina, mga screenshot, o mga tugon ng modelo. {privacyLink}. Para sa higit pang paggamit, mag-subscribe sa {subscribeLink}. Pamahalaan ang pagsingil sa {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Patakaran sa privacy',

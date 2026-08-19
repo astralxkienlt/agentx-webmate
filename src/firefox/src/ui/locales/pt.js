@@ -604,7 +604,6 @@ export default {
   'st.display.history_link.open': "Abrir histórico",
   'st.display.traces_link.open': "Abrir rastreamentos →",
 
-  'st.providers.info.html': "<strong>Introdução aos modelos locais:</strong><br>Corre <code>llama-server -m your-model.gguf --port 8080</code>, inicie Jan / LM Studio / Ollama / LocalAI ou inicie vLLM / SGLang com um servidor compatível com OpenAI.<br>Nenhuma chave de API é necessária, a menos que seu servidor local tenha sido iniciado com autenticação.",
   'st.providers.filter.all': "Todos",
   'st.providers.filter.local': "Locais",
   'st.providers.filter.cloud': "Nuvem",

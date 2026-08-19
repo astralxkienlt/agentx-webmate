@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': '기록된 실행을 나란히 검사할 수 있습니다. 트레이스가 켜져 있을 때만 사용할 수 있습니다.',
   'st.display.traces_link.open': '트레이스 열기 →',
 
-  'st.providers.info.html': '<strong>llama.cpp 시작하기:</strong><br><code>llama-server -m your-model.gguf --port 8080</code>을 실행해 로컬 서버를 띄우세요.<br>API 키가 필요 없습니다 — 전부 사용자 머신에서 실행됩니다.',
   'st.providers.save': '저장',
   'st.providers.webbrain_note.body': '무료 일일 WebBrain Cloud 사용량이 포함되어 있습니다. 요청은 api.webbrain.one을 통해 처리됩니다. 기본적으로 할당량과 디버깅을 위한 메타데이터만 기록하며, 프롬프트 텍스트, 페이지 콘텐츠, 스크린샷, 모델 응답은 기록하지 않습니다. {privacyLink}. 더 많은 사용량이 필요하면 {subscribeLink}에서 구독하세요. 청구는 {accountLink}에서 관리하세요.',
   'st.providers.webbrain_note.privacy_link': '개인정보 처리방침',

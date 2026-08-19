@@ -589,7 +589,6 @@ export default {
   "st.display.history_link.desc": "פתח שיחות שנשמרו באופן מקומי, כולל כתובות אתרים של דפים ומעקבים מקושרים כאשר המעקב הופעל.",
   "st.display.history_link.open": "פתח את ההיסטוריה",
   "st.display.traces_link.open": "פתח את Traces →",
-  "st.providers.info.html": "<strong>תחילת העבודה עם מודלים מקומיים:</strong><br>הפעל <code>llama-server -m your-model.gguf --port 8080</code>, את Jan / LM Studio / Ollama / LocalAI, או את vLLM / SGLang עם שרת תואם OpenAI.<br>אין צורך במפתח API אלא אם הפעלת אימות בשרת המקומי.",
   "st.providers.filter.all": "כֹּל",
   "st.providers.filter.local": "מְקוֹמִי",
   "st.providers.filter.cloud": "עָנָן",

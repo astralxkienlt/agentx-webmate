@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': '記録された実行を並べて確認できます。トレースをオンにしているときだけ利用できます。',
   'st.display.traces_link.open': 'トレースを開く →',
 
-  'st.providers.info.html': '<strong>llama.cpp を始める：</strong><br><code>llama-server -m your-model.gguf --port 8080</code> を実行してローカルサーバーを起動します。<br>API キーは不要 — 完全にあなたのマシン上で動きます。',
   'st.providers.save': '保存',
   'st.providers.webbrain_note.body': '無料の毎日の WebBrain Cloud 利用が含まれています。リクエストは api.webbrain.one を経由します。デフォルトでは、割り当てとデバッグのためにメタデータを記録し、プロンプトテキスト、ページの内容、スクリーンショット、モデルの応答は記録しません。{privacyLink}。さらに利用するには {subscribeLink} で登録してください。請求は {accountLink} で管理できます。',
   'st.providers.webbrain_note.privacy_link': 'プライバシーポリシー',
