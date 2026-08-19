@@ -596,7 +596,6 @@ export default {
   'st.display.history_link.desc': 'Open lokaal opgeslagen gesprekken, inclusief pagina-URL\'s en gekoppelde traces...',
   'st.display.history_link.open': 'Geschiedenis openen',
   'st.display.traces_link.open': 'Traces openen →',
-  'st.providers.info.html': '<strong>Aan de slag met lokale modellen:</strong>...',
   'st.providers.filter.all': 'Alles',
   'st.providers.filter.local': 'Lokaal',
   'st.providers.filter.cloud': 'Cloud',

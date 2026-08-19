@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'ตรวจสอบการทำงานที่บันทึกไว้แบบเคียงข้างกัน ใช้ได้เฉพาะเมื่อเปิดการบันทึก Traces',
   'st.display.traces_link.open': 'เปิด Traces →',
 
-  'st.providers.info.html': '<strong>เริ่มต้นกับ llama.cpp:</strong><br>รัน <code>llama-server -m your-model.gguf --port 8080</code> เพื่อสตาร์ตเซิร์ฟเวอร์ในเครื่อง<br>ไม่ต้องใช้คีย์ API — ทำงานในเครื่องของคุณทั้งหมด',
   'st.providers.save': 'บันทึก',
   'st.providers.webbrain_note.body': 'รวมการใช้งาน WebBrain Cloud รายวันฟรีไว้แล้ว คำขอจะผ่าน api.webbrain.one โดยค่าเริ่มต้นเราจะบันทึกข้อมูลเมตาสำหรับโควตาและการแก้จุดบกพร่อง ไม่ใช่ข้อความพรอมต์ เนื้อหาหน้าเว็บ ภาพหน้าจอ หรือการตอบกลับของโมเดล {privacyLink} หากต้องการใช้งานเพิ่มเติม สมัครสมาชิกที่ {subscribeLink} จัดการการเรียกเก็บเงินที่ {accountLink}',
   'st.providers.webbrain_note.privacy_link': 'นโยบายความเป็นส่วนตัว',

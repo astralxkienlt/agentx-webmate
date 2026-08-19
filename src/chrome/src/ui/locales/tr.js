@@ -307,7 +307,6 @@ export default {
   'st.display.history_link.open': 'Geçmişi aç',
   'st.display.traces_link.open': 'İzleri aç →',
 
-  'st.providers.info.html': '<strong>llama.cpp ile başlangıç:</strong><br>Yerel bir sunucu başlatmak için <code>llama-server -m modeliniz.gguf --port 8080</code> komutunu çalıştır.<br>API anahtarı gerekmez — tamamen makinende çalışır.',
   'st.providers.save': 'Kaydet',
   'st.providers.webbrain_note.body': 'Ücretsiz günlük WebBrain Cloud kullanımı dahildir. İstekler api.webbrain.one üzerinden geçer; varsayılan olarak kota ve hata ayıklama için meta verileri kaydederiz; istem metnini, sayfa içeriğini, ekran görüntülerini veya model yanıtlarını kaydetmeyiz. {privacyLink}. Daha fazla kullanım için {subscribeLink} adresinden abone olun. Faturalandırmayı {accountLink} adresinden yönetin.',
   'st.providers.webbrain_note.privacy_link': 'Gizlilik politikası',

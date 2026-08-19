@@ -620,7 +620,6 @@ export default {
   'st.display.history_link.open': "ইতিহাস খুলুন",
   'st.display.traces_link.open': "ট্রেস খুলুন →",
 
-  'st.providers.info.html': "<strong>স্থানীয় মডেলগুলির সাথে শুরু করা:</strong><br>চালান <code>llama-server -m your-model.gguf --port 8080</code>, Jan / LM Studio / Ollama / LocalAI শুরু করুন, অথবা একটি OpenAI- সামঞ্জস্যপূর্ণ সার্ভারের সাথে vLLM / SGLang চালু করুন৷<br>আপনার স্থানীয় সার্ভার auth দিয়ে শুরু না হওয়া পর্যন্ত কোন API কী প্রয়োজন নেই।",
   'st.providers.filter.all': "সব",
   'st.providers.filter.local': "স্থানীয়",
   'st.providers.filter.cloud': "মেঘ",

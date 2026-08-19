@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'Periksa larian yang dirakam secara bersebelahan. Hanya tersedia apabila rakaman jejak dihidupkan.',
   'st.display.traces_link.open': 'Buka Jejak →',
 
-  'st.providers.info.html': '<strong>Bermula dengan llama.cpp:</strong><br>Jalankan <code>llama-server -m your-model.gguf --port 8080</code> untuk memulakan pelayan tempatan.<br>Tiada kunci API diperlukan — semuanya berjalan pada mesin anda.',
   'st.providers.save': 'Simpan',
   'st.providers.webbrain_note.body': 'Penggunaan harian percuma WebBrain Cloud disertakan. Permintaan melalui api.webbrain.one; secara lalai kami mencatat metadata untuk kuota dan penyahpepijatan, bukan teks gesaan, kandungan halaman, tangkapan skrin atau respons model. {privacyLink}. Untuk penggunaan lebih, langgan di {subscribeLink}. Urus pengebilan di {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Dasar privasi',

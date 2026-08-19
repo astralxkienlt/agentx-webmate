@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'افحص التشغيلات المسجَّلة جنبًا إلى جنب. متاح فقط عند تفعيل التتبّع.',
   'st.display.traces_link.open': 'افتح التتبّعات →',
 
-  'st.providers.info.html': '<strong>بدء التشغيل مع llama.cpp:</strong><br>شغّل <code>llama-server -m your-model.gguf --port 8080</code> لتشغيل خادم محلي.<br>لا حاجة لمفتاح API — يعمل كاملًا على جهازك.',
   'st.providers.save': 'حفظ',
   'st.providers.webbrain_note.body': 'يتضمّن الاستخدام اليومي المجاني لـ WebBrain Cloud. تمر الطلبات عبر api.webbrain.one؛ افتراضيًا نسجّل البيانات الوصفية للحصة وتصحيح الأخطاء، وليس نص المطالبات أو محتوى الصفحة أو لقطات الشاشة أو ردود النموذج. {privacyLink}. لمزيد من الاستخدام، اشترك عبر {subscribeLink}. أدِر الفوترة عبر {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'سياسة الخصوصية',

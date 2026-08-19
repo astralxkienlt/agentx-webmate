@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'Переглядайте записані запуски поряд. Доступно лише коли запис трас увімкнено.',
   'st.display.traces_link.open': 'Відкрити траси →',
 
-  'st.providers.info.html': '<strong>Швидкий старт із llama.cpp:</strong><br>Запустіть <code>llama-server -m your-model.gguf --port 8080</code>, щоб підняти локальний сервер.<br>API-ключ не потрібен — усе працює на вашій машині.',
   'st.providers.save': 'Зберегти',
   'st.providers.webbrain_note.body': 'Безкоштовне щоденне використання WebBrain Cloud включено. Запити проходять через api.webbrain.one; за замовчуванням ми записуємо метадані для квоти та налагодження, а не текст запитів, вміст сторінок, знімки екрана чи відповіді моделі. {privacyLink}. Для більшого обсягу оформіть підписку на {subscribeLink}. Керуйте оплатою на {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Політика конфіденційності',

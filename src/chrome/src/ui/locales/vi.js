@@ -593,7 +593,6 @@ export default {
   "st.display.history_link.desc": "Mở các cuộc trò chuyện đã lưu trên máy, kèm URL của trang và nhật ký chạy tương ứng nếu lúc đó bạn đã bật ghi.",
   "st.display.history_link.open": "Mở lịch sử",
   "st.display.traces_link.open": "Mở nhật ký chạy →",
-  "st.providers.info.html": "<strong>Bắt đầu với mô hình chạy trên máy:</strong><br>Chạy <code>llama-server -m your-model.gguf --port 8080</code>, mở Jan / LM Studio / Ollama / LocalAI, hoặc khởi động vLLM / SGLang kèm máy chủ tương thích OpenAI.<br>Không cần khóa API, trừ khi máy chủ của bạn bật xác thực.",
   "st.providers.filter.all": "Tất cả",
   "st.providers.filter.local": "Trên máy",
   "st.providers.filter.cloud": "Cloud",

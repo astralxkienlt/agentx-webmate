@@ -621,7 +621,6 @@ export default {
   'st.display.history_link.open': 'Open History',
   'st.display.traces_link.open': 'Open Traces →',
 
-  'st.providers.info.html': '<strong>Getting started with local models:</strong><br>Run <code>llama-server -m your-model.gguf --port 8080</code>, start Jan / LM Studio / Ollama / LocalAI, or launch vLLM / SGLang with an OpenAI-compatible server.<br>No API key needed unless your local server was started with auth.',
   'st.providers.filter.all': 'All',
   'st.providers.filter.local': 'Local',
   'st.providers.filter.cloud': 'Cloud',

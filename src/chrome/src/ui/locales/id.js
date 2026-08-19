@@ -268,7 +268,6 @@ export default {
   'st.display.traces_link.desc': 'Periksa proses yang direkam berdampingan. Hanya tersedia saat perekaman jejak aktif.',
   'st.display.traces_link.open': 'Buka Jejak →',
 
-  'st.providers.info.html': '<strong>Memulai dengan llama.cpp:</strong><br>Jalankan <code>llama-server -m your-model.gguf --port 8080</code> untuk memulai server lokal.<br>Tidak perlu kunci API — berjalan sepenuhnya di mesin Anda.',
   'st.providers.save': 'Simpan',
   'st.providers.webbrain_note.body': 'Penggunaan harian gratis WebBrain Cloud sudah termasuk. Permintaan melewati api.webbrain.one; secara default kami mencatat metadata untuk kuota dan debugging, bukan teks prompt, konten halaman, tangkapan layar, atau respons model. {privacyLink}. Untuk penggunaan lebih, berlangganan di {subscribeLink}. Kelola penagihan di {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Kebijakan privasi',

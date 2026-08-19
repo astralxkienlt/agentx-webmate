@@ -260,7 +260,6 @@ export default {
   'st.display.traces_link.desc': 'Просматривать записанные запуски бок о бок. Доступно только при включённой записи трасс.',
   'st.display.traces_link.open': 'Открыть трассы →',
 
-  'st.providers.info.html': '<strong>Быстрый старт с llama.cpp:</strong><br>Запустите <code>llama-server -m your-model.gguf --port 8080</code>, чтобы поднять локальный сервер.<br>API-ключ не нужен — всё работает на вашей машине.',
   'st.providers.save': 'Сохранить',
   'st.providers.webbrain_note.body': 'Бесплатное ежедневное использование WebBrain Cloud включено. Запросы проходят через api.webbrain.one; по умолчанию мы записываем метаданные для квоты и отладки, а не текст запросов, содержимое страниц, скриншоты или ответы модели. {privacyLink}. Для большего объёма оформите подписку на {subscribeLink}. Управляйте оплатой на {accountLink}.',
   'st.providers.webbrain_note.privacy_link': 'Политика конфиденциальности',
