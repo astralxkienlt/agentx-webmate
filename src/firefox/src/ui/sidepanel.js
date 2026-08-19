@@ -10867,6 +10867,11 @@ function messageCompletionFromElement(msgEl) {
   };
 }
 
+function messageInfoOpenedAt(msgEl) {
+  const value = Number(msgEl?.dataset?.messageInfoOpenedAt);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 let messageInfoRowId = 0;
 
 function ensureMessageInfoElements(msgEl) {
@@ -10921,7 +10926,7 @@ function renderMessageInfo(msgEl) {
     completion: messageCompletionFromElement(msgEl),
     verbose: verboseMode,
     locale: getLocale(),
-    now: Number.isFinite(msgEl.__wbMessageInfoOpenedAt) ? msgEl.__wbMessageInfoOpenedAt : Date.now(),
+    now: messageInfoOpenedAt(msgEl) ?? Date.now(),
   });
   row.replaceChildren(...pills.map((pill) => {
     const item = document.createElement('span');
@@ -10941,8 +10946,8 @@ function messageInfoClickIsInteractive(target) {
 
 function toggleMessageInfo(msgEl) {
   const open = msgEl.classList.toggle('message-info-open');
-  if (open) msgEl.__wbMessageInfoOpenedAt = Date.now();
-  else delete msgEl.__wbMessageInfoOpenedAt;
+  if (open) msgEl.dataset.messageInfoOpenedAt = String(Date.now());
+  else delete msgEl.dataset.messageInfoOpenedAt;
   ensureMessageInfoElements(msgEl).toggle.setAttribute('aria-expanded', String(open));
   renderMessageInfo(msgEl);
   schedulePersist();
@@ -10956,7 +10961,7 @@ function bindMessageInfoToggle(msgEl) {
   msgEl.removeAttribute('title');
   const { toggle } = ensureMessageInfoElements(msgEl);
   if (msgEl.classList.contains('message-info-open')) {
-    if (!Number.isFinite(msgEl.__wbMessageInfoOpenedAt)) msgEl.__wbMessageInfoOpenedAt = Date.now();
+    if (!messageInfoOpenedAt(msgEl)) msgEl.dataset.messageInfoOpenedAt = String(Date.now());
     renderMessageInfo(msgEl);
   }
   if (msgEl.__wbMessageInfoBound) return;
