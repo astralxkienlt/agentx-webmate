@@ -56,6 +56,7 @@ Legend: **Yes** = available · **-** = not available · **C** = Chrome only ·
 | `get_accessibility_tree` | Yes | Yes | Yes | Yes | - |
 | `read_page` | Yes | Yes | Yes | Yes | - |
 | `read_pdf` | Yes | No | Yes | Yes | - |
+| `read_attachment` | Yes | No | Yes | Yes | - |
 | `list_webmcp_tools` | C | No | C | C | - |
 | `execute_webmcp_tool` | No | No | C | C | - |
 | `read_page_source` | No | No | No | No | Yes |
@@ -142,6 +143,27 @@ Every invocation requires Act or Dev, fresh per-call confirmation, and the
 normal capability × registration-frame-origin permission. WebMCP currently
 requires a supporting Chrome build/page configuration; Firefox does not expose
 these tools.
+
+## Reading user attachments
+
+`read_attachment` reads MORE of a file the user attached in chat than its
+original send delivered. Ids (`att_…`) come from the `[UNTRUSTED USER
+ATTACHMENTS]` notice on the user message and resolve against the local
+claim-check store (IndexedDB, kept up to 24 hours after last use):
+
+- **Text mode** (default, ~20 000 chars per call): PDFs paginate with
+  `fromPage`/`toPage` — the default resumes right after the pages already
+  delivered — and return per-page text plus a coverage warning when pages
+  have no text layer; TXT/JSON/CSV and DOCX use the `fromChar` cursor and
+  return `next.fromChar` while more remains.
+- **Render mode** (vision models only): rasterizes scanned-PDF pages — at
+  most 4 pages per call, counted against the per-turn image budget — or
+  delivers an attached image; the images arrive on the follow-up user
+  message with untrusted framing.
+
+Like `read_pdf`, it is available in Ask (reading a file the user attached
+themselves is read-only) and excluded from the Compact tier. Results are
+untrusted file DATA and ride the `<untrusted_page_content>` wrapper.
 
 ## Dev-mode page editing and diagnostics
 

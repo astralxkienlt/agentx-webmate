@@ -12,10 +12,15 @@ diff --git a/src/ui/settings.html b/src/ui/settings.html
 diff --git a/src/ui/settings.js b/src/ui/settings.js
 --- a/src/ui/settings.js
 +++ b/src/ui/settings.js
-@@ -53,6 +53,7 @@
+@@ -53,11 +53,12 @@
  import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
  import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
  import { AUTO_GROUP_TABS_KEY } from '../tab-group-preference.js';
+ import {
+   ATTACHMENT_RETENTION_KEY,
+   formatAttachmentUsageBytes,
+   getSharedAttachmentStore,
+ } from '../media/attachment-store.js';
 +import { createAgentXCloudSettingsController } from './agentx-cloud-settings.js';
  
  const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);

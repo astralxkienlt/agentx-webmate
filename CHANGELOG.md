@@ -4,6 +4,25 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [Unreleased]
+
+### Added
+- Attachments are now delivered the best way the active model supports: PDFs become native document blocks on Anthropic models, locally extracted text (with per-page coverage warnings) everywhere else, and scanned PDFs render their first pages as images on vision models; DOCX files convert to text locally via a vendored mammoth build, and unrecognized files ride along as references the agent can read on demand.
+- Added a `read_attachment` agent tool (Ask/Mid/Full tiers) that pages through attached files by page range or character cursor, with a vision render mode for scanned pages that counts against the per-turn image budget.
+- Attached files now persist in a local IndexedDB claim-check store for up to 24 hours after last use, so composer chips survive side-panel reloads and retries re-send every file; a new Settings → Multimodal → Attachments card controls retention (24 hours or session-only), shows local usage, and deletes everything on demand.
+- Added paste-to-attach and composer drag-and-drop with a localized drop hint, plus pre-send chip hints from a background probe ("PDF · 12 pages" / scanned-PDF vision warnings).
+
+### Changed
+- A single unsupported attachment no longer blocks the whole send: every file resolves to a per-file delivery outcome shown on the message card (sent natively, sent as text, sent as rendered pages, reference, or skipped with the reason), and runtime messages now carry attachment ids plus metadata instead of multi-megabyte base64 payloads.
+- Attachment classification is now byte-first: files renamed to fake an image type are rejected, legacy `.doc` files get a dedicated message asking for `.docx`, and text encodings (UTF-8/UTF-16 BOM) are honored.
+
+### Security
+- The user-attachment notice is now sealed with a per-send random nonce, extracted document text is neutralized against forged notice/document markers and zero-width/bidi control characters before it reaches the model, and attachment display names pass a positive allowlist instead of escape-and-keep.
+- Expanded the injection corpus from 27 to 33 payloads with a document-attachment category (extracted-PDF overrides, DOCX posing as tool results, notice-forging file names, fake nonce closings, zero-width/RTL smuggling, CSV directives), all green on both browsers.
+
+### Tests
+- Added mirrored Chrome and Firefox coverage for the byte sniffer, the attachment store (TTL, per-tab lifecycle, degraded backend), the nine-row delivery matrix against real PDF/DOCX fixtures, coverage thresholds, notice nonce and neutralization seals, `read_attachment` paging/render budgets, the delivery-note budget, and the closed outcome union.
+
 ## [32.1.0] - 2026-08-16
 
 ### Added
