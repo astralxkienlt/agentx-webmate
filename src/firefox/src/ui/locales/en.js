@@ -1,6 +1,4 @@
 // English — canonical locale. Other locales inherit key names from this file.
-import apocalypseModeCopy from './apocalypse-copy.mjs';
-import emergencyCopy from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -530,10 +528,6 @@ export default {
   'st.display.search.placeholder': 'Search General settings',
   'st.display.search.empty': 'No General settings match.',
   'st.display.advanced': 'Advanced',
-  ...apocalypseModeCopy,
-  ...emergencyCopy,
-  'st.display.help_improve.label': 'Help Improve WebBrain',
-  'st.display.help_improve.desc_html': 'Allow eligible WebBrain Cloud text and tool interactions to be retained and used for evaluation, improvement, fine-tuning, and training. On by default. Turning this off permanently opts out the current conversation; turning it back on applies to the next new conversation. Screenshots and image bytes are not retained in the WebBrain improvement database. <u>Local-model and bring-your-own API requests are never collected by WebBrain.</u> <a href="https://webbrain.one/privacy" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Privacy policy →</a>',
   'st.display.clarify_timeout.label': 'Clarify timeout',
   'st.display.clarify_timeout.desc': 'How long to wait for a reply to a clarify prompt before auto-selecting the first option (or timing out if there are no options). 0 = Instant (always auto-select). Values above 1200s wait indefinitely (Off). Default 60s. Does not apply to permission or form-submit confirmations.',
   'st.display.clarify_timeout.off': 'Off',
@@ -577,11 +571,6 @@ export default {
   'st.display.auto_screenshot.every_step': 'Every step',
   'st.display.tracing.label': 'Record traces (for model comparison)',
   'st.display.tracing.desc_html': 'Persist every run (LLM requests, responses, tool calls, screenshots) into local IndexedDB so you can inspect and compare models side-by-side. Opens in a separate Traces tab. Off by default because it adds disk writes per step. <a href="traces.html" target="_blank" style="color:var(--accent);">Open Traces page →</a>',
-  'st.display.cost_session_limit.label': 'Cloud cost session allowance',
-  'st.display.cost_session_limit.desc': 'Stops eligible cloud and router runs before another paid model call once this session reaches the reported or estimated cost allowance. Default $10.',
-  'st.display.cost_total_limit.label': 'Cloud cost total allowance',
-  'st.display.cost_total_limit.desc': 'Tracks reported or estimated spend for eligible cloud and router model calls across the extension and stops further paid calls at the allowance.',
-  'st.display.cost_reset': 'Reset spend',
   'st.display.strict_secret.label': 'Strict secret handling',
   'st.display.strict_secret.desc': 'Refuse to quote credentials (passwords, API keys, tokens, OTPs) in summaries or assistant text — even when you explicitly ask for them. Useful if you regularly share trace files or screen-share. Off by default: webbrain runs in your own browser, so by default the agent shows you values you ask for and just keeps `done` summaries tidy.',
   'st.display.allow_local_network.label': 'Allow agent to access local network',
@@ -996,6 +985,4 @@ export default {
   "sp.workflows.healing.keep": "Keep the saved target",
   "sp.workflows.healing.saved": "Updated {count} locator(s) in “{name}”.",
   "sp.workflows.healing.not_saved": "The approved locator for “{name}” was not saved because the workflow changed or verification was inconclusive.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

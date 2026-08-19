@@ -1,8 +1,6 @@
 // Filipino / Tagalog (tl).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Awtomatikong na-compact ang konteksto",
   'sp.context_compacted_detail': "{summarized} naunang mensahe ang binuod · {remaining} ang itinago",
   'ob.tokens.context_hint': "Para sa maaasahang pagpapatakbo ng agent, pumili ng modelo na may context window na hindi bababa sa 16k token. Maaaring gumana ang 8k kapag naka-enable ang Compact mode; masyadong maliit ang 4k para sa set ng mga tool. Awtomatikong kino-compact ng WebBrain ang usapan habang papalapit ito sa limitasyon ng window.",
-  'st.display.cost_session_limit.label': "Alawans sa gastos ng cloud kada session",
-  'st.display.cost_session_limit.desc': "Hihinto ang mga cloud at OpenRouter na pagpapatakbo bago ang susunod na bayad na tawag sa modelo kapag naabot ng session na ito ang iniulat o tinatayang alawans sa gastos. Default na $10.",
-  'st.display.cost_total_limit.label': "Kabuuang alawans sa gastos ng cloud",
-  'st.display.cost_total_limit.desc': "Sinusubaybayan ang iniulat o tinatayang paggastos sa cloud/OpenRouter na mga modelo sa buong extension at hihinto sa karagdagang bayad na tawag kapag naabot ang alawans. Hindi binibilang ang mga lokal na provider.",
-  'st.display.cost_reset': "I-reset ang gastos",
   'st.provider.field.prompt_tier': "Antas ng prompt",
   'st.provider.field.prompt_tier.compact': "Compact — napakaliit na modelo (wala pang 8B): pinakakaunting tool, maiikling tuntunin",
   'st.provider.field.prompt_tier.mid': "Mid — maliit/lokal na modelo (~9B–32B): mas magaan na prompt, nabawasang tool (default para sa lokal)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'Maghanap sa General na mga setting',
   'st.display.search.empty': 'Walang tugmang General na mga setting.',
   'st.display.advanced': 'Advanced',
-  ...getApocalypseModeCopy('tl'),
-  ...getEmergencyBoxCopy('tl'),
   'st.display.clarify_timeout.label': 'Timeout ng clarify',
   'st.display.clarify_timeout.desc': 'Gaano katagal maghintay ng sagot sa clarify bago awtomatikong piliin ang unang opsyon (o mag-timeout kung walang opsyon). 0 = Agad (palaging auto-select). Higit sa 1200s ay walang hangganan (Naka-off). Default 60s. Hindi para sa permission o form-submit confirmations.',
   'st.display.clarify_timeout.off': 'Naka-off',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "Wala pang mae-export — magsimula muna ng usapan.",
   "sp.export_traces.partial": "Na-export ang tool chain, pero may mga turn event na hindi mabasa.",
   "sp.export_traces.truncated": "Na-export ang tool chain. Maaaring mawala ang mga lumang turn kung marami ang trace ng usapang ito.",
-  "st.display.help_improve.label": "Tumulong na Pahusayin ang WebBrain",
-  "st.display.help_improve.desc_html": "Payagan ang piling interaksyon sa WebBrain Cloud na mapanatili at magamit para sa pagsusuri, pagpapahusay, fine-tuning, at training. Naka-on bilang default. I-off ito upang hindi magamit ang mga susunod na interaksyon sa Cloud para sa mga layuning iyon. <u>Hindi kailanman kinokolekta ng WebBrain ang mga request sa lokal na modelo o mga request na direktang ipinadala gamit ang sarili mong API credential.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Patakaran sa privacy →</a>",
   "st.providers.webbrain_data_use.body": "Kasama ang libreng pang-araw-araw na paggamit ng WebBrain Cloud. Habang naka-on bilang default ang Tumulong na Pahusayin ang WebBrain, maaaring panatilihin at gamitin ang piling pag-uusap sa Cloud para sa pagsusuri, pagpapahusay, fine-tuning, at training. I-off ito sa General upang hindi maisama ang mga susunod na interaksyon sa Cloud sa mga paggamit na iyon. <u>Hindi kailanman kinokolekta ng WebBrain ang mga request sa lokal na modelo o mga request na direktang ipinadala gamit ang sarili mong API credential.</u> {privacyLink}. Para sa higit pang paggamit, mag-subscribe sa {subscribeLink}. Pamahalaan ang billing sa {accountLink}.",
   'st.providers.compat.title': 'Advanced na compatibility ng modelo',
   'st.providers.compat.blurb': 'Iwanan sa Auto maliban kung ang modelo o endpoint ay may ibang request contract.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "Panatilihin ang naka-save na target",
   "sp.workflows.healing.saved": "Na-update ang {count} locator sa “{name}”.",
   "sp.workflows.healing.not_saved": "Hindi na-save ang inaprubahang locator para sa “{name}” dahil nagbago ang workflow o hindi tiyak ang beripikasyon.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

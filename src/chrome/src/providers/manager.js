@@ -5,17 +5,6 @@ import { AnthropicProvider, AnthropicOAuthProvider } from './anthropic.js';
 import { VertexAnthropicProvider } from './vertex-anthropic.js';
 import { signOutClaude } from './oauth-claude.js';
 import { AwsBedrockProvider } from './aws-bedrock.js';
-import {
-  WebGPUProvider,
-  WebGPUVisionProvider,
-  WEBGPU_DTYPE,
-  WEBGPU_MODEL_ID,
-  WEBGPU_VISION_AUTO_SELECTED_KEY,
-  WEBGPU_VISION_DOWNLOAD_STATE_KEY,
-  WEBGPU_VISION_ENABLED_KEY,
-  WEBGPU_VISION_MODEL_ID,
-  webgpuModelDisplayName,
-} from './webgpu.js';
 import { ADDITIONAL_PROVIDER_DEFAULTS } from './provider-catalog.js';
 // Static, NOT dynamic: this module runs in the MV3 service worker, where
 // `await import()` throws "import() is disallowed on ServiceWorkerGlobalScope".
@@ -63,12 +52,11 @@ const LOCAL_MODEL_LIST_PROVIDER_IDS = ['llamacpp', 'ollama', 'lmstudio', 'jan', 
 const WEBBRAIN_CLOUD_CONTEXT_WINDOW = 1000000;
 const WEBBRAIN_CLOUD_LEGACY_CONTEXT_WINDOW = 256000;
 const WEBBRAIN_DEVICE_GUID_KEY = 'webbrainDeviceGuid';
-const HELP_IMPROVE_WEBBRAIN_KEY = 'helpImproveWebBrain';
 const OPENROUTER_DEFAULT_MODEL = 'openrouter/free';
 const OPENROUTER_LEGACY_DEFAULT_MODEL = 'stepfun/step-3.7-flash';
 const OPENAI_DEFAULT_MODEL = 'gpt-5.6-terra';
 const OPENAI_LEGACY_DEFAULT_MODEL = 'gpt-5.5';
-const SUPPORTED_PROVIDER_TYPES = new Set(['llamacpp', 'webgpu', 'openai', 'azure_openai', 'aws_bedrock', 'anthropic', 'anthropic_oauth', 'vertex_anthropic']);
+const SUPPORTED_PROVIDER_TYPES = new Set(['llamacpp', 'openai', 'azure_openai', 'aws_bedrock', 'anthropic', 'anthropic_oauth', 'vertex_anthropic']);
 const SAFE_PROVIDER_ID_RE = /^[A-Za-z0-9_-]+$/;
 const ROUTER_PROVIDER_IDS = ['openrouter', 'cloudflare', 'nvidia', 'groq', 'huggingface', 'fireworks', 'together'];
 const PROVIDER_CREDENTIAL_KEYS = ['apiKey', 'accessKeyId', 'secretAccessKey', 'sessionToken'];
@@ -127,7 +115,7 @@ export class ProviderManager {
    * defaults do not stay visible forever for existing users.
    */
   async load() {
-    const data = await chrome.storage.local.get(['providers', 'activeProvider', WEBBRAIN_DEVICE_GUID_KEY, HELP_IMPROVE_WEBBRAIN_KEY]);
+    const data = await chrome.storage.local.get(['providers', 'activeProvider', WEBBRAIN_DEVICE_GUID_KEY]);
     const rawStoredOllama = data.providers?.ollama;
     const ollamaVisionConfigMigrated = !!rawStoredOllama && (
       !OLLAMA_VISION_MODES.has(rawStoredOllama.visionMode)
@@ -199,14 +187,9 @@ export class ProviderManager {
     if (hadLegacyClaudeSubscription) await signOutClaude();
     if (configs[WEBBRAIN_CLOUD_PROVIDER_ID]) {
       configs[WEBBRAIN_CLOUD_PROVIDER_ID].deviceGuid = await this._getDeviceGuid(data[WEBBRAIN_DEVICE_GUID_KEY]);
-      configs[WEBBRAIN_CLOUD_PROVIDER_ID].helpImproveWebBrain = data[HELP_IMPROVE_WEBBRAIN_KEY] !== false;
     }
     this.activeProviderId = legacyActiveProviderId || WEBBRAIN_CLOUD_PROVIDER_ID;
     if (!configs[this.activeProviderId]) this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
-    if (this.activeProviderId === 'webgpu') {
-      this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
-      providerStateMigrated = true;
-    }
     if (this.activeProviderId !== WEBBRAIN_CLOUD_PROVIDER_ID && configs[this.activeProviderId]?.configured !== true) {
       this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
       providerStateMigrated = true;
@@ -381,21 +364,6 @@ export class ProviderManager {
         apiKey: '',
         requiresApiKey: true,
         supportsAskStreaming: true,
-        supportsVision: false,
-        enabled: true,
-      },
-      webgpu: {
-        type: 'webgpu',
-        category: 'local',
-        label: 'WebGPU (In-browser)',
-        providerName: 'webgpu',
-        baseUrl: '',
-        model: WEBGPU_MODEL_ID,
-        device: 'webgpu',
-        dtype: WEBGPU_DTYPE,
-        contextWindow: 16384,
-        promptTier: 'compact',
-        supportsAskStreaming: false,
         supportsVision: false,
         enabled: true,
       },
@@ -804,7 +772,7 @@ export class ProviderManager {
   }
 
   _canDuplicateProvider(id, config = this.providers.get(id)?.config) {
-    return !!config && !config.duplicateOf && id !== WEBBRAIN_CLOUD_PROVIDER_ID && config.type !== 'webgpu';
+    return !!config && !config.duplicateOf && id !== WEBBRAIN_CLOUD_PROVIDER_ID;
   }
 
   _isValidDuplicateConfig(id, config, configs) {
@@ -829,8 +797,8 @@ export class ProviderManager {
    */
   static categoryFor(id, config) {
     if (config && config.category) return config.category;
-    if (config?.type === 'llamacpp' || config?.type === 'webgpu') return 'local';
-    if (['llamacpp', 'ollama', 'lmstudio', 'jan', 'vllm', 'sglang', 'localai', 'gpt4all', 'local_openai_proxy', 'webgpu'].includes(id)) return 'local';
+    if (config?.type === 'llamacpp') return 'local';
+    if (['llamacpp', 'ollama', 'lmstudio', 'jan', 'vllm', 'sglang', 'localai', 'gpt4all', 'local_openai_proxy'].includes(id)) return 'local';
     if (ROUTER_PROVIDER_IDS.includes(id)) return 'router';
     return 'cloud';
   }
@@ -867,8 +835,6 @@ export class ProviderManager {
     switch (normalizedConfig.type) {
       case 'llamacpp':
         return new LlamaCppProvider(normalizedConfig);
-      case 'webgpu':
-        return new WebGPUProvider(normalizedConfig);
       case 'openai':
         return new OpenAICompatibleProvider(normalizedConfig);
       case 'azure_openai':
@@ -1132,19 +1098,12 @@ export class ProviderManager {
   }
 
   /**
-   * Get a dedicated vision provider. `visionModel` remains the portable,
-   * synced OpenAI-compatible endpoint; the Chrome-only WebGPU selection is a
-   * separate local preference so toggling it never destroys that endpoint.
+   * Get a dedicated vision provider from the portable, synced
+   * OpenAI-compatible endpoint the user configured under Multimodal.
    */
   async getVisionProvider() {
     try {
-      const stored = await chrome.storage.local.get(['visionModel', WEBGPU_VISION_ENABLED_KEY]);
-      const { visionModel } = stored;
-      // Accept the short-lived legacy shape written by early PR builds. The
-      // settings page migrates it to the dedicated flag when opened.
-      if (stored[WEBGPU_VISION_ENABLED_KEY] === true || visionModel?.type === 'webgpu') {
-        return new WebGPUVisionProvider();
-      }
+      const { visionModel } = await chrome.storage.local.get('visionModel');
       if (!visionModel) return null;
       if (!visionModel.baseUrl || !visionModel.model) return null;
       return new OpenAICompatibleProvider({
@@ -1166,130 +1125,6 @@ export class ProviderManager {
     }
   }
 
-  /** Release local vision memory without deleting the browser's model cache. */
-  async disposeWebgpuVisionRuntime() {
-    try {
-      // Do not create an offscreen document merely to dispose a worker that
-      // cannot exist. Older Chrome builds may not expose hasDocument(), in
-      // which case dispatching is the safest fallback.
-      const existsPromise = chrome.offscreen?.hasDocument?.();
-      const exists = existsPromise ? await existsPromise.catch(() => null) : null;
-      if (exists === false) return { ok: true, disposed: false };
-      return await new WebGPUVisionProvider().dispose();
-    } catch (error) {
-      return { ok: false, error: error?.message || String(error) };
-    }
-  }
-
-  /** Enable the Chrome-only local vision fallback and start its durable cache fill. */
-  async enableAndPreloadWebgpuVision({ automatic = true } = {}) {
-    const provider = new WebGPUVisionProvider();
-    const stored = await chrome.storage.local.get([
-      WEBGPU_VISION_ENABLED_KEY,
-      WEBGPU_VISION_DOWNLOAD_STATE_KEY,
-    ]);
-    const wasEnabled = stored[WEBGPU_VISION_ENABLED_KEY] === true;
-    const probe = await provider.testConnection();
-    if (!probe.ok) return probe;
-
-    const automaticallySelected = automatic && !wasEnabled;
-    if (automaticallySelected) {
-      await chrome.storage.local.set({
-        [WEBGPU_VISION_ENABLED_KEY]: true,
-        [WEBGPU_VISION_AUTO_SELECTED_KEY]: true,
-      });
-    } else {
-      if (!wasEnabled) await chrome.storage.local.set({ [WEBGPU_VISION_ENABLED_KEY]: true });
-      // Any user-triggered Start or Resume adopts the selection explicitly,
-      // even when an earlier automatic preload had already enabled it.
-      if (!automatic) await chrome.storage.local.remove(WEBGPU_VISION_AUTO_SELECTED_KEY);
-    }
-
-    const state = stored[WEBGPU_VISION_DOWNLOAD_STATE_KEY];
-    if (state?.status === 'ready' && state?.modelId === WEBGPU_VISION_MODEL_ID) {
-      if (automaticallySelected) await chrome.storage.local.remove(WEBGPU_VISION_AUTO_SELECTED_KEY);
-      return { ok: true, started: false, ready: true };
-    }
-
-    const result = await provider.preload();
-    if (!result.ok && automaticallySelected) {
-      await chrome.storage.local.remove([
-        WEBGPU_VISION_ENABLED_KEY,
-        WEBGPU_VISION_AUTO_SELECTED_KEY,
-      ]);
-    }
-    return result;
-  }
-
-  async startWebgpuVisionDownload() {
-    return this.enableAndPreloadWebgpuVision({ automatic: false });
-  }
-
-  async pauseWebgpuVisionDownload() {
-    return new WebGPUVisionProvider().pauseDownload();
-  }
-
-  async stopWebgpuVisionDownload() {
-    const stored = await chrome.storage.local.get('visionModel');
-    const keys = [WEBGPU_VISION_ENABLED_KEY, WEBGPU_VISION_AUTO_SELECTED_KEY];
-    if (stored.visionModel?.type === 'webgpu') keys.push('visionModel');
-    // Disable selection before waiting for the serialized cache cleanup so a
-    // concurrent screenshot cannot silently recreate the removed download.
-    await chrome.storage.local.remove(keys);
-    return new WebGPUVisionProvider().stopDownload();
-  }
-
-  _webgpuProvider() {
-    const provider = this.providers.get('webgpu');
-    if (!(provider instanceof WebGPUProvider)) throw new Error('WebGPU provider is unavailable.');
-    return provider;
-  }
-
-  async getWebgpuDownloadStatus() {
-    return this._webgpuProvider().downloadStatus();
-  }
-
-  /** Configure the fixed Apocalypse text model and start or resume its cache fill. */
-  async enableAndStartWebgpuTextDownload() {
-    try {
-      await this.updateProvider('webgpu', {
-        model: WEBGPU_MODEL_ID,
-        dtype: WEBGPU_DTYPE,
-        contextWindow: 16384,
-        promptTier: 'compact',
-      });
-      const provider = this._webgpuProvider();
-      const probe = await provider.testConnection();
-      if (!probe.ok) return probe;
-
-      const status = await provider.downloadStatus();
-      if (status.ready === true || ['downloading', 'stopping'].includes(status.status)) {
-        return { ...status, ok: true, started: false };
-      }
-
-      const result = await provider.startDownload();
-      return {
-        ...result,
-        ok: true,
-        started: result?.status === 'downloading',
-      };
-    } catch (error) {
-      return { ok: false, error: error?.message || String(error) };
-    }
-  }
-
-  async startWebgpuDownload() {
-    return this._webgpuProvider().startDownload();
-  }
-
-  async pauseWebgpuDownload() {
-    return this._webgpuProvider().pauseDownload();
-  }
-
-  async stopWebgpuDownload() {
-    return this._webgpuProvider().stopDownload();
-  }
-
   /**
    * Switch the active provider.
    */
@@ -1297,31 +1132,8 @@ export class ProviderManager {
     if (!this.providers.has(id)) {
       throw new Error(`Provider not found: ${id}`);
     }
-    const previousProvider = this.providers.get(this.activeProviderId);
-    const nextProvider = this.providers.get(id);
-    if (nextProvider instanceof WebGPUProvider) {
-      const download = await nextProvider.downloadStatus();
-      if (!download.ready) {
-        throw new Error(`Download ${webgpuModelDisplayName(nextProvider.model)} in Apocalypse Mode > WebGPU before selecting it for chat.`);
-      }
-    }
     this.activeProviderId = id;
     await this.save();
-    if (previousProvider instanceof WebGPUProvider && !(nextProvider instanceof WebGPUProvider)) {
-      try {
-        // Avoid creating the shared offscreen document just to dispose a model
-        // that was never loaded. Older Chrome builds may not expose
-        // hasDocument(), in which case dispatching is the safest fallback.
-        const existsPromise = chrome.offscreen?.hasDocument?.();
-        const exists = existsPromise ? await existsPromise.catch(() => null) : null;
-        if (exists !== false) {
-          const result = await previousProvider.dispose();
-          if (!result?.ok) console.warn('[providers] WebGPU dispose failed:', result?.error || 'unknown error');
-        }
-      } catch (error) {
-        console.warn('[providers] WebGPU dispose failed:', error?.message || error);
-      }
-    }
   }
 
   /**
@@ -1531,10 +1343,7 @@ export class ProviderManager {
     } catch (error) {
       return { ok: false, error: error.message };
     }
-    const isLocalWebgpu = provider.name === 'webgpu-vision';
-    const probePrompt = isLocalWebgpu
-      ? 'The image contains three solid vertical color panels. Name their colors from left to right. Reply with only the three color names.'
-      : 'Read the three-character black code centered in the attached image. Reply with only that code.';
+    const probePrompt = 'Read the three-character black code centered in the attached image. Reply with only that code.';
     const messages = [{
       role: 'user',
       content: [
@@ -1578,16 +1387,7 @@ export class ProviderManager {
     if (!probeText) {
       return { ok: false, error: 'Vision model returned no visible description after the image probe.' };
     }
-    const normalizedProbeText = probeText
-      .toLowerCase()
-      .replace(/\b(?:navy|azure)\b/g, 'blue')
-      .replace(/\bgold(?:en)?\b/g, 'yellow');
-    const yellowAt = normalizedProbeText.indexOf('yellow');
-    const blueAt = normalizedProbeText.indexOf('blue');
-    const redAt = normalizedProbeText.indexOf('red');
-    const passed = isLocalWebgpu
-      ? yellowAt >= 0 && blueAt > yellowAt && redAt > blueAt
-      : /\bWB7\b/i.test(probeText);
+    const passed = /\bWB7\b/i.test(probeText);
     if (!passed) {
       const observed = probeText.replace(/\s+/g, ' ').slice(0, 120);
       return {

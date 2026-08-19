@@ -1,8 +1,6 @@
 // Turkish (tr).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Bağlam otomatik olarak sıkıştırıldı",
   'sp.context_compacted_detail': "{summarized} önceki mesaj özetlendi · {remaining} korundu",
   'ob.tokens.context_hint': "Güvenilir aracı çalıştırmaları için en az 16k token bağlam penceresine sahip bir model seçin. 8k, Kompakt mod etkinken çalışabilir; 4k, araç seti için fazla küçüktür. WebBrain, pencere sınırına yaklaştıkça konuşmayı otomatik olarak sıkıştırır.",
-  'st.display.cost_session_limit.label': "Bulut maliyeti oturum bütçesi",
-  'st.display.cost_session_limit.desc': "Bu oturum, bildirilen veya tahmini maliyet bütçesine ulaştığında, başka bir ücretli model çağrısından önce bulut ve OpenRouter çalıştırmalarını durdurur. Varsayılan: 10 $.",
-  'st.display.cost_total_limit.label': "Bulut maliyeti toplam bütçesi",
-  'st.display.cost_total_limit.desc': "Uzantı genelinde bildirilen veya tahmini bulut/OpenRouter model harcamasını izler ve bütçeye ulaşıldığında ücretli çağrıları durdurur. Yerel sağlayıcılar sayılmaz.",
-  'st.display.cost_reset': "Harcamayı sıfırla",
   'st.provider.field.prompt_tier': "İstem düzeyi",
   'st.provider.field.prompt_tier.compact': "Kompakt — çok küçük modeller (8B altı): en az araç, kısa kurallar",
   'st.provider.field.prompt_tier.mid': "Orta — küçük/yerel modeller (~9B–32B): daha yalın istem, azaltılmış araçlar (yerel için varsayılan)",
@@ -685,8 +678,6 @@ export default {
   'st.display.search.placeholder': 'Genel ayarları ara',
   'st.display.search.empty': 'Eşleşen Genel ayar yok.',
   'st.display.advanced': 'Gelişmiş',
-  ...getApocalypseModeCopy('tr'),
-  ...getEmergencyBoxCopy('tr'),
   'st.display.clarify_timeout.label': 'Açıklama zaman aşımı',
   'st.display.clarify_timeout.desc': 'Açıklama sorusuna yanıt için ne kadar bekleneceği; süre dolunca ilk seçenek otomatik seçilir (seçenek yoksa zaman aşımı). 0 = Anında (her zaman otomatik seç). 1200 sn üzeri = süresiz bekle (Kapalı). Varsayılan 60 sn. İzin ve form gönderim onaylarına uygulanmaz.',
   'st.display.clarify_timeout.off': 'Kapalı',
@@ -910,8 +901,6 @@ export default {
   "sp.export_traces.no_conversation": "Henüz dışa aktarılacak bir şey yok — önce bir konuşma başlatın.",
   "sp.export_traces.partial": "Araç zinciri dışa aktarıldı, ancak bazı tur olayları okunamadı.",
   "sp.export_traces.truncated": "Araç zinciri dışa aktarıldı. Bu konuşmanın çok izi varsa eski turlar eksik olabilir.",
-  "st.display.help_improve.label": "WebBrain’i İyileştirmeye Yardım Et",
-  "st.display.help_improve.desc_html": "Seçili WebBrain Cloud etkileşimlerinin saklanmasına ve değerlendirme, iyileştirme, ince ayar ve eğitim için kullanılmasına izin verin. Varsayılan olarak açıktır. Gelecekteki Cloud etkileşimlerinin bu amaçlarla kullanılmasını önlemek için kapatın. <u>Yerel model istekleri ve kendi API kimlik bilgilerinizle gönderilen istekler WebBrain tarafından hiçbir zaman toplanmaz.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Gizlilik politikası →</a>",
   "st.providers.webbrain_data_use.body": "Ücretsiz günlük WebBrain Cloud kullanımı dahildir. WebBrain’i İyileştirmeye Yardım Et varsayılan olarak açıkken, seçili Cloud konuşmaları değerlendirme, iyileştirme, ince ayar ve eğitim için saklanabilir ve kullanılabilir. Gelecekteki Cloud etkileşimlerini bu kullanımların dışında tutmak için Genel bölümünden kapatın. <u>Yerel model istekleri ve kendi API kimlik bilgilerinizle gönderilen istekler WebBrain tarafından hiçbir zaman toplanmaz.</u> {privacyLink}. Daha fazla kullanım için {subscribeLink} adresinden abone olun. Faturalandırmayı {accountLink} adresinden yönetin.",
   'st.providers.compat.title': 'Gelişmiş model uyumluluğu',
   'st.providers.compat.blurb': 'Model veya uç nokta farklı bir istek sözleşmesi belgelemedikçe bunları Otomatik bırakın.',
@@ -973,6 +962,4 @@ export default {
   "sp.workflows.healing.keep": "Kayıtlı hedefi koru",
   "sp.workflows.healing.saved": "“{name}” içinde {count} bulucu güncellendi.",
   "sp.workflows.healing.not_saved": "İş akışı değiştiği veya doğrulama kesin olmadığı için “{name}” için onaylanan bulucu kaydedilmedi.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

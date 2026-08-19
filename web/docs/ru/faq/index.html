@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ru" dir="ltr" data-theme="dark">
+<html lang="ru" dir="ltr" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Часто задаваемые вопросы — WebBrain</title>
   <meta name="description" content="Краткие ответы о настройке, моделях, оплате, безопасности и работе WebBrain в браузере.">
   <link rel="canonical" href="https://webbrain.one/docs/ru/faq/">
-  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/faq/">
+  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/en/faq/">
   <link rel="alternate" hreflang="es" href="https://webbrain.one/docs/es/faq/">
   <link rel="alternate" hreflang="fr" href="https://webbrain.one/docs/fr/faq/">
   <link rel="alternate" hreflang="tr" href="https://webbrain.one/docs/tr/faq/">
@@ -23,7 +23,7 @@
   <link rel="alternate" hreflang="he" href="https://webbrain.one/docs/he/faq/">
   <link rel="alternate" hreflang="hi" href="https://webbrain.one/docs/hi/faq/">
   <link rel="alternate" hreflang="pt" href="https://webbrain.one/docs/pt/faq/">
-  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/vi/faq/">
+  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/faq/">
   <link rel="alternate" hreflang="bn" href="https://webbrain.one/docs/bn/faq/">
   <link rel="alternate" hreflang="fa" href="https://webbrain.one/docs/fa/faq/">
   <link rel="alternate" hreflang="nl" href="https://webbrain.one/docs/nl/faq/">
@@ -36,8 +36,8 @@
   <meta property="og:image" content="https://webbrain.one/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/favicon.png">
-  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'dark'}catch(_){}</script>
-  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260809">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'light'}catch(_){}</script>
+  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260818">
   <!-- Plausible analytics: start -->
   <!-- Privacy-friendly analytics by Plausible -->
   <script async src="https://plausible.io/js/pa-yWGfwxkkKSVs-eTuaKYpy.js"></script>
@@ -114,14 +114,6 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "По состоянию на 21 апреля 2026 главная рекомендация — Qwen 3.6 35B. Почему: в нашем vision-бенчмарке (vision-model-shootout) она обошла Gemma 4 на понимании скриншотов и при этом остаётся практичной для локального инференса. Для потребительских GPU идеален RTX 5090, а RTX 4090 обычно подходит при INT4 AutoRound-квантизации через Intel/Qwen3.6-35B-A3B-int4-AutoRound. Для максимальной скорости рекомендуем серверить через vLLM. Пример команды: python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{\"image\": 4, \"video\": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '[\"*\"]' --speculative-config '{\"method\": \"dflash\", \"model\": \"z-lab/Qwen3.6-35B-A3B-DFlash\", \"num_speculative_tokens\": 15}' --attention-backend flash_attn DFlash speculative decoding — опционально."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Почему WebGPU доступен только в режиме апокалипсиса?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Мы пока не считаем текстовый вывод через WebGPU в браузере достаточно качественным для большинства пользователей и не хотим, чтобы вам приходилось мириться с плохим опытом. Если вы хотите локально использовать ту же модель LFM2.5 2.6B, запустите вывод на своем компьютере через llama.cpp или Ollama и подключите WebBrain к этой локальной конечной точке вместо использования WebGPU. Резервный механизм компьютерного зрения через WebGPU остается доступным, потому что его модель значительно меньше и используется лишь изредка."
       }
     },
     {
@@ -483,7 +475,7 @@
       <nav class="top-nav" aria-label="Документация">
         <a href="/docs/">Документация</a>
         <a href="/blog/">Блог</a>
-        <a href="https://github.com/webbrain-one/webbrain">GitHub</a>
+        <a href="https://github.com/astralxkienlt/agentx-webmate">GitHub</a>
       </nav>
       <div class="header-tools">
         <label class="faq-language">
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>Модели и локальная настройка</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>Можно ли пользоваться WebBrain полностью офлайн?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>Какая модель рекомендуется в первую очередь?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p>По состоянию на <strong>21 апреля 2026</strong> главная рекомендация — <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a>. Почему: в нашем vision-бенчмарке (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>) она обошла Gemma 4 на понимании скриншотов и при этом остаётся практичной для локального инференса.</p><p>Для потребительских GPU идеален RTX 5090, а RTX 4090 обычно подходит при INT4 AutoRound-квантизации через <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a>.</p><p>Для максимальной скорости рекомендуем серверить через <strong>vLLM</strong>. Пример команды:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculative decoding — опционально.</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>Почему WebGPU доступен только в режиме апокалипсиса?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>Мы пока не считаем текстовый вывод через WebGPU в браузере достаточно качественным для большинства пользователей и не хотим, чтобы вам приходилось мириться с плохим опытом. Если вы хотите локально использовать ту же модель LFM2.5 2.6B, запустите вывод на своем компьютере через <strong>llama.cpp</strong> или <strong>Ollama</strong> и подключите WebBrain к этой локальной конечной точке вместо использования WebGPU.</p><p>Резервный механизм компьютерного зрения через WebGPU остается доступным, потому что его модель значительно меньше и используется лишь изредка.</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>Получаю «Failed to fetch» при подключении к локальному LLM-серверу (vLLM, Ollama, llama.cpp) в моей сети</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -676,7 +664,7 @@
   </div>
 
   <footer class="site-footer">
-    <div class="footer-inner"><span>WebBrain · Часто задаваемые вопросы</span><div class="footer-links"><a href="/docs/">Документация</a><a href="/privacy">Политика конфиденциальности</a><a href="https://github.com/webbrain-one/webbrain/issues">Сообщить о баге</a></div></div>
+    <div class="footer-inner"><span>WebBrain · Часто задаваемые вопросы</span><div class="footer-links"><a href="/docs/">Документация</a><a href="/privacy">Политика конфиденциальности</a><a href="https://github.com/astralxkienlt/agentx-webmate/issues">Сообщить о баге</a></div></div>
   </footer>
 
   <script>
@@ -685,7 +673,7 @@
       const themeButton = document.querySelector('[data-theme-toggle]');
       const sidebarButton = document.querySelector('[data-sidebar-toggle]');
       const languageSelect = document.querySelector('[data-faq-language]');
-      const languageRoutes = Object.freeze({"en":"/docs/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/vi/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
+      const languageRoutes = Object.freeze({"en":"/docs/en/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
       const searchInput = document.querySelector('[data-faq-search]');
       const emptyState = document.querySelector('[data-faq-empty]');
       const topics = Array.from(document.querySelectorAll('[data-faq-topic]'));

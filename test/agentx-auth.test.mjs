@@ -221,7 +221,6 @@ test('AgentX provider sends only model-key bearer authentication', () => {
   assert.equal(headers.Authorization, 'Bearer sk-model-key');
   assert.equal(headers['X-WebBrain-Device-Id'], undefined);
   assert.equal(headers['X-WebBrain-Client'], undefined);
-  assert.equal(headers['X-WebBrain-Help-Improve'], undefined);
 });
 
 test('AgentX provider refuses missing or non-gateway models', () => {
@@ -1043,7 +1042,7 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.match(html, /agentx-cloud\.css/);
     assert.match(html, /agentx-cloud-vision-panel/);
     assert.match(settings, /createAgentXCloudSettingsController/);
-    assert.match(settings, /renderAgentXCloudVisionSettings/);
+    assert.match(settings, /renderAgentXCloudMultimodalSettings/);
     assert.doesNotMatch(settings, /btn-manage-billing|api\.webbrain\.one\/account/);
     assert.match(runtime, /https:\/\/brain\.dev-server\.cloud/);
     assert.match(runtime, /https:\/\/aigw\.dev-server\.cloud\/v1/);
@@ -1076,8 +1075,8 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     fs.readFile(path.join(CHROME_ROOT, 'src/recorder/host.js'), 'utf8'),
   ]);
   assert.match(transcribe, /restrictedProviderId/);
-  assert.match(transcribe, /active AgentX Cloud model is not in the gateway model list/);
-  assert.match(recorderHost, /allowedModels: activeConfig\.models/);
+  assert.match(transcribe, /Transcription blocked: choose an AgentX WebMate transcription model/);
+  assert.match(recorderHost, /allowedModels: cloudTranscription\?\.models/);
 });
 
 let failed = 0;

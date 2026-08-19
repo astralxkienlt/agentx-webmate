@@ -46,19 +46,6 @@ function withGuideNavigation(html, file) {
     generated = withFaq;
   }
 
-  const hasApocalypseModeNavigation = /<a href="\/docs\/apocalypse-mode\/"[^>]*>Apocalypse Mode<\/a>/.test(generated);
-  if (!isChinese && !hasApocalypseModeNavigation) {
-    const safetyLink = /(<a href="\/docs\/safety\/"[^>]*>[^<]*<\/a>)/;
-    const withApocalypseMode = generated.replace(
-      safetyLink,
-      '$1<a href="/docs/apocalypse-mode/">Apocalypse Mode</a>',
-    );
-    if (withApocalypseMode === generated) {
-      throw new Error(`${path.relative(REPO_ROOT, file)} is missing the safety guide navigation anchor`);
-    }
-    generated = withApocalypseMode;
-  }
-
   return generated;
 }
 

@@ -105,8 +105,8 @@ compacte la conversation à mesure qu'elle se remplit. Il existe aussi un relais
 **API cloud** — OpenAI, Anthropic Claude, Google Gemini, Azure OpenAI, AWS
 Bedrock, Mistral, DeepSeek, xAI Grok, MiniMax, Kimi, Qwen, z.ai GLM, Groq,
 Together, Cloudflare, Nvidia NIM, Hugging Face, Fireworks, OpenRouter et
-d'autres. Les Paramètres embarquent **106 cartes de fournisseurs sur Chromium**
-(105 sur Firefox), dont l'option WebGPU locale sans endpoint — voir le
+d'autres. Les Paramètres embarquent **105 cartes de fournisseurs** sur Chromium
+comme sur Firefox — voir le
 [catalogue complet](docs/fr/providers-and-models.md#catalogue-étendu-de-fournisseurs).
 
 ## Fonctionnalités

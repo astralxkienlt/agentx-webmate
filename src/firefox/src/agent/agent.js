@@ -45,7 +45,6 @@ import {
   validateFetchUrl,
   getAllowLocalNetwork,
 } from '../network/network-tools.js';
-import { executeWikipediaSkillTool } from './wikipedia-offline.js';
 import {
   isPdfUrl,
   extractPdfText,
@@ -125,7 +124,6 @@ import { resolveSavedDownload } from '../download-result.js';
 import { executeChromeWebStoreSkillTool, isTrustedChromeWebStoreSkillTool } from '../chrome-web-store-release.js';
 import { shouldAutoGroupTabs } from '../tab-group-preference.js';
 
-const DEFAULT_CLOUD_COST_ALLOWANCE_USD = 10;
 const STAGED_SCREENSHOT_REDACTION_MAX_REGIONS = 400;
 const SAVED_WORKFLOW_MESSAGE_DISPATCH_TOOLS = new Set([
   'click', 'click_ax', 'iframe_click', 'execute_js', 'execute_webmcp_tool', 'upload_file',
@@ -170,15 +168,6 @@ function savedWorkflowProtectedMessagingStepIndex(workflow, startUrl = '') {
 // Planner prompt still tells the LLM to reserve 0.90+ for straightforward plans;
 // that intentional gap keeps model scoring conservative without over-pausing.
 const PLAN_REVIEW_CONFIDENCE_DEFAULT = 0.75;
-const COST_ALLOWANCE_SESSION_KEY = 'costAllowanceSessionUsd';
-const COST_ALLOWANCE_TOTAL_KEY = 'costAllowanceTotalUsd';
-// Do not inherit the legacy cloudCostSpentUsd bucket: it also contains
-// historical WebBrain Cloud estimates, which are exempt from user spend caps.
-const CLOUD_COST_SPENT_KEY = 'meteredProviderCostSpentUsd';
-const COST_EPSILON = 1e-9;
-const TOKENS_PER_MILLION = 1_000_000;
-const DEFAULT_INPUT_COST_PER_MILLION_USD = 3;
-const DEFAULT_OUTPUT_COST_PER_MILLION_USD = 15;
 const DONE_OUTCOMES = new Set(['success', 'partial', 'failed']);
 const LOCAL_CANCELLATION_ASSISTANT_RE = /^\[?Stopped by user(?: before (?:the run started|executing requested tool calls))?\.?\]?$/;
 // Appended to the system prompt of every selection-grounded model request.
@@ -447,7 +436,6 @@ export class Agent extends LoopDetector {
     this.persistTimers = new Map(); // tabId -> debounce handle
     this.abortFlags = new Map(); // tabId -> boolean
     this.currentRunId = new Map(); // tabId -> active trace runId
-    this.currentCostState = new Map(); // tabId -> active cloud/router cost state
     this.maxSteps = 130; // safety limit for autonomous loops (configurable via settings)
     // Seconds to wait on clarify() before auto-picking the first option.
     // 0 = instant auto-select; 1–1200 = wait N seconds; -1 = Off (wait forever).
@@ -509,10 +497,6 @@ export class Agent extends LoopDetector {
     // click({x, y, from_screenshot: true}) so the extension — not the model —
     // does the coordinate conversion.
     this.screenshotClickScale = new Map();
-    this.costAllowanceSessionUsd = DEFAULT_CLOUD_COST_ALLOWANCE_USD;
-    this.costAllowanceTotalUsd = DEFAULT_CLOUD_COST_ALLOWANCE_USD;
-    this.meteredProviderCostSpentUsd = 0;
-    this._costUpdateQueue = Promise.resolve();
     // Profile auto-fill (plaintext bio + throwaway password used on
     // signup forms). Loaded in background.js and refreshed live on change.
     this.profileEnabled = false;
@@ -632,15 +616,6 @@ export class Agent extends LoopDetector {
         }
         if (changes.askBeforeConsequentialActions) {
           this._skipPermissionGate = changes.askBeforeConsequentialActions.newValue === false;
-        }
-        if (changes[COST_ALLOWANCE_SESSION_KEY]) {
-          this.costAllowanceSessionUsd = this._normalizeCostLimit(changes[COST_ALLOWANCE_SESSION_KEY].newValue);
-        }
-        if (changes[COST_ALLOWANCE_TOTAL_KEY]) {
-          this.costAllowanceTotalUsd = this._normalizeCostLimit(changes[COST_ALLOWANCE_TOTAL_KEY].newValue);
-        }
-        if (changes[CLOUD_COST_SPENT_KEY]) {
-          this.meteredProviderCostSpentUsd = this._normalizeCostSpent(changes[CLOUD_COST_SPENT_KEY].newValue);
         }
       });
     } catch { /* storage API unavailable in this context */ }
@@ -1525,28 +1500,6 @@ export class Agent extends LoopDetector {
     return this._skipPermissionGate;
   }
 
-  _normalizeCostLimit(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0) return DEFAULT_CLOUD_COST_ALLOWANCE_USD;
-    return n;
-  }
-
-  _normalizeCostSpent(value) {
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }
-
-  _normalizeCostRate(value) {
-    if (value == null || value === '') return null;
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 ? n : null;
-  }
-
-  _formatUsd(value) {
-    const n = Number(value);
-    return '$' + (Number.isFinite(n) ? n : 0).toFixed(2);
-  }
-
   _isLocalIpv4Host(host) {
     if (host === 'localhost') return true;
     if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
@@ -1587,235 +1540,21 @@ export class Agent extends LoopDetector {
     }
   }
 
-  _isCostMeteredProvider(provider) {
-    const config = provider?.config || {};
-    // WebBrain Cloud is billed and allowance-controlled by the managed
-    // service, not by the user's per-provider API account. Its upstream token
-    // cost must not consume the extension's user-configured spend allowance.
-    if (config.providerName === 'webbrain-cloud') return false;
-    if (this._isLocalBaseUrl(config.baseUrl)) return false;
-    if (config.type === 'anthropic_oauth') return false;
-    return config.category === 'cloud' || config.category === 'router';
+  _isUsageLimitError(err) {
+    // WebBrain Cloud answers a spent free tier with a 402 whose message ends in
+    // "Subscribe for more usage: <url>". That is a terminal answer, so the
+    // agent must not retry it and emit a second generic error card beside the
+    // actionable Subscribe prompt.
+    return /Subscribe for more usage:\s*https?:\/\/\S+/i.test(String(err?.message || ''));
   }
 
-  _usageTokenCounts(usage) {
-    const positiveNumber = (value) => {
-      const number = Number(value ?? 0);
-      return Number.isFinite(number) && number > 0 ? number : 0;
-    };
-    const inputTokens = positiveNumber(
-      usage?.prompt_tokens ??
-      usage?.input_tokens ??
-      usage?.promptTokens ??
-      usage?.inputTokens ??
-      0
-    );
-    const outputTokens = positiveNumber(
-      usage?.completion_tokens ??
-      usage?.output_tokens ??
-      usage?.completionTokens ??
-      usage?.outputTokens ??
-      0
-    );
-    // OpenAI includes cache reads and writes in its input total. Anthropic and
-    // Bedrock report cache reads and writes separately from regular input.
-    let includedCacheReadTokens = positiveNumber(
-      usage?.prompt_tokens_details?.cached_tokens ??
-      usage?.input_tokens_details?.cached_tokens ??
-      usage?.promptTokensDetails?.cachedTokens ??
-      usage?.inputTokensDetails?.cachedTokens ??
-      0
-    );
-    let includedCacheWriteTokens = positiveNumber(
-      usage?.prompt_tokens_details?.cache_write_tokens ??
-      usage?.input_tokens_details?.cache_write_tokens ??
-      usage?.promptTokensDetails?.cacheWriteTokens ??
-      usage?.inputTokensDetails?.cacheWriteTokens ??
-      0
-    );
-    // Nested OpenAI detail counts are subsets of the input total.
-    includedCacheReadTokens = Math.min(includedCacheReadTokens, inputTokens);
-    includedCacheWriteTokens = Math.min(
-      includedCacheWriteTokens,
-      Math.max(0, inputTokens - includedCacheReadTokens)
-    );
-    const cacheReadTokens = positiveNumber(
-      usage?.cache_read_input_tokens ??
-      usage?.cacheReadInputTokens ??
-      0
-    );
-    const cacheDetails = Array.isArray(usage?.cacheDetails)
-      ? usage.cacheDetails
-      : (Array.isArray(usage?.cache_details) ? usage.cache_details : []);
-    const bedrockCacheWriteTokens = (ttl) => cacheDetails.reduce((sum, detail) => {
-      if (detail?.ttl !== ttl) return sum;
-      return sum + positiveNumber(detail?.inputTokens ?? detail?.input_tokens);
-    }, 0);
-    const cacheWrite5mTokens = Math.max(positiveNumber(
-      usage?.cache_creation?.ephemeral_5m_input_tokens ??
-      usage?.cacheCreation?.ephemeral5mInputTokens ??
-      0
-    ), bedrockCacheWriteTokens('5m'));
-    const cacheWrite1hTokens = Math.max(positiveNumber(
-      usage?.cache_creation?.ephemeral_1h_input_tokens ??
-      usage?.cacheCreation?.ephemeral1hInputTokens ??
-      0
-    ), bedrockCacheWriteTokens('1h'));
-    const reportedCacheWriteTokens = positiveNumber(
-      usage?.cache_creation_input_tokens ??
-      usage?.cache_write_input_tokens ??
-      usage?.cacheCreationInputTokens ??
-      usage?.cacheWriteInputTokens ??
-      0
-    );
-    return {
-      inputTokens,
-      outputTokens,
-      includedCacheReadTokens,
-      includedCacheWriteTokens,
-      cacheReadTokens,
-      cacheWriteTokens: Math.max(reportedCacheWriteTokens, cacheWrite5mTokens + cacheWrite1hTokens),
-      cacheWrite5mTokens,
-      cacheWrite1hTokens,
-    };
-  }
-
-  _estimateUsageCostUsd(provider, usage) {
-    const config = provider?.config || {};
-    const inputRate = this._normalizeCostRate(config.inputCostPerMillionUsd) ?? DEFAULT_INPUT_COST_PER_MILLION_USD;
-    const outputRate = this._normalizeCostRate(config.outputCostPerMillionUsd) ?? DEFAULT_OUTPUT_COST_PER_MILLION_USD;
-    const cacheReadRate = this._normalizeCostRate(config.cacheReadCostPerMillionUsd) ?? inputRate;
-    const cacheWriteRate = this._normalizeCostRate(config.cacheWriteCostPerMillionUsd) ?? inputRate;
-    const cacheWrite1hRate = this._normalizeCostRate(config.cacheWrite1hCostPerMillionUsd) ?? cacheWriteRate;
-    const {
-      inputTokens,
-      outputTokens,
-      includedCacheReadTokens,
-      includedCacheWriteTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
-      cacheWrite5mTokens,
-      cacheWrite1hTokens,
-    } = this._usageTokenCounts(usage);
-    const uncachedInputTokens = inputTokens - includedCacheReadTokens - includedCacheWriteTokens;
-    const unspecifiedCacheWriteTokens = Math.max(0, cacheWriteTokens - cacheWrite5mTokens - cacheWrite1hTokens);
-    if (
-      !uncachedInputTokens &&
-      !outputTokens &&
-      !includedCacheReadTokens &&
-      !includedCacheWriteTokens &&
-      !cacheReadTokens &&
-      !cacheWriteTokens
-    ) return 0;
-    return (
-      (uncachedInputTokens * inputRate) +
-      ((includedCacheReadTokens + cacheReadTokens) * cacheReadRate) +
-      ((unspecifiedCacheWriteTokens + cacheWrite5mTokens + includedCacheWriteTokens) * cacheWriteRate) +
-      (cacheWrite1hTokens * cacheWrite1hRate) +
-      (outputTokens * outputRate)
-    ) / TOKENS_PER_MILLION;
-  }
-
-  _extractUsageCostUsd(provider, usage) {
-    if (!usage || typeof usage !== 'object') return 0;
-    const raw = usage.cost_usd ?? usage.costUsd ?? usage.total_cost_usd ?? usage.total_cost ?? usage.totalCost ?? usage.cost;
-    if (raw != null && raw !== '') {
-      const n = typeof raw === 'string' ? Number.parseFloat(raw) : Number(raw);
-      if (Number.isFinite(n) && n >= 0) return n;
-    }
-    return this._estimateUsageCostUsd(provider, usage);
-  }
-
-  _newCostRunState() {
-    return { spentUsd: 0 };
-  }
-
-  async _getCostAllowanceState() {
-    try {
-      const stored = await browser.storage.local.get([
-        COST_ALLOWANCE_SESSION_KEY,
-        COST_ALLOWANCE_TOTAL_KEY,
-        CLOUD_COST_SPENT_KEY,
-      ]);
-      this.costAllowanceSessionUsd = this._normalizeCostLimit(stored[COST_ALLOWANCE_SESSION_KEY]);
-      this.costAllowanceTotalUsd = this._normalizeCostLimit(stored[COST_ALLOWANCE_TOTAL_KEY]);
-      this.meteredProviderCostSpentUsd = this._normalizeCostSpent(stored[CLOUD_COST_SPENT_KEY]);
-    } catch { /* keep in-memory defaults */ }
-    return {
-      sessionLimitUsd: this.costAllowanceSessionUsd,
-      totalLimitUsd: this.costAllowanceTotalUsd,
-      totalSpentUsd: this.meteredProviderCostSpentUsd,
-    };
-  }
-
-  _costAllowanceMessage(scope, spentUsd, limitUsd) {
-    const scopeText = scope === 'session' ? 'this session' : 'total cloud/router usage';
-    return `Cloud cost allowance reached: ${scopeText} is ${this._formatUsd(spentUsd)} against the ${this._formatUsd(limitUsd)} limit. Stopping before further cloud/router model calls. Increase or reset the allowance in Settings.`;
-  }
-
-  _checkCostAllowanceState(state, costState) {
-    const sessionSpent = this._normalizeCostSpent(costState?.spentUsd);
-    if (sessionSpent + COST_EPSILON >= state.sessionLimitUsd) {
-      return this._costAllowanceMessage('session', sessionSpent, state.sessionLimitUsd);
-    }
-    if (state.totalSpentUsd + COST_EPSILON >= state.totalLimitUsd) {
-      return this._costAllowanceMessage('total', state.totalSpentUsd, state.totalLimitUsd);
-    }
-    return null;
-  }
-
-  async _checkCostAllowance(provider, costState) {
-    if (!this._isCostMeteredProvider(provider)) return null;
-    const state = await this._getCostAllowanceState();
-    return this._checkCostAllowanceState(state, costState);
-  }
-
-  async _recordCostUsage(provider, usage, costState) {
-    if (!this._isCostMeteredProvider(provider)) return null;
-    const costUsd = this._extractUsageCostUsd(provider, usage);
-    if (!costUsd) return null;
-    return this._enqueueCostUpdate(async () => {
-      const state = await this._getCostAllowanceState();
-      const nextTotal = state.totalSpentUsd + costUsd;
-      if (costState) costState.spentUsd = this._normalizeCostSpent(costState.spentUsd) + costUsd;
-      this.meteredProviderCostSpentUsd = nextTotal;
-      try { await browser.storage.local.set({ [CLOUD_COST_SPENT_KEY]: nextTotal }); } catch {}
-      return this._checkCostAllowanceState({ ...state, totalSpentUsd: nextTotal }, costState);
-    });
-  }
-
-  _enqueueCostUpdate(fn) {
-    const run = this._costUpdateQueue.then(fn, fn);
-    this._costUpdateQueue = run.catch(() => {});
-    return run;
-  }
-
-  _costAllowanceError(message) {
-    const err = new Error(message);
-    err.code = 'WB_COST_ALLOWANCE';
-    return err;
-  }
-
-  _isCostAllowanceError(err) {
-    // WebBrain Cloud's free-tier 402 is also an allowance terminal, but it
-    // originates in the provider rather than _costAllowanceError(). Treat it
-    // like the local cost cap so the agent does not retry it and then emit a
-    // second generic error card beside the actionable Subscribe prompt.
-    return err?.code === 'WB_COST_ALLOWANCE'
-      || /Subscribe for more usage:\s*https?:\/\/\S+/i.test(String(err?.message || ''));
-  }
-
-  async _chatWithCostAllowance(provider, messages, options, costState, requestContext = null) {
-    const before = await this._checkCostAllowance(provider, costState);
-    if (before) throw this._costAllowanceError(before);
+  async _chat(provider, messages, options, requestContext = null) {
     const result = await provider.chat(messages, requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
       : options);
     if (result && typeof result.content === 'string') {
       result.content = Agent._stripReasoningTags(result.content);
     }
-    const after = await this._recordCostUsage(provider, result?.usage, costState);
-    if (after) result.costAllowanceMessage = after;
     return result;
   }
 
@@ -1886,7 +1625,7 @@ export class Agent extends LoopDetector {
     const rawCode = error?.incompleteReason || error?.code || '';
     const errorCode = String(rawCode).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
     let reason = 'stream_error';
-    if (this._isCostAllowanceError(error)) reason = 'cost_limit';
+    if (this._isUsageLimitError(error)) reason = 'cost_limit';
     else if (errorCode === 'missing_response_completed' || /before (?:its )?terminal event/i.test(rawMessage)) {
       reason = 'missing_terminal_event';
     } else if (this._shouldFallbackAskStream(error)) reason = 'transport_error';
@@ -1910,10 +1649,7 @@ export class Agent extends LoopDetector {
     return this._shouldFallbackAskStream(error);
   }
 
-  async _chatStreamWithCostAllowance(provider, messages, options, costState, requestContext = null, onTextDelta = () => {}) {
-    const before = await this._checkCostAllowance(provider, costState);
-    if (before) throw this._costAllowanceError(before);
-
+  async _chatStream(provider, messages, options, requestContext = null, onTextDelta = () => {}) {
     const streamOptions = requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
       : options;
@@ -1924,14 +1660,8 @@ export class Agent extends LoopDetector {
     let finishReason = '';
     let terminalRaw = null;
     let sawCompleted = false;
-    let usageRecorded = false;
     const toolCalls = new Map();
 
-    const recordUsage = async () => {
-      if (usageRecorded) return null;
-      usageRecorded = true;
-      return this._recordCostUsage(provider, usage, costState);
-    };
     const estimateUsageIfMissing = (completed = false) => {
       if (usage) return;
       const partialToolCalls = [...toolCalls.values()];
@@ -2009,10 +1739,9 @@ export class Agent extends LoopDetector {
         throw error;
       }
     } catch (error) {
-      // Incomplete Responses streams can still report billable usage. Record
-      // that once before the caller either propagates or retries the failure.
+      // Incomplete Responses streams can still report usage. Fill the estimate
+      // once before the caller either propagates or retries the failure.
       estimateUsageIfMissing(false);
-      try { await recordUsage(); } catch {}
       throw error;
     }
 
@@ -2027,8 +1756,6 @@ export class Agent extends LoopDetector {
       finishReason,
       ...(terminalRaw ? { raw: terminalRaw } : {}),
     };
-    const after = await recordUsage();
-    if (after) result.costAllowanceMessage = after;
     return result;
   }
 
@@ -2598,7 +2325,6 @@ export class Agent extends LoopDetector {
         },
       ], {
         tabId,
-        costState: this.currentCostState.get(tabId) || null,
         maxTokens: 160,
         retryMaxTokens: 320,
         isUsable: (result) => !!normalizeRichTextToolbarAudit(
@@ -7143,16 +6869,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   async _chatVisionWithCompatibilityRetry(vision, messages, {
     tabId,
-    costState = null,
     maxTokens,
     retryMaxTokens,
     isUsable = (result) => !!String(result?.content || '').trim(),
   }) {
-    const request = (tokenLimit, reasoningControl) => this._chatWithCostAllowance(
+    const request = (tokenLimit, reasoningControl) => this._chat(
       vision,
       messages,
       visionGenerationOptions(tokenLimit, { reasoningControl }),
-      costState,
       { tabId, generationName: 'vision' },
     );
     let attempts = 1;
@@ -7185,11 +6909,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * Recorded in the trace under a `vision_sub_call` event so description
    * quality can be inspected alongside the main turn.
    */
-  async _describeScreenshot(tabId, dataUrl, context = 'unknown', costState = null) {
+  async _describeScreenshot(tabId, dataUrl, context = 'unknown') {
     if (!dataUrl) return null;
     const vision = await this.providerManager.getVisionProvider();
     if (!vision) return null;
-    const effectiveCostState = costState || this.currentCostState.get(tabId) || null;
 
     const runId = this.currentRunId.get(tabId);
     const started = Date.now();
@@ -7209,7 +6932,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         messages,
         {
           tabId,
-          costState: effectiveCostState,
           maxTokens: 800,
           retryMaxTokens: 1600,
           isUsable: (result) => !!Agent._cleanVisionDescription(result?.content || ''),
@@ -7381,7 +7103,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     const started = Date.now();
     const runId = this.currentRunId.get(tabId);
-    const costState = opts.costState || this.currentCostState.get(tabId) || null;
     const prompt = [
       `Image size: ${visionW}x${visionH} pixels.`,
       `Task: locate the single visible ${target} the user most likely means by "this image", "this video", or "this media" on the current page.`,
@@ -7402,7 +7123,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         },
       ], {
         tabId,
-        costState,
         maxTokens: 220,
         retryMaxTokens: 440,
         isUsable: (result) => !!Agent._normalizeVisibleMediaLocation(
@@ -7482,7 +7202,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     const located = await this._locateVisibleMediaWithVision(tabId, screenshot, {
       target: args.target,
-      costState: this.currentCostState.get(tabId) || null,
     });
     if (!located.success) return located;
 
@@ -7523,7 +7242,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * mentioned earlier in the thread. The heavier screenshot context is still
    * limited to the first real user turn.
    */
-  async _enrichUserMessageWithCurrentPage(tabId, messages, userMessage, costState = null, runOptions = {}) {
+  async _enrichUserMessageWithCurrentPage(tabId, messages, userMessage, runOptions = {}) {
     const hasPriorUserTurn = messages.some(m => m.role === 'user');
     const selectionScoped = isSelectionSourceGrounding(runOptions?.sourceGrounding);
     const standaloneChat = runOptions?.standaloneChat === true;
@@ -7600,7 +7319,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // description into the first user message so the main provider never
     // sees the raw pixels.
     if (visionProvider) {
-      const desc = await this._describeScreenshot(tabId, shot.dataUrl, 'initial_user_message', costState);
+      const desc = await this._describeScreenshot(tabId, shot.dataUrl, 'initial_user_message');
       if (desc) {
         // desc.text is page-derived OCR — wrap in the real untrusted boundary
         // (nonce + breakout-strip), not just a prose label.
@@ -8357,7 +8076,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return lines.join('\n').slice(0, 3000);
   }
 
-  async _maybeRunPlannerGate(tabId, messages, enriched, onUpdate, mode, costState, runId, tabInfo = null, runOptions = {}) {
+  async _maybeRunPlannerGate(tabId, messages, enriched, onUpdate, mode, runId, tabInfo = null, runOptions = {}) {
     // Keep managed cloud behavior aligned with Chrome: unattended runs cannot
     // wait on a side-panel plan review that has no API response channel.
     const standaloneChatRun = this._isStandaloneChatRun(runOptions);
@@ -8398,7 +8117,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (runReadScopeClassifier) {
         const historyDigest = this._buildPlannerHistoryDigest(priorMessages);
         const readScopeOutcome = await this._runReadScopeClassifier(
-          tabId, enriched, onUpdate, costState, runId, historyDigest, tabInfo,
+          tabId, enriched, onUpdate, runId, historyDigest, tabInfo,
         );
         if (!readScopeOutcome.proceed) {
           messages.push({ role: 'assistant', content: readScopeOutcome.message });
@@ -8439,7 +8158,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const historyDigest = this._buildPlannerHistoryDigest(priorMessages);
       const followUpContext = this._buildPlannerFollowUpContext(priorMessages);
       const gate = await this._runPlannerIntentGate(
-        tabId, enriched, onUpdate, costState, runId, historyDigest, tabInfo, mode, runOptions, followUpContext,
+        tabId, enriched, onUpdate, runId, historyDigest, tabInfo, mode, runOptions, followUpContext,
       );
       if (!gate.proceed) {
         messages.push(this._plannerTerminalAssistantMessage(gate, tabInfo));
@@ -8453,10 +8172,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const followUpContext = this._buildPlannerFollowUpContext(priorMessages);
     const gate = runPlanner
       ? await this._runPlannerGate(
-        tabId, enriched, onUpdate, costState, runId, historyDigest, tabInfo, plannerMode, mode, runOptions, followUpContext,
+        tabId, enriched, onUpdate, runId, historyDigest, tabInfo, plannerMode, mode, runOptions, followUpContext,
       )
       : await this._runPlannerIntentGate(
-        tabId, enriched, onUpdate, costState, runId, historyDigest, tabInfo, mode, runOptions, followUpContext,
+        tabId, enriched, onUpdate, runId, historyDigest, tabInfo, mode, runOptions, followUpContext,
       );
     if (
       gate?.plannerFailedContinueAct === true
@@ -8464,7 +8183,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       && this._readCompletenessNeedsScopeClassification(tabId)
     ) {
       const readScopeOutcome = await this._runReadScopeClassifier(
-        tabId, enriched, onUpdate, costState, runId, historyDigest, tabInfo, true,
+        tabId, enriched, onUpdate, runId, historyDigest, tabInfo, true,
       );
       if (!readScopeOutcome.proceed) {
         messages.push({ role: 'assistant', content: readScopeOutcome.message });
@@ -8978,7 +8697,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     ];
   }
 
-  async _runReadScopeClassifier(tabId, enriched, onUpdate, costState, runId = null, historyDigest = '', tabInfo = null, bestEffort = false) {
+  async _runReadScopeClassifier(tabId, enriched, onUpdate, runId = null, historyDigest = '', tabInfo = null, bestEffort = false) {
     if (!this._readCompletenessNeedsScopeClassification(tabId)) {
       return { proceed: true, readScope: null };
     }
@@ -9010,18 +8729,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       let result;
       let repairUsed = false;
       try {
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           messages,
           { ...this._plannerChatOptions(provider, false, true, 'read_scope'), temperature: 0, maxTokens: 64 },
-          costState,
           { tabId, generationName: 'read_scope' },
         );
       } catch (firstError) {
         if (this._checkAbort(tabId)) {
           return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
         }
-        if (this._isCostAllowanceError(firstError)) throw firstError;
+        if (this._isUsageLimitError(firstError)) throw firstError;
         repairUsed = true;
         await this._tracePlannerAttemptFailure(runId, 'read_scope', 1, firstError);
         onUpdate('thinking', { step: 0, note: 'Checking conversation scope… retrying with portable JSON options' });
@@ -9030,11 +8748,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           runId, 0, provider, repairMessages, 'read_scope', 2, this._effectiveRunMode(tabId),
         );
         const repairStartedAt = Date.now();
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           { ...this._plannerChatOptions(provider, true, true, 'read_scope', true), temperature: 0 },
-          costState,
           { tabId, generationName: 'read_scope' },
         );
         await this._tracePlannerAttemptResponse(
@@ -9079,11 +8796,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           } catch {}
         }
         const repairStartedAt = Date.now();
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           { ...this._plannerChatOptions(provider, true, true, 'read_scope'), temperature: 0 },
-          costState,
           { tabId, generationName: 'read_scope' },
         );
         if (runId) {
@@ -9126,7 +8842,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (this._checkAbort(tabId)) {
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
-      if (this._isCostAllowanceError(error)) {
+      if (this._isUsageLimitError(error)) {
         return { proceed: false, message: error.message, reason: 'cost_limit' };
       }
       if (bestEffort) {
@@ -9155,7 +8871,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * same provider and structured contract as the full planner, so no
    * language-specific input matcher can silently authorize execution.
    */
-  async _runPlannerIntentGate(tabId, enriched, onUpdate, costState, runId = null, historyDigest = '', tabInfo = null, conversationMode = 'act', runOptions = {}, followUpContext = {}) {
+  async _runPlannerIntentGate(tabId, enriched, onUpdate, runId = null, historyDigest = '', tabInfo = null, conversationMode = 'act', runOptions = {}, followUpContext = {}) {
     const { tabUrl, tabTitle } = tabInfo || await this._getTabUrlTitle(tabId);
     followUpContext = {
       ...followUpContext,
@@ -9187,18 +8903,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       let result;
       let plannerRepairUsed = false;
       try {
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           plannerMessages,
           this._plannerChatOptions(provider, false, true),
-          costState,
           { tabId, generationName: 'planner_intent' },
         );
         await this._tracePlannerAttemptResponse(
           runId, plannerStep, provider, result, 'intent', 1, startedAt,
         );
       } catch (firstError) {
-        if (this._checkAbort(tabId) || this._isCostAllowanceError(firstError)) throw firstError;
+        if (this._checkAbort(tabId) || this._isUsageLimitError(firstError)) throw firstError;
         plannerRepairUsed = true;
         await this._tracePlannerAttemptFailure(runId, 'intent', 1, firstError);
         onUpdate('thinking', { step: plannerStep, note: 'Understanding request… retrying with portable JSON options' });
@@ -9207,11 +8922,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           runId, plannerStep, provider, repairMessages, 'intent', 2, runtimeMode,
         );
         const repairStartedAt = Date.now();
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true, true, 'intent', true),
-          costState,
           { tabId, generationName: 'planner_intent' },
         );
         await this._tracePlannerAttemptResponse(
@@ -9230,11 +8944,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           runId, plannerStep, provider, repairMessages, 'intent', 2, runtimeMode,
         );
         const repairStartedAt = Date.now();
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true, true),
-          costState,
           { tabId, generationName: 'planner_intent' },
         );
         await this._tracePlannerAttemptResponse(
@@ -9254,11 +8967,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           runId, plannerStep, provider, repairMessages, 'intent', 2, runtimeMode,
         );
         const repairStartedAt = Date.now();
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true, true),
-          costState,
           { tabId, generationName: 'planner_intent' },
         );
         await this._tracePlannerAttemptResponse(
@@ -9330,7 +9042,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (this._checkAbort(tabId)) {
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
-      if (this._isCostAllowanceError(e)) {
+      if (this._isUsageLimitError(e)) {
         return { proceed: false, message: e.message, reason: 'cost_limit' };
       }
       if (recheckOnly) return this._plannerIntentRecheckFallback();
@@ -9349,7 +9061,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
   }
 
-  async _runPlannerGate(tabId, enriched, onUpdate, costState, runId = null, historyDigest = '', tabInfo = null, plannerMode = this._plannerMode(), conversationMode = 'act', runOptions = {}, followUpContext = {}) {
+  async _runPlannerGate(tabId, enriched, onUpdate, runId = null, historyDigest = '', tabInfo = null, plannerMode = this._plannerMode(), conversationMode = 'act', runOptions = {}, followUpContext = {}) {
     const { tabUrl, tabTitle } = tabInfo || await this._getTabUrlTitle(tabId);
     followUpContext = {
       ...followUpContext,
@@ -9388,11 +9100,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       let plannerRepairUsed = false;
       try {
         plannerRequestInFlight = true;
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           plannerMessages,
           this._plannerChatOptions(provider),
-          costState,
           { tabId, generationName: 'planner' },
         );
         plannerRequestInFlight = false;
@@ -9401,7 +9112,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
       } catch (firstError) {
         plannerRequestInFlight = false;
-        if (this._checkAbort(tabId) || this._isCostAllowanceError(firstError)) throw firstError;
+        if (this._checkAbort(tabId) || this._isUsageLimitError(firstError)) throw firstError;
         plannerRepairUsed = true;
         await this._tracePlannerAttemptFailure(runId, 'planner', 1, firstError);
         onUpdate('thinking', { step: plannerStep, note: 'Planning… retrying with portable JSON options' });
@@ -9411,11 +9122,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
         const repairStartedAt = Date.now();
         plannerRequestInFlight = true;
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true, false, 'planner', true),
-          costState,
           { tabId, generationName: 'planner' },
         );
         plannerRequestInFlight = false;
@@ -9441,11 +9151,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
         const repairStartedAt = Date.now();
         plannerRequestInFlight = true;
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true),
-          costState,
           { tabId, generationName: 'planner' },
         );
         plannerRequestInFlight = false;
@@ -9467,11 +9176,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
         const repairStartedAt = Date.now();
         plannerRequestInFlight = true;
-        result = await this._chatWithCostAllowance(
+        result = await this._chat(
           provider,
           repairMessages,
           this._plannerChatOptions(provider, true),
-          costState,
           { tabId, generationName: 'planner' },
         );
         plannerRequestInFlight = false;
@@ -9503,7 +9211,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           tabId,
           enriched,
           onUpdate,
-          costState,
           runId,
           historyDigest,
           { tabUrl, tabTitle },
@@ -9673,7 +9380,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (this._checkAbort(tabId)) {
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
-      if (this._isCostAllowanceError(e)) {
+      if (this._isUsageLimitError(e)) {
         return { proceed: false, message: e.message, reason: 'cost_limit' };
       }
       if (hasValidPlannerResponse) {
@@ -9729,7 +9436,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return tool;
   }
 
-  async _generateDeliveryRecoveryDone(tabId, messages, provider, costState, runId, {
+  async _generateDeliveryRecoveryDone(tabId, messages, provider, runId, {
     step = 1,
     runOptions = {},
     currentUserMessage = null,
@@ -9743,7 +9450,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       tabId,
       messages,
       provider,
-      costState,
       runId,
       {
         phase: 'delivery_recovery',
@@ -9787,7 +9493,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     messages,
     onUpdate,
     provider,
-    costState,
     runId,
     step,
     fallbackMessage,
@@ -9804,7 +9509,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         tabId,
         messages,
         provider,
-        costState,
         runId,
         { step, runOptions, currentUserMessage, priorMessageSet },
       );
@@ -9881,7 +9585,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     ].join('\n');
   }
 
-  async _generateContextOnlyResponse(tabId, messages, provider, costState, runId, {
+  async _generateContextOnlyResponse(tabId, messages, provider, runId, {
     phase = 'response_only',
     step = 1,
     runOptions = {},
@@ -9948,11 +9652,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       } catch {}
     }
     const startedAt = Date.now();
-    const result = await this._chatWithCostAllowance(
+    const result = await this._chat(
       provider,
       prunedMessages,
       chatOpts,
-      costState,
       { tabId, generationName: phase },
     );
     const latencyMs = Date.now() - startedAt;
@@ -9994,7 +9697,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     messages,
     onUpdate,
     provider,
-    costState,
     runId,
     runOptions = {},
     currentUserMessage = null,
@@ -10007,12 +9709,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     let status = 'done';
     try {
       finalResponse = await this._generateContextOnlyResponse(
-        tabId, messages, provider, costState, runId,
+        tabId, messages, provider, runId,
         { phase: 'response_only', step: 1, runOptions, currentUserMessage, priorMessageSet },
       );
     } catch (error) {
-      status = this._isCostAllowanceError(error) ? 'cost_limit' : 'error';
-      finalResponse = this._isCostAllowanceError(error)
+      status = this._isUsageLimitError(error) ? 'cost_limit' : 'error';
+      finalResponse = this._isUsageLimitError(error)
         ? error.message
         : `I could not generate the requested response: ${formatErrorMessage(error)}`;
     }
@@ -10034,7 +9736,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     messages,
     onUpdate,
     provider,
-    costState,
     runId,
     step,
     stopMessage,
@@ -10051,7 +9752,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       onUpdate('thinking', { step, note: 'Recovering a useful partial result…' });
       try {
         recovered = await this._generateContextOnlyResponse(
-          tabId, messages, provider, costState, runId,
+          tabId, messages, provider, runId,
           { phase: 'terminal_recovery', step, runOptions, currentUserMessage, priorMessageSet },
         );
       } catch (error) {
@@ -13076,11 +12777,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       site: this._isGithubStargazersUrl(pageScope) ? 'github_stargazers' : 'unknown',
     };
     try {
-      const response = await this._chatWithCostAllowance(provider, this._progressIntentClassifierMessages(taskText, siteContext), {
+      const response = await this._chat(provider, this._progressIntentClassifierMessages(taskText, siteContext), {
         temperature: 0,
         maxTokens: 320,
         extraBody: { chat_template_kwargs: { enable_thinking: false } },
-      }, opts.costState || this.currentCostState.get(tabId) || null, { tabId, generationName: 'intent' });
+      }, { tabId, generationName: 'intent' });
       const obj = Agent._extractFirstJsonObject(response?.content || '');
       return normalizeProgressIntent(obj, { taskText, pageScope, source: 'classifier' });
     } catch {
@@ -13148,7 +12849,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (progressLedgerPolicy === 'enabled' && plannerAction) {
       const classified = await this._classifyProgressIntentWithProvider(tabId, {
         provider: opts.provider,
-        costState: opts.costState,
         taskText,
         pageScope,
       });
@@ -13177,7 +12877,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     const classified = await this._classifyProgressIntentWithProvider(tabId, {
       provider: opts.provider,
-      costState: opts.costState,
       taskText,
       pageScope,
     });
@@ -14465,7 +14164,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return trimmed;
   }
 
-  async _manageContext(tabId, messages, onUpdate = null, costState = null, { force = false } = {}) {
+  async _manageContext(tabId, messages, onUpdate = null, { force = false } = {}) {
     const totalChars = this._estimateContextChars(messages);
 
     const tokenBudget = this._contextTokenBudget();
@@ -14691,10 +14390,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (summaryText.length > 2000) {
       try {
         const provider = this.providerManager.getActive();
-        const res = await this._chatWithCostAllowance(provider, [
+        const res = await this._chat(provider, [
           { role: 'system', content: 'Summarize this conversation history in 3-5 bullet points. Be very concise.' },
           { role: 'user', content: summaryText },
-        ], { maxTokens: 300, temperature: 0.2 }, costState, { tabId, generationName: 'compaction' });
+        ], { maxTokens: 300, temperature: 0.2 }, { tabId, generationName: 'compaction' });
         if (res.content) {
           summaryText = 'Summary of earlier conversation:\n' + res.content;
         }
@@ -14769,7 +14468,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       tabId,
       messages,
       onUpdate,
-      this.currentCostState.get(tabId) || null,
       { force: true }
     );
     if (result?.compacted) this._persist(tabId);
@@ -16131,7 +15829,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         try {
           await this._endSavedWorkflowTraceRun(traceRunId, traceStatus, finalContent);
         } finally {
-          this.currentCostState.delete(tabId);
           this._planExecutionGuards.delete(tabId);
           this._resetActiveSkillsForRun(tabId);
           this._clearRunLoopState(tabId);
@@ -17149,11 +16846,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (skillTool) {
       if (isTrustedChromeWebStoreSkillTool(skillTool)) {
         return await executeChromeWebStoreSkillTool(skillTool, args, { tabId });
-      }
-      if (skillTool.skillId === 'wikipedia') {
-        return await executeWikipediaSkillTool(skillTool, args, {
-          executeOnline: (onlineTool, onlineArgs) => executeHttpSkillTool(onlineTool, onlineArgs, { tabId }),
-        });
       }
       return await executeHttpSkillTool(skillTool, args, { tabId });
     }
@@ -19091,7 +18783,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     try {
       return await this._processMessageInner(tabId, userMessage, onUpdate, mode, attachments, runOptions);
     } finally {
-      this.currentCostState.delete(tabId);
       this._discardProvisionalSelectionGroundingScope(tabId);
       this._storeContinuationExecutionEvidence(tabId);
       let continuationResponseLanguagePolicyStored = false;
@@ -19271,8 +18962,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // model's first turn sees current row state even if it never calls
     // progress_read; must run before the message is enriched/pushed.
     userMessage = this._augmentScheduledResumeMessage(tabId, userMessage);
-    const costState = this._newCostRunState();
-    this.currentCostState.set(tabId, costState);
     // New user turn: drop transient "allow once" / "deny once" permission grants.
     this.permissions.beginTurn(tabId);
 
@@ -19286,14 +18975,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // A source-bound shortcut neither needs nor permits an internal
     // compaction call over unrelated conversation history.
     if (!selectionOnly && !standaloneChatRun) {
-      await this._manageContext(tabId, messages, onUpdate, costState);
+      await this._manageContext(tabId, messages, onUpdate);
     }
     const sourceBoundPriorMessages = selectionOnly
       ? this._selectionGroundingPriorMessageSet(tabId, messages)
       : null;
 
     const enriched = await this._enrichUserMessageWithCurrentPage(
-      tabId, selectionOnly ? [] : messages, userMessage, costState, runOptions,
+      tabId, selectionOnly ? [] : messages, userMessage, runOptions,
     );
     let sourceBoundTrimmedMessages = null;
     let sourceBoundMessagesAtTrim = null;
@@ -19450,7 +19139,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
 
     const gateOutcome = await this._maybeRunPlannerGate(
-      tabId, messages, enriched, onUpdate, mode, costState, runId, plannerTabInfo, runOptions,
+      tabId, messages, enriched, onUpdate, mode, runId, plannerTabInfo, runOptions,
     );
     if (!gateOutcome.proceed) {
       _traceStatus = gateOutcome.reason === 'cost_limit'
@@ -19467,7 +19156,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     });
     if (gateOutcome.responseOnly === true) {
       const responseOnly = await this._completeResponseOnlyTurn(
-        tabId, messages, onUpdate, provider, costState, runId,
+        tabId, messages, onUpdate, provider, runId,
         runOptions, enriched, sourceBoundPriorMessages,
       );
       finalResponse = responseOnly.content;
@@ -19479,7 +19168,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (this._isActionMode(mode) && !selectionOnly && !standaloneChatRun) {
       await this._ensureProgressSessionForCurrentTask(tabId, {
         provider,
-        costState,
         progressLedgerPolicy: gateOutcome.progressLedgerPolicy,
         progressAction: gateOutcome.progressAction,
       });
@@ -19543,11 +19231,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             protocol,
           });
         }
-        return this._chatWithCostAllowance(
+        return this._chat(
           provider,
           chatMessages,
           chatOptions,
-          costState,
           requestContext,
         );
       }
@@ -19569,11 +19256,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         textChars,
       });
       try {
-        const result = await this._chatStreamWithCostAllowance(
+        const result = await this._chatStream(
           provider,
           chatMessages,
           chatOptions,
-          costState,
           requestContext,
           (delta) => {
             emittedText = true;
@@ -19599,7 +19285,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           ...streamMetrics(),
           ...this._interactiveAskStreamingFailure(error),
         });
-        if (this._isCostAllowanceError(error)) throw error;
+        if (this._isUsageLimitError(error)) throw error;
         if (emittedText) onUpdate('text', { content: '', replace: true });
         if (!fallbackSafe) throw error;
         askStreamingDisabledForRun = true;
@@ -19612,11 +19298,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           provider: provider.constructor?.name || provider.name,
           error: error?.message || String(error),
         });
-        return this._chatWithCostAllowance(
+        return this._chat(
           provider,
           chatMessages,
           chatOptions,
-          costState,
           requestContext,
         );
       }
@@ -19685,7 +19370,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // just between user turns. Uses the previous step's reported token count,
       // so it fires "when it's due" during long autonomous loops.
       if (!selectionOnly && !standaloneChatRun) {
-        await this._manageContext(tabId, messages, onUpdate, costState);
+        await this._manageContext(tabId, messages, onUpdate);
       }
 
       steps++;
@@ -19738,7 +19423,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         this._logDebug({ type: 'llm_response', step: steps, content: result.content, toolCalls: result.toolCalls });
       } catch (e) {
         this._logDebug({ type: 'llm_error', step: steps, error: e.message });
-        if (this._isCostAllowanceError(e)) {
+        if (this._isUsageLimitError(e)) {
           finalResponse = e.message;
           _traceStatus = 'cost_limit';
           messages.push({ role: 'assistant', content: finalResponse });
@@ -19758,7 +19443,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             this._logDebug({ type: 'llm_response_retry', step: steps, content: result.content, toolCalls: result.toolCalls });
           } catch (e2) {
             this._logDebug({ type: 'llm_error_retry', step: steps, error: e2.message });
-            if (this._isCostAllowanceError(e2)) {
+            if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
               messages.push({ role: 'assistant', content: finalResponse });
@@ -19787,7 +19472,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             this._logDebug({ type: 'llm_response_after_retry', step: steps, content: result.content, toolCalls: result.toolCalls });
           } catch (e2) {
             this._logDebug({ type: 'llm_error_final', step: steps, error: e2.message });
-            if (this._isCostAllowanceError(e2)) {
+            if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
               messages.push({ role: 'assistant', content: finalResponse });
@@ -19838,14 +19523,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
       }
 
-      if (result.costAllowanceMessage && result.toolCalls && result.toolCalls.length > 0) {
-        finalResponse = result.costAllowanceMessage;
-        _traceStatus = 'cost_limit';
-        messages.push({ role: 'assistant', content: finalResponse });
-        onUpdate('warning', { message: finalResponse });
-        break;
-      }
-
       if (result.toolCalls && result.toolCalls.length > 0) {
         const suppressPlannerContent = this._isPlannerShapedJson(result.content);
         const assistantToolContent = suppressPlannerContent ? null : (result.content || null);
@@ -19871,7 +19548,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         if (batchResult.action === 'deliver') {
           const recovery = await this._recoverDeliveryCheckpointTurn(
-            tabId, messages, onUpdate, provider, costState, runId, steps,
+            tabId, messages, onUpdate, provider, runId, steps,
             batchResult.value, runOptions, enriched, sourceBoundPriorMessages,
           );
           finalResponse = recovery.content;
@@ -19880,7 +19557,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         if (batchResult.action === 'recover') {
           const recovery = await this._recoverLoopStoppedTurn(
-            tabId, messages, onUpdate, provider, costState, runId, steps,
+            tabId, messages, onUpdate, provider, runId, steps,
             batchResult.value, runOptions, enriched, sourceBoundPriorMessages,
           );
           finalResponse = recovery.content;
@@ -19899,13 +19576,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // no tool call after non-trivial reasoning) and recover ONCE via a
       // mode-aware nudge before giving up.
       const isEmpty = !result.content || !result.content.trim();
-      if (isEmpty && result.costAllowanceMessage) {
-        finalResponse = result.costAllowanceMessage;
-        _traceStatus = 'cost_limit';
-        messages.push({ role: 'assistant', content: finalResponse });
-        onUpdate('warning', { message: finalResponse });
-        break;
-      }
       if (this._isActionMode(mode) && this._isCompressionPlaceholderResponse(result.content)) {
         if (!compressionPlaceholderRecoveryAttempted) {
           compressionPlaceholderRecoveryAttempted = true;
@@ -20054,9 +19724,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         break;
       }
       const repairedFinalContent = repairAssistantDisplayText(result.content);
-      finalResponse = result.costAllowanceMessage
-        ? `${repairedFinalContent}\n\n${result.costAllowanceMessage}`
-        : repairedFinalContent;
+      finalResponse = repairedFinalContent;
       messages.push(this._withResponseItems({ role: 'assistant', content: finalResponse }, result.responseItems, result.reasoningContent, provider));
       onUpdate('text', { content: finalResponse });
       break;
@@ -20145,7 +19813,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     try {
       return await this._processMessageStreamInner(tabId, userMessage, onUpdate, mode, runOptions);
     } finally {
-      this.currentCostState.delete(tabId);
       this._discardProvisionalSelectionGroundingScope(tabId);
       this._storeContinuationExecutionEvidence(tabId);
       let continuationResponseLanguagePolicyStored = false;
@@ -20187,8 +19854,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const messages = this.getConversation(tabId, mode);
     this._expireCurrentToolReasoning(messages);
     runOptions = this._selectionGroundedRunOptions(tabId, messages, runOptions);
-    const costState = this._newCostRunState();
-    this.currentCostState.set(tabId, costState);
     // New user turn: drop transient "allow once" / "deny once" permission grants.
     this.permissions.beginTurn(tabId);
 
@@ -20200,14 +19865,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Do not expose unrelated history to an internal compaction request for a
     // source-bound shortcut.
     if (!selectionOnly && !standaloneChatRun) {
-      await this._manageContext(tabId, messages, onUpdate, costState);
+      await this._manageContext(tabId, messages, onUpdate);
     }
     const sourceBoundPriorMessages = selectionOnly
       ? this._selectionGroundingPriorMessageSet(tabId, messages)
       : null;
 
     const enriched = await this._enrichUserMessageWithCurrentPage(
-      tabId, selectionOnly ? [] : messages, userMessage, costState, runOptions,
+      tabId, selectionOnly ? [] : messages, userMessage, runOptions,
     );
     let sourceBoundTrimmedMessages = null;
     let sourceBoundMessagesAtTrim = null;
@@ -20293,7 +19958,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
 
     const gateOutcome = await this._maybeRunPlannerGate(
-      tabId, messages, enriched, onUpdate, mode, costState, runId, plannerTabInfo, runOptions,
+      tabId, messages, enriched, onUpdate, mode, runId, plannerTabInfo, runOptions,
     );
     if (!gateOutcome.proceed) {
       const status = gateOutcome.reason === 'cost_limit'
@@ -20310,7 +19975,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     });
     if (gateOutcome.responseOnly === true) {
       const responseOnly = await this._completeResponseOnlyTurn(
-        tabId, messages, onUpdate, provider, costState, runId,
+        tabId, messages, onUpdate, provider, runId,
         runOptions, enriched, sourceBoundPriorMessages,
       );
       return finish(responseOnly.content, responseOnly.status);
@@ -20320,7 +19985,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (this._isActionMode(mode) && !selectionOnly && !standaloneChatRun) {
       await this._ensureProgressSessionForCurrentTask(tabId, {
         provider,
-        costState,
         progressLedgerPolicy: gateOutcome.progressLedgerPolicy,
         progressAction: gateOutcome.progressAction,
       });
@@ -20392,7 +20056,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // streaming path doesn't get a per-call token count, so this leans on
       // the chars/4 estimate inside _manageContext.
       if (!selectionOnly && !standaloneChatRun) {
-        await this._manageContext(tabId, messages, onUpdate, costState);
+        await this._manageContext(tabId, messages, onUpdate);
       }
 
       steps++;
@@ -20412,23 +20076,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }, { tabId, generationName: 'main' });
         const prunedMessages = this._pruneOldImages(modelMessagesForRun(), provider);
         this._logDebug({ type: 'llm_stream_request', step: steps, provider: provider.constructor.name, messages: prunedMessages, options: streamOpts });
-        const beforeCost = await this._checkCostAllowance(provider, costState);
-        if (beforeCost) {
-          messages.push({ role: 'assistant', content: beforeCost });
-          onUpdate('warning', { message: beforeCost });
-          this._persist(tabId);
-          return finish(beforeCost, 'cost_limit');
-        }
-        let costStopMessage = '';
-
         for await (const chunk of provider.chatStream(prunedMessages, streamOpts)) {
           if (chunk.type === 'text') {
             fullText += chunk.content;
             onUpdate('text_delta', { content: chunk.content });
           } else if (chunk.type === 'reasoning') {
             reasoningContent += String(chunk.content || '');
-          } else if (chunk.type === 'usage') {
-            costStopMessage = (await this._recordCostUsage(provider, chunk.usage, costState)) || costStopMessage;
           } else if (chunk.type === 'tool_call') {
             hasToolCalls = true;
             const calls = Array.isArray(chunk.content) ? chunk.content : [];
@@ -20477,12 +20130,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (hasToolCalls) {
           emptyOutputRecoveryAttempted = false;
           compressionPlaceholderRecoveryAttempted = false;
-          if (costStopMessage) {
-            messages.push({ role: 'assistant', content: costStopMessage });
-            onUpdate('warning', { message: costStopMessage });
-            this._persist(tabId);
-            return finish(costStopMessage, 'cost_limit');
-          }
           const toolCalls = Object.values(toolCallsAccumulator);
           const suppressPlannerContent = this._isPlannerShapedJson(fullText);
           if (suppressPlannerContent) {
@@ -20507,14 +20154,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
           if (batchResult.action === 'deliver') {
             const recovery = await this._recoverDeliveryCheckpointTurn(
-              tabId, messages, onUpdate, provider, costState, runId, steps,
+              tabId, messages, onUpdate, provider, runId, steps,
               batchResult.value, runOptions, enriched, sourceBoundPriorMessages,
             );
             return finish(recovery.content, recovery.status);
           }
           if (batchResult.action === 'recover') {
             const recovery = await this._recoverLoopStoppedTurn(
-              tabId, messages, onUpdate, provider, costState, runId, steps,
+              tabId, messages, onUpdate, provider, runId, steps,
               batchResult.value, runOptions, enriched, sourceBoundPriorMessages,
             );
             return finish(recovery.content, recovery.status);
@@ -20529,12 +20176,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         // once via a mode-aware nudge; on second empty in a row, give up
         // with a transparent message instead of returning empty content.
         this._logDebug({ type: 'llm_stream_response', step: steps, content: fullText, toolCalls: null });
-        if ((!fullText || !fullText.trim()) && costStopMessage) {
-          messages.push({ role: 'assistant', content: costStopMessage });
-          onUpdate('warning', { message: costStopMessage });
-          this._persist(tabId);
-          return finish(costStopMessage, 'cost_limit');
-        }
         if (!fullText || !fullText.trim()) {
           if (!emptyOutputRecoveryAttempted) {
             emptyOutputRecoveryAttempted = true;
@@ -20665,10 +20306,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           // Streaming deltas have already displayed the malformed escapes.
           // Replace the transient bubble once with the repaired terminal text.
           onUpdate('text', { content: fullText, replace: true });
-        }
-        if (costStopMessage) {
-          onUpdate('text_delta', { content: `\n\n${costStopMessage}` });
-          fullText = `${fullText}\n\n${costStopMessage}`;
         }
         messages.push(this._withResponseItems({ role: 'assistant', content: fullText }, responseItems, reasoningContent, provider));
         this._persist(tabId);

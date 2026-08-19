@@ -94,8 +94,7 @@ LM Studio（`:1234/v1`）、Jan（`:1337/v1`）、LocalAI（`:8080/v1`）和 GPT
 **云端 API** —— OpenAI、Anthropic Claude、Google Gemini、Azure OpenAI、AWS Bedrock、
 Mistral、DeepSeek、xAI Grok、MiniMax、Kimi、通义千问、z.ai GLM、Groq、Together、
 Cloudflare、Nvidia NIM、Hugging Face、Fireworks、OpenRouter 等。设置中内置
-**Chromium 上有 106 张提供商卡片**（Firefox 上有 105 张），其中包括无需端点的
-本地 WebGPU 选项 —— 参见
+**105 张提供商卡片**（Chromium 与 Firefox 相同）—— 参见
 [完整目录](docs/zh-CN/providers-and-models.md#扩展提供商目录)。
 
 ## 功能特性

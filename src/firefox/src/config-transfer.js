@@ -24,7 +24,6 @@ export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
   verboseMode: false,
   selectionShortcutEnabled: true,
   [AUTO_GROUP_TABS_KEY]: true,
-  helpImproveWebBrain: true,
   screenshotFallback: true,
   maxAgentSteps: 130,
   requestTimeoutMs: 120_000,
@@ -50,8 +49,6 @@ export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
   scheduledTasksEnabled: true,
   scheduledRequireConsequentialConfirmation: true,
   providerFilter: 'all',
-  costAllowanceSessionUsd: 10,
-  costAllowanceTotalUsd: 10,
   screenshotRedaction: false,
   askBeforeConsequentialActions: true,
   wb_permissions: [],
@@ -80,7 +77,6 @@ const BOOLEAN_KEYS = new Set([
   'verboseMode',
   'selectionShortcutEnabled',
   AUTO_GROUP_TABS_KEY,
-  'helpImproveWebBrain',
   'screenshotFallback',
   'clarifyTimeoutSemanticsV2',
   'useSiteAdapters',
@@ -111,8 +107,6 @@ const NUMBER_KEYS = new Set([
   'requestTimeoutMs',
   'clarifyTimeoutSec',
   'planReviewConfidenceThreshold',
-  'costAllowanceSessionUsd',
-  'costAllowanceTotalUsd',
   USER_MEMORY_MAX_PROMPT_CHARS_KEY,
 ]);
 const STRING_KEYS = new Set([

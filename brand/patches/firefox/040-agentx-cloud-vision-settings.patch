@@ -1,7 +1,7 @@
 diff --git a/src/ui/settings.html b/src/ui/settings.html
 --- a/src/ui/settings.html
 +++ b/src/ui/settings.html
-@@ -1498,6 +1498,7 @@
+@@ -1388,6 +1388,7 @@
      </h3>
      <div class="provider-card" id="vision-card">
        <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;" data-i18n="st.vision.desc"></div>
@@ -9,42 +9,80 @@ diff --git a/src/ui/settings.html b/src/ui/settings.html
        <div class="field">
          <label class="mm-field-label">
            <span data-i18n="st.provider.field.api_base_url"></span>
+@@ -1425,6 +1426,7 @@
+     </h3>
+     <div class="provider-card" id="transcription-card">
+       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;" data-i18n="st.transcription.desc"></div>
++      <div id="agentx-cloud-transcription-panel"></div>
+       <div class="field">
+         <label class="mm-field-label">
+           <span data-i18n="st.provider.field.api_base_url"></span>
 diff --git a/src/ui/settings.js b/src/ui/settings.js
 --- a/src/ui/settings.js
 +++ b/src/ui/settings.js
-@@ -319,8 +319,9 @@ const agentxCloudController = createAgentXCloudSettingsController({
-     activeProviderId = refreshed.active;
+@@ -298,6 +298,7 @@
    },
    onRender() {
      if (providersContainer) renderProviders();
-+    renderAgentXCloudVisionSettings();
++    renderAgentXCloudMultimodalSettings();
    },
  });
  
- if (globalThis.browser?.storage?.onChanged) {
-@@ -576,7 +577,8 @@ async function init() {
-   providersData = res.providers;
+@@ -491,6 +492,7 @@
    activeProviderId = res.active;
    renderProviders();
    await agentxCloudController.initialize();
-+  renderAgentXCloudVisionSettings();
++  renderAgentXCloudMultimodalSettings();
  }
  
  // --- Site permissions (capability × origin grants) ---
-@@ -1234,6 +1236,18 @@ scheduledConfirmToggle?.addEventListener('change', async () => {
+@@ -1119,6 +1121,51 @@
  });
  
  // --- Vision Model ---
 +
-+function renderAgentXCloudVisionSettings() {
-+  const root = document.getElementById('agentx-cloud-vision-panel');
-+  if (!root) return;
-+  root.innerHTML = agentxCloudController.renderVision();
-+  agentxCloudController.bindVision(root);
++/**
++ * Renders the Cloud vision + transcription pickers into the Multimodal tab.
++ *
++ * When the gateway is connected it owns both sidecars, so the hand-rolled
++ * OpenAI-compatible endpoint below each panel is disabled rather than removed:
++ * the user keeps seeing what they had configured before signing in, and gets
++ * it back on sign-out.
++ */
++function renderAgentXCloudMultimodalSettings() {
 +  const connected = agentxCloudController.isConnected();
-+  document.getElementById('vision-card')?.classList.toggle('agentx-cloud-vision-managed', connected);
-+  for (const input of [visionBaseUrlInput, visionApiKeyInput, visionModelInput, btnSaveVision]) {
-+    if (input) input.disabled = connected;
++  const panels = [
++    {
++      rootId: 'agentx-cloud-vision-panel',
++      cardId: 'vision-card',
++      managedClass: 'agentx-cloud-vision-managed',
++      controls: [visionBaseUrlInput, visionApiKeyInput, visionModelInput, btnSaveVision],
++      render: () => agentxCloudController.renderVision(),
++      bind: (root) => agentxCloudController.bindVision(root),
++    },
++    {
++      rootId: 'agentx-cloud-transcription-panel',
++      cardId: 'transcription-card',
++      managedClass: 'agentx-cloud-transcription-managed',
++      controls: [
++        transcriptionBaseUrlInput,
++        transcriptionApiKeyInput,
++        transcriptionModelInput,
++        btnSaveTranscription,
++      ],
++      render: () => agentxCloudController.renderTranscription(),
++      bind: (root) => agentxCloudController.bindTranscription(root),
++    },
++  ];
++  for (const panel of panels) {
++    const root = document.getElementById(panel.rootId);
++    if (!root) continue;
++    root.innerHTML = panel.render();
++    panel.bind(root);
++    document.getElementById(panel.cardId)?.classList.toggle(panel.managedClass, connected);
++    for (const control of panel.controls) {
++      if (control) control.disabled = connected;
++    }
 +  }
 +}
  

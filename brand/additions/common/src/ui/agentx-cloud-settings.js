@@ -5,11 +5,13 @@ import {
   installCloudCredential,
   removeCloudCredential,
 } from '../agentx/cloud-provider-install.js';
-import { visionModelsFromGateway } from '../agentx/cloud-models.js';
+import { transcriptionModelsFromGateway, visionModelsFromGateway } from '../agentx/cloud-models.js';
 import {
   bindAgentXCloudPanel,
+  bindAgentXCloudTranscriptionPanel,
   bindAgentXCloudVisionPanel,
   renderAgentXCloudPanel,
+  renderAgentXCloudTranscriptionPanel,
   renderAgentXCloudVisionPanel,
 } from './agentx-cloud-ui.js';
 
@@ -21,6 +23,9 @@ function publicProvider(credential) {
   const visionModels = Array.isArray(credential.visionModels)
     ? [...credential.visionModels]
     : visionModelsFromGateway(models);
+  const transcriptionModels = Array.isArray(credential.transcriptionModels)
+    ? [...credential.transcriptionModels]
+    : transcriptionModelsFromGateway(models);
   return {
     account: credential.account || '',
     baseUrl: credential.baseUrl || '',
@@ -28,6 +33,8 @@ function publicProvider(credential) {
     models,
     visionModel: credential.visionModel || '',
     visionModels,
+    transcriptionModel: credential.transcriptionModel || '',
+    transcriptionModels,
     keyAlias: credential.keyAlias || '',
     status: credential.status || credential.provisionOutcome || '',
   };
@@ -169,10 +176,25 @@ export function createAgentXCloudSettingsController({
         'select-vision-model': 'selecting-vision-model',
         'test-vision': 'testing-vision',
         'clear-vision': 'clearing-vision',
+        'select-transcription-model': 'selecting-transcription-model',
+        'test-transcription': 'testing-transcription',
+        'clear-transcription': 'clearing-transcription',
         'sign-out': 'signing-out',
       }[action];
       if (!actionName) return;
-      paint({ action: actionName, error: null, testOk: false, testModel: '' });
+      // Clear every panel's success banner up front, so a passing vision test
+      // does not keep claiming success while the user is off switching the
+      // transcription model (and vice versa).
+      paint({
+        action: actionName,
+        error: null,
+        testOk: false,
+        testModel: '',
+        visionTestOk: false,
+        visionTestModel: '',
+        transcriptionTestOk: false,
+        transcriptionTestModel: '',
+      });
       try {
         if (action === 'sign-in') {
           await connectWith(() => service.signInAndProvision());
@@ -290,6 +312,70 @@ export function createAgentXCloudSettingsController({
           });
           return;
         }
+        if (action === 'select-transcription-model') {
+          const model = String(payload.model || '').trim();
+          const availableModels = Array.isArray(status.provider?.transcriptionModels)
+            ? status.provider.transcriptionModels
+            : [];
+          if (model && !availableModels.includes(model)) {
+            throw new AgentXCloudError(
+              'invalid_transcription_model_selection',
+              'Mô hình chép lời bạn chọn không có trong danh sách mà cổng này cấp.',
+            );
+          }
+          await sendToBackground('update_provider', {
+            providerId: PROVIDER_ID,
+            markConfigured: false,
+            config: { agentxCloudTranscriptionModel: model },
+          });
+          await refreshProviders();
+          paint({
+            action: null,
+            error: null,
+            provider: { ...status.provider, transcriptionModel: model },
+            transcriptionTestOk: false,
+            transcriptionTestModel: '',
+          });
+          return;
+        }
+        if (action === 'test-transcription') {
+          if (!String(status.provider?.transcriptionModel || '').trim()) {
+            throw new AgentXCloudError(
+              'transcription_model_required',
+              'Hãy chọn mô hình chép lời trên Cloud trước khi kiểm tra kết nối.',
+            );
+          }
+          const result = await sendToBackground('test_transcription_provider');
+          if (!result?.ok) {
+            throw new AgentXCloudError(
+              'gateway_transcription_test_failed',
+              result?.error || 'Không kiểm tra được kết nối chép lời qua LiteLLM.',
+            );
+          }
+          paint({
+            action: null,
+            error: null,
+            transcriptionTestOk: true,
+            transcriptionTestModel: result.model || status.provider?.transcriptionModel || '',
+          });
+          return;
+        }
+        if (action === 'clear-transcription') {
+          await sendToBackground('update_provider', {
+            providerId: PROVIDER_ID,
+            markConfigured: false,
+            config: { agentxCloudTranscriptionModel: '' },
+          });
+          await refreshProviders();
+          paint({
+            action: null,
+            error: null,
+            provider: { ...status.provider, transcriptionModel: '' },
+            transcriptionTestOk: false,
+            transcriptionTestModel: '',
+          });
+          return;
+        }
         await service.signOut();
         await removeProviderCredential();
         paint({
@@ -303,6 +389,8 @@ export function createAgentXCloudSettingsController({
           testModel: '',
           visionTestOk: false,
           visionTestModel: '',
+          transcriptionTestOk: false,
+          transcriptionTestModel: '',
         });
       } catch (error) {
         const latest = await service.publicStatus().catch(() => ({
@@ -329,12 +417,18 @@ export function createAgentXCloudSettingsController({
     bindVision(root) {
       bindAgentXCloudVisionPanel(root, (action, payload) => void perform(action, payload));
     },
+    bindTranscription(root) {
+      bindAgentXCloudTranscriptionPanel(root, (action, payload) => void perform(action, payload));
+    },
     initialize,
     selectModel(model) {
       return perform('select-model', { model });
     },
     selectVisionModel(model) {
       return perform('select-vision-model', { model });
+    },
+    selectTranscriptionModel(model) {
+      return perform('select-transcription-model', { model });
     },
     isConnected() {
       return status.connected === true;
@@ -344,6 +438,9 @@ export function createAgentXCloudSettingsController({
     },
     renderVision() {
       return renderAgentXCloudVisionPanel(status, locale());
+    },
+    renderTranscription() {
+      return renderAgentXCloudTranscriptionPanel(status, locale());
     },
     status() {
       return { ...status };

@@ -2,7 +2,9 @@ import { AGENTX_RUNTIME_CONFIG } from './runtime-config.js';
 import {
   gatewayCatalogFromPayload,
   pickGatewayModel,
+  pickGatewayTranscriptionModel,
   pickGatewayVisionModel,
+  transcriptionModelsFromGateway,
   visionModelsFromGateway,
 } from './cloud-models.js';
 
@@ -834,6 +836,11 @@ export function createAgentXCloudService(options = {}) {
       models: catalog.models,
       visionFromInfo: catalog.visionFromInfo,
       visionModels: visionModelsFromGateway(catalog.models, catalog.visionFromInfo),
+      transcriptionFromInfo: catalog.transcriptionFromInfo,
+      transcriptionModels: transcriptionModelsFromGateway(
+        catalog.models,
+        catalog.transcriptionFromInfo,
+      ),
     };
   }
 
@@ -888,6 +895,9 @@ export function createAgentXCloudService(options = {}) {
       visionFromInfo: catalog.visionFromInfo,
       visionModels: catalog.visionModels,
       visionModel: '',
+      transcriptionFromInfo: catalog.transcriptionFromInfo,
+      transcriptionModels: catalog.transcriptionModels,
+      transcriptionModel: '',
       keyAlias: String(body.json.key_alias || ''),
       keyToken: String(body.json.token || ''),
       account: String(body.json.account || ''),
@@ -912,6 +922,10 @@ export function createAgentXCloudService(options = {}) {
       const probe = await probeCredential(cached);
       if (probe.ok) {
         const visionModels = visionModelsFromGateway(probe.models, probe.visionFromInfo);
+        const transcriptionModels = transcriptionModelsFromGateway(
+          probe.models,
+          probe.transcriptionFromInfo,
+        );
         const refreshed = {
           ...cached,
           models: probe.models,
@@ -919,6 +933,12 @@ export function createAgentXCloudService(options = {}) {
           visionFromInfo: probe.visionFromInfo,
           visionModels,
           visionModel: pickGatewayVisionModel(cached.visionModel, visionModels),
+          transcriptionFromInfo: probe.transcriptionFromInfo,
+          transcriptionModels,
+          transcriptionModel: pickGatewayTranscriptionModel(
+            cached.transcriptionModel,
+            transcriptionModels,
+          ),
           provisionOutcome: 'reused-local',
           warningCode: '',
         };

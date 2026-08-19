@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="th" dir="ltr" data-theme="dark">
+<html lang="th" dir="ltr" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>คำถามที่พบบ่อย — WebBrain</title>
   <meta name="description" content="คำตอบสั้น ๆ เกี่ยวกับการตั้งค่า โมเดล การเรียกเก็บเงิน ความปลอดภัย และวิธีที่ WebBrain ทำงานในเบราว์เซอร์ของคุณ">
   <link rel="canonical" href="https://webbrain.one/docs/th/faq/">
-  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/faq/">
+  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/en/faq/">
   <link rel="alternate" hreflang="es" href="https://webbrain.one/docs/es/faq/">
   <link rel="alternate" hreflang="fr" href="https://webbrain.one/docs/fr/faq/">
   <link rel="alternate" hreflang="tr" href="https://webbrain.one/docs/tr/faq/">
@@ -23,7 +23,7 @@
   <link rel="alternate" hreflang="he" href="https://webbrain.one/docs/he/faq/">
   <link rel="alternate" hreflang="hi" href="https://webbrain.one/docs/hi/faq/">
   <link rel="alternate" hreflang="pt" href="https://webbrain.one/docs/pt/faq/">
-  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/vi/faq/">
+  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/faq/">
   <link rel="alternate" hreflang="bn" href="https://webbrain.one/docs/bn/faq/">
   <link rel="alternate" hreflang="fa" href="https://webbrain.one/docs/fa/faq/">
   <link rel="alternate" hreflang="nl" href="https://webbrain.one/docs/nl/faq/">
@@ -36,8 +36,8 @@
   <meta property="og:image" content="https://webbrain.one/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/favicon.png">
-  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'dark'}catch(_){}</script>
-  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260809">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'light'}catch(_){}</script>
+  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260818">
   <!-- Plausible analytics: start -->
   <!-- Privacy-friendly analytics by Plausible -->
   <script async src="https://plausible.io/js/pa-yWGfwxkkKSVs-eTuaKYpy.js"></script>
@@ -114,14 +114,6 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "ณ 21 เมษายน 2026 คำแนะนำอันดับหนึ่งคือ Qwen 3.6 35B เหตุผล: ในเบนช์มาร์กด้านการมองเห็นของเรา (vision-model-shootout) มันทำได้ดีกว่า Gemma 4 ในการเข้าใจภาพหน้าจอ ขณะที่ยังใช้งานจริงสำหรับการอินเฟอเรนซ์ภายในเครื่องได้ สำหรับ GPU ระดับผู้บริโภค RTX 5090 เหมาะที่สุด ส่วน RTX 4090 มักใช้งานได้ด้วยการควอนไทซ์ INT4 AutoRound ผ่าน Intel/Qwen3.6-35B-A3B-int4-AutoRound เพื่อความเร็วสูงสุด เราแนะนำให้เซิร์ฟด้วย vLLM ตัวอย่างคำสั่ง: python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{\"image\": 4, \"video\": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '[\"*\"]' --speculative-config '{\"method\": \"dflash\", \"model\": \"z-lab/Qwen3.6-35B-A3B-DFlash\", \"num_speculative_tokens\": 15}' --attention-backend flash_attn DFlash speculative decoding เป็นทางเลือก"
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "เหตุใด WebGPU จึงมีให้ใช้เฉพาะในโหมด Apocalypse?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "เนื่องจากเรายังไม่คิดว่าการอนุมานข้อความด้วย WebGPU ภายในเบราว์เซอร์ดีพอสำหรับผู้ใช้ส่วนใหญ่ และเราไม่ต้องการให้คุณต้องทนกับประสบการณ์ที่ไม่ดี หากต้องการใช้โมเดล LFM2.5 2.6B เดียวกันภายในเครื่อง ให้รันการอนุมานบนเครื่องของคุณด้วย llama.cpp หรือ Ollama แล้วชี้ WebBrain ไปยังเอนด์พอยต์ภายในเครื่องนั้นแทนการพึ่งพา WebGPU ระบบสำรองด้านการมองเห็นผ่าน WebGPU ยังคงใช้งานได้ เพราะโมเดลมีขนาดเล็กกว่ามากและระบบสำรองนี้ถูกเรียกใช้เพียงเป็นครั้งคราว"
       }
     },
     {
@@ -483,7 +475,7 @@
       <nav class="top-nav" aria-label="เอกสาร">
         <a href="/docs/">เอกสาร</a>
         <a href="/blog/">บล็อก</a>
-        <a href="https://github.com/webbrain-one/webbrain">GitHub</a>
+        <a href="https://github.com/astralxkienlt/agentx-webmate">GitHub</a>
       </nav>
       <div class="header-tools">
         <label class="faq-language">
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>โมเดลและการตั้งค่าภายในเครื่อง</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>ใช้ WebBrain แบบออฟไลน์ทั้งหมดได้ไหม?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>โมเดลที่แนะนำที่สุดคืออะไร?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p>ณ <strong>21 เมษายน 2026</strong> คำแนะนำอันดับหนึ่งคือ <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a> เหตุผล: ในเบนช์มาร์กด้านการมองเห็นของเรา (<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>) มันทำได้ดีกว่า Gemma 4 ในการเข้าใจภาพหน้าจอ ขณะที่ยังใช้งานจริงสำหรับการอินเฟอเรนซ์ภายในเครื่องได้</p><p>สำหรับ GPU ระดับผู้บริโภค RTX 5090 เหมาะที่สุด ส่วน RTX 4090 มักใช้งานได้ด้วยการควอนไทซ์ INT4 AutoRound ผ่าน <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a></p><p>เพื่อความเร็วสูงสุด เราแนะนำให้เซิร์ฟด้วย <strong>vLLM</strong> ตัวอย่างคำสั่ง:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculative decoding เป็นทางเลือก</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>เหตุใด WebGPU จึงมีให้ใช้เฉพาะในโหมด Apocalypse?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>เนื่องจากเรายังไม่คิดว่าการอนุมานข้อความด้วย WebGPU ภายในเบราว์เซอร์ดีพอสำหรับผู้ใช้ส่วนใหญ่ และเราไม่ต้องการให้คุณต้องทนกับประสบการณ์ที่ไม่ดี หากต้องการใช้โมเดล LFM2.5 2.6B เดียวกันภายในเครื่อง ให้รันการอนุมานบนเครื่องของคุณด้วย <strong>llama.cpp</strong> หรือ <strong>Ollama</strong> แล้วชี้ WebBrain ไปยังเอนด์พอยต์ภายในเครื่องนั้นแทนการพึ่งพา WebGPU</p><p>ระบบสำรองด้านการมองเห็นผ่าน WebGPU ยังคงใช้งานได้ เพราะโมเดลมีขนาดเล็กกว่ามากและระบบสำรองนี้ถูกเรียกใช้เพียงเป็นครั้งคราว</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>เจอ “Failed to fetch” เมื่อเชื่อมต่อกับเซิร์ฟเวอร์ LLM ภายใน (vLLM, Ollama, llama.cpp) บนเครือข่ายของฉัน</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -676,7 +664,7 @@
   </div>
 
   <footer class="site-footer">
-    <div class="footer-inner"><span>WebBrain · คำถามที่พบบ่อย</span><div class="footer-links"><a href="/docs/">เอกสาร</a><a href="/privacy">นโยบายความเป็นส่วนตัว</a><a href="https://github.com/webbrain-one/webbrain/issues">รายงานข้อบกพร่อง</a></div></div>
+    <div class="footer-inner"><span>WebBrain · คำถามที่พบบ่อย</span><div class="footer-links"><a href="/docs/">เอกสาร</a><a href="/privacy">นโยบายความเป็นส่วนตัว</a><a href="https://github.com/astralxkienlt/agentx-webmate/issues">รายงานข้อบกพร่อง</a></div></div>
   </footer>
 
   <script>
@@ -685,7 +673,7 @@
       const themeButton = document.querySelector('[data-theme-toggle]');
       const sidebarButton = document.querySelector('[data-sidebar-toggle]');
       const languageSelect = document.querySelector('[data-faq-language]');
-      const languageRoutes = Object.freeze({"en":"/docs/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/vi/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
+      const languageRoutes = Object.freeze({"en":"/docs/en/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
       const searchInput = document.querySelector('[data-faq-search]');
       const emptyState = document.querySelector('[data-faq-empty]');
       const topics = Array.from(document.querySelectorAll('[data-faq-topic]'));

@@ -13,9 +13,9 @@
  *     script supplies the rects of matching elements).
  *
  * Phase 2 (future, optional) could add an on-device NER model via
- * transformers.js + WebGPU for higher-confidence detection; it would feed the
+ * an in-browser model for higher-confidence detection; it would feed the
  * same `regions` shape into `pixelateDataUrl`. Phase 1 already degrades
- * gracefully when WebGPU is unavailable because it needs no model.
+ * gracefully on any machine because it needs no model.
  *
  * IMPORTANT LIMITATION: this is best-effort, regex/DOM heuristics. It is NOT a
  * security guarantee. Anything not rendered as a recognized element/text

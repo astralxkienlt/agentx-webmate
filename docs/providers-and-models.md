@@ -46,7 +46,6 @@ class BaseLLMProvider {
 | `localai` | `openai` | local | (loaded model) | Auto metadata / override |
 | `gpt4all` | `openai` | local | (loaded model) | Yes (default on) |
 | `local_openai_proxy` | `openai` | local | (required) | Off / manual toggle |
-| `webgpu` (Chromium) | `webgpu` | local | LFM2.5 2.6B (tested default) or experimental custom HF repo | No |
 | `azure_openai` | `azure_openai` | cloud | (deployment) | Manual toggle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (model id) | No |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Model-name regex |
@@ -73,8 +72,7 @@ WebBrain also ships 77 disabled-by-default provider cards. Most are sourced
 from the OpenCode provider catalog snapshot at commit
 `62e4641235d7847dadc60da37cca8a023dd54fc1`; provider-specific additions use
 their official API documentation. Together with the original cards, Settings
-contains **107 built-in providers on Chromium** and **106 on Firefox**; the
-difference is the Chromium-only in-browser WebGPU runtime.
+contains **106 built-in providers** on both Chromium and Firefox.
 
 | IDs |
 |---|
@@ -109,8 +107,8 @@ premature EOF clears partial UI text and retries that turn once without
 streaming; the rest of that run then stays non-streaming.
 
 When a streaming provider returns token usage, WebBrain records it directly.
-If the provider omits usage, WebBrain records a conservative character-based
-estimate so streaming cannot bypass the configured cost allowance.
+If the provider omits usage, WebBrain reports a conservative character-based
+estimate so streamed turns still carry usage numbers.
 
 The setting still uses the stored key `openaiAskStreamingEnabled` for backward
 compatibility, but it now controls all capable providers.
@@ -147,26 +145,6 @@ duplicate request.
   service integration.
 
 ### Local Providers
-
-On Chromium, **WebGPU (In-browser)** is an endpoint-free local provider. Its
-model selector offers the tested
-[`LiquidAI/LFM2.5-2.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-2.6B-ONNX/)
-preset or a custom Hugging Face repository. Custom repositories have not been
-tested and are likely not to work. They must be compatible with Transformers.js
-text generation, provide a `q4f16` ONNX variant, and use a chat template that
-accepts `tools`; WebBrain validates the template after loading and rejects
-incompatible repositories. The selected model runs through the packaged
-Transformers.js 4.2 runtime in a dedicated extension Worker. The provider is
-text-only and defaults to the Compact prompt tier with a conservative 16k
-practical context setting. LFM2.5 2.6B downloads about 1.55 GB and uses its
-official pure
-reasoning template; WebBrain keeps text before `</think>` out of the visible
-answer and reports an error if reasoning exhausts the output budget. Each
-repository is cached separately in Chrome. **Test Connection**
-checks only the packaged runtime and hardware WebGPU adapter, so it does not
-trigger a model download. There is no API key, base URL, localhost server, or
-OpenAI-compatible endpoint. Firefox does not expose the card because its build
-does not package the Chromium MV3 offscreen/WebGPU runtime.
 
 Nine local endpoint providers are enabled by default. The model runtimes need no
 API key unless the server was started with auth; the generic proxy card requires
@@ -371,10 +349,10 @@ provider. A duplicate is stored as a normal provider entry with the stable ID
 so credentials, models, endpoint URLs, compatibility options, export/import,
 and active-provider selection continue to use the existing provider schema.
 The manager rejects duplicate-of-duplicate, second, orphaned, type-mismatched,
-and forged duplicate entries when loading storage. WebBrain Cloud and the
-Chromium-only WebGPU runtime are not duplicable because they do not represent
-independent user-managed API credentials or endpoints; their cards keep the
-Duplicate affordance disabled with an explanatory tooltip.
+and forged duplicate entries when loading storage. WebBrain Cloud is not
+duplicable because it does not represent independent user-managed API
+credentials or endpoints; its card keeps the Duplicate affordance disabled with
+an explanatory tooltip.
 
 ### Settings Search
 
@@ -391,43 +369,14 @@ Configs are stored in `chrome.storage.local` under the `providers` key, merged a
 Deprecated provider entries (`webbrain`, `openai_subscription`,
 `claude_subscription`) are filtered out.
 
-### Cost Allowances
-
-Settings exposes session and total cloud cost allowances. The agent prefers a provider-reported `usage.cost`/`usage.cost_usd` value when present (OpenRouter reports this directly). For direct cloud providers that only return token counts, WebBrain estimates spend from the provider config fields:
-
-- `inputCostPerMillionUsd`
-- `cacheReadCostPerMillionUsd`
-- `cacheWriteCostPerMillionUsd` (5-minute or unspecified cache writes)
-- `cacheWrite1hCostPerMillionUsd`
-- `outputCostPerMillionUsd`
-
-OpenAI reports cache reads and writes inside the input-token total (`prompt_tokens_details.cached_tokens` / `cache_write_tokens`, or the Responses API `input_tokens_details` equivalents), so WebBrain subtracts both before applying the regular input rate and prices writes with `cacheWriteCostPerMillionUsd`. Anthropic and Bedrock report regular input, cache reads, and cache writes separately, so those counts are added as separate billing classes. Anthropic and Bedrock can also distinguish 5-minute and 1-hour cache writes.
-
-Those rates are editable in the provider card so custom model pricing can be adjusted without code changes. If a cache-specific rate is absent, it falls back to the regular input rate; a missing 1-hour write rate falls back to the general cache-write rate. If a metered remote provider has token usage but no configured input/output rates, the agent uses conservative defaults (`$3` input / `$15` output per 1M tokens). Streaming providers contribute only their final cumulative usage snapshot for each request. Local providers are not counted.
-
 ### Dedicated Vision Provider
 
 The user can configure a separate vision provider for screenshot description. The agent sub-calls this provider to get a text description of the viewport, then feeds only the description (not the raw image) to the main planning provider. This reduces token costs when the main provider is text-only:
 
 ```js
 const vision = await providerManager.getVisionProvider();
-// Returns a dedicated OpenAI-compatible or in-browser vision provider, or null
+// Returns a dedicated OpenAI-compatible vision provider, or null
 ```
-
-On Chromium, **Settings -> Multimodal -> Vision** also offers a one-click
-in-browser fallback. It runs `LiquidAI/LFM2.5-VL-450M-ONNX` through WebGPU in a
-dedicated Worker with FP16 embeddings/vision encoder and a Q4 decoder. The
-model is not present in the general provider catalog and never receives agent
-tools or planning turns. First use downloads approximately 770 MB of model
-data from Hugging Face into the browser cache. That download runs in Chrome's
-offscreen extension worker, so the user may switch tabs or close Settings while
-it continues, but must keep Chrome running. Screenshots stay on-device and
-only the generated description is passed to the active provider. The local
-selection is stored as a Chrome-only preference, separately from the synced
-OpenAI-compatible vision endpoint, so it can be disabled without losing that
-endpoint or its credentials. Disabling it releases the loaded model and GPU
-resources while retaining the browser-cached download. Firefox does not expose
-this option because its build has no MV3 offscreen document.
 
 ### Transcription Provider
 

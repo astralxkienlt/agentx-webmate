@@ -1,8 +1,6 @@
 // Spanish (es).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "Contexto compactado automáticamente",
   'sp.context_compacted_detail': "{summarized} mensajes anteriores resumidos · {remaining} conservados",
   'ob.tokens.context_hint': "Para ejecuciones fiables del agente, elige un modelo con una ventana de contexto de al menos 16k tokens. 8k puede funcionar con el modo Compacto activado; 4k es demasiado pequeño para el conjunto de herramientas. WebBrain compacta la conversación automáticamente a medida que se acerca al límite de la ventana.",
-  'st.display.cost_session_limit.label': "Límite de coste por sesión en la nube",
-  'st.display.cost_session_limit.desc': "Detiene las ejecuciones en la nube y de OpenRouter antes de otra llamada de pago al modelo cuando esta sesión alcanza el límite de coste informado o estimado. Predeterminado: 10 $.",
-  'st.display.cost_total_limit.label': "Límite de coste total en la nube",
-  'st.display.cost_total_limit.desc': "Hace un seguimiento del gasto informado o estimado de modelos en la nube/OpenRouter en toda la extensión y detiene más llamadas de pago al alcanzar el límite. Los proveedores locales no se cuentan.",
-  'st.display.cost_reset': "Restablecer gasto",
   'st.provider.field.prompt_tier': "Nivel de prompt",
   'st.provider.field.prompt_tier.compact': "Compacto — modelos diminutos (menos de 8B): menos herramientas, reglas concisas",
   'st.provider.field.prompt_tier.mid': "Medio — modelos pequeños/locales (~9B–32B): prompt más ligero, menos herramientas (predeterminado para locales)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'Buscar en ajustes generales',
   'st.display.search.empty': 'No hay ajustes generales que coincidan.',
   'st.display.advanced': 'Avanzado',
-  ...getApocalypseModeCopy('es'),
-  ...getEmergencyBoxCopy('es'),
   'st.display.clarify_timeout.label': 'Tiempo de espera de aclaración',
   'st.display.clarify_timeout.desc': 'Cuánto esperar una respuesta a una pregunta de aclaración antes de elegir automáticamente la primera opción (o agotar el tiempo si no hay opciones). 0 = Instantáneo (autoelegir siempre). Valores por encima de 1200s esperan indefinidamente (Desactivado). Predeterminado 60s. No se aplica a permisos ni confirmaciones de envío de formularios.',
   'st.display.clarify_timeout.off': 'Desactivado',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "Aún no hay nada que exportar: inicia una conversación primero.",
   "sp.export_traces.partial": "Cadena de herramientas exportada, pero no se pudieron leer algunos eventos de turno.",
   "sp.export_traces.truncated": "Cadena de herramientas exportada. Puede faltar turnos antiguos si esta conversación tiene muchas trazas.",
-  "st.display.help_improve.label": "Ayuda a mejorar WebBrain",
-  "st.display.help_improve.desc_html": "Permite conservar determinadas interacciones de WebBrain Cloud y utilizarlas para evaluación, mejora, ajuste fino y entrenamiento. Activado de forma predeterminada. Desactívalo para impedir que futuras interacciones de Cloud se utilicen con esos fines. <u>WebBrain nunca recopila solicitudes de modelos locales ni solicitudes enviadas con tus propias credenciales de API.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Política de privacidad →</a>",
   "st.providers.webbrain_data_use.body": "Se incluye uso diario gratuito de WebBrain Cloud. Mientras Ayuda a mejorar WebBrain está activado de forma predeterminada, algunas conversaciones de Cloud pueden conservarse y utilizarse para evaluación, mejora, ajuste fino y entrenamiento. Desactívalo en General para excluir futuras interacciones de Cloud de esos usos. <u>WebBrain nunca recopila solicitudes de modelos locales ni solicitudes enviadas con tus propias credenciales de API.</u> {privacyLink}. Para obtener más uso, suscríbete en {subscribeLink}. Gestiona la facturación en {accountLink}.",
   'st.providers.compat.title': 'Compatibilidad avanzada del modelo',
   'st.providers.compat.blurb': 'Déjalos en Auto a menos que el modelo o el endpoint documenten un contrato de solicitud distinto.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "Conservar el objetivo guardado",
   "sp.workflows.healing.saved": "Se actualizaron {count} localizadores en «{name}».",
   "sp.workflows.healing.not_saved": "El localizador aprobado para «{name}» no se guardó porque el flujo cambió o la verificación no fue concluyente.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

@@ -1508,7 +1508,7 @@ export function registerRichTextToolbarFixtures({
       agent.providerManager.getVisionProvider = async () => ({
         config: { model: 'fixture-vision', baseUrl: 'https://vision.example.test' },
       });
-      agent._chatWithCostAllowance = async (_vision, messages) => {
+      agent._chat = async (_vision, messages) => {
         capturedVisionMessages = messages;
         return { content: JSON.stringify(familyAudit) };
       };

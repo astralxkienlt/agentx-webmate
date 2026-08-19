@@ -544,7 +544,6 @@ const providerPicker = document.getElementById('provider-picker');
 const providerPickerBtn = document.getElementById('provider-picker-btn');
 const providerPickerMenu = document.getElementById('provider-picker-menu');
 const providerPickerLabel = document.getElementById('provider-picker-label');
-const standaloneWebgpuBtn = document.getElementById('btn-webgpu-standalone');
 const languageSelect = document.getElementById('language-select');
 const languagePickerBtn = document.getElementById('language-picker-btn');
 const languagePickerMenu = document.getElementById('language-picker-menu');
@@ -1032,9 +1031,6 @@ let recommendationsRequestId = 0;
 let providerSelectionRequestId = 0;
 let providerTestRequestId = 0;
 let selectedProviderId = 'webbrain_cloud';
-let standaloneWebgpuEnabled = false;
-let standaloneWebgpuReady = false;
-let standaloneWebgpuActive = false;
 let recommendedActionsCollapsed = false;
 let webbrainPromotionHasAnimated = false;
 let slashCommandMatches = [];
@@ -1676,7 +1672,7 @@ function isSuccessfulAskCompletion(mode, response) {
   if (!response || response.success === false || response.ok === false) return false;
   if (updatesContainStoreReviewFailure(response.updates)) return false;
   const content = typeof response.content === 'string' ? response.content.trim() : '';
-  return !!content && !parseSubscribeError(content) && !parseCostAllowanceError(content);
+  return !!content && !parseSubscribeError(content);
 }
 
 // Per-tab chat history (stores innerHTML of messages container).
@@ -1915,10 +1911,10 @@ function releaseRetryAttachmentPayload(retryId) {
 
 function releaseRetryAttachmentsInTree(root) {
   if (!root) return;
-  if (root.matches?.('.error-retry-btn[data-retry-id], .cost-allowance-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]')) {
+  if (root.matches?.('.error-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]')) {
     releaseRetryAttachmentPayload(root.dataset.retryId);
   }
-  root.querySelectorAll?.('.error-retry-btn[data-retry-id], .cost-allowance-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]').forEach((btn) => {
+  root.querySelectorAll?.('.error-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]').forEach((btn) => {
     releaseRetryAttachmentPayload(btn.dataset.retryId);
   });
 }
@@ -4129,7 +4125,6 @@ async function init() {
   restoreLatestChatTurnPosition();
 
   await loadProviders();
-  await refreshStandaloneWebgpuStatus();
   await testConnection({ skipWebBrainCloud: true });
   await windowScope.syncActiveTab();
   refreshScheduledJobs({ tabId: currentTabId });
@@ -4153,7 +4148,6 @@ async function init() {
     }
     if (changes.providers || changes.activeProvider) {
       void loadProviders();
-      void refreshStandaloneWebgpuStatus();
     }
   });
 }
@@ -4392,7 +4386,6 @@ async function adoptRestoredRunState(tabId, state) {
       mode,
       foreground: runUi.foreground === true,
       ...(isStandaloneWindow ? { standaloneChat: true } : {}),
-      ...standaloneWebgpuRunPayload(),
     }, {
       probeFirst: true,
       requireDurableSubmittedTurn: runUi.kind !== 'continue',
@@ -4583,16 +4576,13 @@ async function applyActiveRunState(numericTabId, state) {
     setPlanReviewAwaiting(numericTabId, false);
     setTabProcessing(numericTabId, false);
     setTabAbortRequested(numericTabId, false);
-    const restoredAllowanceCardMissing = !!parseCostAllowanceError(runUi?.finalContent)
-      && !currentAssistantEl?.querySelector('.cost-allowance-error');
     if (runUi && ['completed', 'stopped', 'failed', 'cancelled', 'clarification_required'].includes(runUi.status)
-        && (Number(currentAssistantEl?.dataset.lastRenderedSeq || 0) < Number(runUi.seq || 0)
-          || restoredAllowanceCardMissing)) {
+        && Number(currentAssistantEl?.dataset.lastRenderedSeq || 0) < Number(runUi.seq || 0)) {
       handleAgentUpdateMessage({
         tabId: numericTabId,
         requestId: runUi.requestId,
         runId: runUi.runId,
-        ...(restoredAllowanceCardMissing ? {} : { seq: runUi.seq }),
+        seq: runUi.seq,
         type: 'run_complete',
         data: {
           status: runUi.status,
@@ -5867,16 +5857,6 @@ function rebindSubscribeButtons() {
   });
 }
 
-function rebindCostAllowanceButtons() {
-  document.querySelectorAll('.cost-allowance-bump-btn').forEach(bindCostAllowanceButton);
-  document.querySelectorAll('.cost-allowance-retry-btn').forEach(bindErrorRetryButton);
-  document.querySelectorAll('.cost-allowance-continue-btn').forEach(btn => {
-    if (btn.dataset.bound) return;
-    btn.dataset.bound = 'true';
-    btn.addEventListener('click', () => resumeAfterSubscription(btn));
-  });
-}
-
 function retryPayloadFromButton(btn) {
   const text = String(btn?.dataset?.retryText || '').trim();
   if (!text) return null;
@@ -6125,19 +6105,11 @@ function scheduleActiveChatPayloadCleanup(tabId, state) {
 
 function renderAgentErrorUpdate(data, tabId = currentTabId, requestId = '', options = {}) {
   const message = formatErrorMessage(data?.message ?? data?.error ?? data);
-  // Allowance routing depends on terminal durable-turn proof. Live error
-  // updates arrive before that proof, so the run_complete/direct response
-  // path owns the single actionable card.
-  if (parseCostAllowanceError(message)) return;
   const active = takeActiveRetryPayloadForError(tabId, requestId, message);
   if (active.duplicate) return;
   const msgEl = addMessage('error', t('sp.error_prefix', { msg: message }), {
     retryPayload: isTabAbortRequested(tabId) ? null : active.retryPayload,
     subscribeResumeMode: active.retryPayload?.mode,
-    costAllowanceResume: {
-      submittedTurnDurable: options.submittedTurnDurable,
-      retryPayload: active.retryPayload,
-    },
   });
   if (active.requestId) {
     msgEl.dataset.tabId = active.tabId;
@@ -6162,7 +6134,6 @@ function rebindRestoredMessageControls() {
   document.querySelectorAll('.workflow-manager').forEach(bindSavedWorkflowManager);
   document.querySelectorAll('form.workflow-parameter-form').forEach(bindSavedWorkflowParameterForm);
   rebindSubscribeButtons();
-  rebindCostAllowanceButtons();
 }
 
 function getProviderPickerOptions() {
@@ -6557,7 +6528,6 @@ async function loadProviders() {
     selectedProviderId = selectableProviderIds.has(res.active) ? res.active : 'webbrain_cloud';
     providerSelect.value = selectedProviderId;
     syncProviderPickerButton();
-    syncStandaloneWebgpuUi();
   } catch (e) {
     console.error('Failed to load providers:', e);
   }
@@ -6574,46 +6544,6 @@ async function openProvidersSettingsPage() {
 
 function setActiveChatProvider(providerId) {
   return sendToBackground('set_active_provider', { providerId });
-}
-
-function standaloneWebgpuRunPayload() {
-  return isStandaloneWindow && standaloneWebgpuActive ? { providerId: 'webgpu' } : {};
-}
-
-function syncStandaloneWebgpuUi() {
-  if (!standaloneWebgpuBtn) return;
-  standaloneWebgpuBtn.hidden = !isStandaloneWindow;
-  if (!isStandaloneWindow) return;
-  if (!standaloneWebgpuEnabled) standaloneWebgpuActive = false;
-  standaloneWebgpuBtn.disabled = !standaloneWebgpuEnabled;
-  standaloneWebgpuBtn.classList.toggle('active', standaloneWebgpuActive);
-  standaloneWebgpuBtn.setAttribute('aria-pressed', String(standaloneWebgpuActive));
-  standaloneWebgpuBtn.title = !standaloneWebgpuEnabled
-    ? 'Enable Apocalypse Mode first'
-    : standaloneWebgpuActive
-      ? standaloneWebgpuReady
-        ? 'Using WebGPU for this standalone chat'
-        : 'Using WebGPU for this standalone chat · download LFM2.5 2.6B before sending'
-      : standaloneWebgpuReady
-        ? 'Use WebGPU for this standalone chat'
-        : 'Use WebGPU for this standalone chat · model download required';
-  providerSelect.disabled = standaloneWebgpuActive;
-  providerPickerBtn.disabled = standaloneWebgpuActive;
-  providerPicker?.classList.toggle('webgpu-override', standaloneWebgpuActive);
-  if (standaloneWebgpuActive) setProviderPickerOpen(false);
-}
-
-async function refreshStandaloneWebgpuStatus() {
-  if (!isStandaloneWindow || !standaloneWebgpuBtn) return;
-  try {
-    const status = await sendToBackground('get_standalone_webgpu_status');
-    standaloneWebgpuEnabled = status?.enabled === true;
-    standaloneWebgpuReady = status?.ready === true;
-  } catch {
-    standaloneWebgpuEnabled = false;
-    standaloneWebgpuReady = false;
-  }
-  syncStandaloneWebgpuUi();
 }
 
 function isWebBrainCloudProviderSelected() {
@@ -8214,7 +8144,6 @@ async function sendMessage(extraChatParams = {}) {
       } : {}),
       ...(attachmentsForSend.length ? { attachments: attachmentsForSend } : {}),
       ...chatExtraParams,
-      ...standaloneWebgpuRunPayload(),
     });
     applyConversationScopeState(tabId, res);
     if (res?.conversationId) {
@@ -8292,22 +8221,10 @@ async function sendMessage(extraChatParams = {}) {
         && !(assistantEl.querySelector('.plan-review-expired')
           && isPlanReviewTimeoutTerminal(res.content))) {
       const textEl = assistantEl.querySelector('.message-text');
-      if (textEl && parseCostAllowanceError(res.content)) {
-        if (!textEl.classList.contains('cost-allowance-error')) {
-          renderCostAllowanceError(textEl, res.content, modeForSend, {
-            submittedTurnDurable: res.submittedTurnDurable,
-            retryPayload,
-          });
-        }
-        addMessageCopyButton(assistantEl);
-      } else if (textEl && getStreamedAssistantText(textEl) === String(res.content)) {
+      if (textEl && getStreamedAssistantText(textEl) === String(res.content)) {
         renderAssistantTextUpdate(assistantEl, res.content);
       } else if (textEl && !textEl.textContent.trim()) {
-        if (!renderCostAllowanceError(textEl, res.content, modeForSend, {
-              submittedTurnDurable: res.submittedTurnDurable,
-              retryPayload,
-            })
-            && !renderSubscribeError(textEl, res.content, modeForSend)) {
+        if (!renderSubscribeError(textEl, res.content, modeForSend)) {
           textEl.innerHTML = formatMarkdown(res.content);
         }
         addMessageCopyButton(assistantEl);
@@ -8506,11 +8423,6 @@ chrome.runtime.onMessage.addListener((msg) => {
       || msg.action !== 'user_memory_created'
       || document.visibilityState === 'hidden') return;
   showComposerToast(t('sp.memory.remembered'), { duration: 3200, effect: 'memory' });
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (!isStandaloneWindow || !['webgpu-text-download-state', 'apocalypse-mode-state'].includes(msg?.type)) return;
-  void refreshStandaloneWebgpuStatus();
 });
 
 // Recorder broadcasts — independent of the per-tab agent_update flow.
@@ -9042,17 +8954,7 @@ function handleAgentUpdateMessage(msg) {
         const hasStreamedText = hasStreamedAssistantText(textEl);
         const visibleStreamedText = streamedText
           || (hasStreamedText ? textEl?.innerText || textEl?.textContent || '' : '');
-        if (textEl && parseCostAllowanceError(data.finalContent)) {
-          clearAssistantTextStreamState(currentAssistantEl);
-          if (!textEl.classList.contains('cost-allowance-error')) {
-            renderCostAllowanceError(textEl, data.finalContent, '', {
-              submittedTurnDurable: data.submittedTurnDurable,
-              retryPayload: activeRetryPayloadForRequest(eventTabId, msg.requestId)
-                || retryPayloadForRunAssistant(currentAssistantEl),
-            });
-          }
-          addMessageCopyButton(currentAssistantEl);
-        } else if (textEl && hasStreamedText) {
+        if (textEl && hasStreamedText) {
           // Background/restored runs do not necessarily reach the local
           // sendRunWithReconnect response handler. Finalize their lightweight
           // live Markdown here, cancelling any queued frame and enabling the
@@ -9068,11 +8970,7 @@ function handleAgentUpdateMessage(msg) {
         } else if (textEl && !textEl.textContent.trim()) {
           clearAssistantTextStreamState(currentAssistantEl);
           if (data.status === 'stopped' || data.status === 'cancelled') textEl.innerHTML = t('sp.stopped_by_user_html');
-          else if (!renderCostAllowanceError(textEl, data.finalContent, '', {
-                submittedTurnDurable: data.submittedTurnDurable,
-                retryPayload: activeRetryPayloadForRequest(eventTabId, msg.requestId),
-              })
-              && !renderSubscribeError(textEl, data.finalContent)) textEl.innerHTML = formatMarkdown(data.finalContent);
+          else if (!renderSubscribeError(textEl, data.finalContent)) textEl.innerHTML = formatMarkdown(data.finalContent);
           addMessageCopyButton(currentAssistantEl);
         }
       }
@@ -10004,16 +9902,6 @@ function renderAssistantTextUpdate(assistantEl, content, options = {}) {
     return;
   }
 
-  // Cost-limit text can stream before the terminal snapshot tells us whether
-  // Retry or Continue is safe. Keep the bubble empty so the terminal renderer
-  // can build the card with authoritative resume context.
-  if (parseCostAllowanceError(content)) {
-    textEl.replaceChildren();
-    clearStreamedAssistantText(textEl);
-    delete textEl.dataset.suppressToolCallStream;
-    return;
-  }
-
   if (renderSubscribeError(textEl, content)) {
     clearStreamedAssistantText(textEl);
     delete textEl.dataset.suppressToolCallStream;
@@ -10165,77 +10053,6 @@ function appendVerboseToolResult(name, result) {
 // line once the free daily allowance runs out. Detect that shape so we can turn
 // the bare URL into a real Subscribe button instead of making the user copy it.
 const SUBSCRIBE_ERROR_RE = /Subscribe for more usage:\s*(https?:\/\/\S+)/i;
-const COST_ALLOWANCE_ERROR_RE = /Cloud cost allowance reached:\s*(this session|total cloud\/router usage)\s+is\s+\$[\d.]+\s+against\s+the\s+\$([\d.]+)\s+limit\./i;
-const COST_ALLOWANCE_BUMP_USD = 10;
-
-function parseCostAllowanceError(content) {
-  if (typeof content !== 'string') return null;
-  const match = content.match(COST_ALLOWANCE_ERROR_RE);
-  if (!match) return null;
-  const limitUsd = Number(match[2]);
-  if (!Number.isFinite(limitUsd) || limitUsd < 0) return null;
-  return {
-    scope: match[1].toLowerCase() === 'this session' ? 'session' : 'total',
-    limitUsd,
-    message: content.replace(/\s*Increase or reset the allowance in Settings\.\s*$/i, '').trim(),
-  };
-}
-
-function formatCostAllowanceUsd(value) {
-  const amount = Number(value);
-  return '$' + (Number.isFinite(amount) && amount >= 0 ? amount : 0).toFixed(2);
-}
-
-function bindCostAllowanceButton(btn) {
-  if (!btn || btn.dataset.bound) return;
-  btn.dataset.bound = 'true';
-  btn.addEventListener('click', async () => {
-    if (btn.disabled) return;
-    const scope = btn.dataset.costAllowanceScope === 'session' ? 'session' : 'total';
-    const storageKey = scope === 'session' ? 'costAllowanceSessionUsd' : 'costAllowanceTotalUsd';
-    const parsedLimit = Number(btn.dataset.costAllowanceLimit);
-    btn.disabled = true;
-    btn.textContent = '…';
-    btn.setAttribute('aria-busy', 'true');
-
-    try {
-      const stored = await chrome.storage.local.get([storageKey]);
-      const storedLimit = Number(stored?.[storageKey]);
-      const currentLimit = Number.isFinite(storedLimit) && storedLimit >= 0
-        ? storedLimit
-        : (Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : COST_ALLOWANCE_BUMP_USD);
-      const nextLimit = Math.round((currentLimit + COST_ALLOWANCE_BUMP_USD) * 100) / 100;
-      await chrome.storage.local.set({ [storageKey]: nextLimit });
-
-      btn.dataset.costAllowanceLimit = String(nextLimit);
-      btn.textContent = `✓ ${formatCostAllowanceUsd(nextLimit)}`;
-      btn.setAttribute('aria-busy', 'false');
-      btn.classList.add('cost-allowance-bumped');
-      const card = btn.closest('.cost-allowance-error');
-      const resumeBtn = card?.querySelector('.cost-allowance-retry-btn, .cost-allowance-continue-btn');
-      if (resumeBtn) resumeBtn.hidden = false;
-      const status = card?.querySelector('.cost-allowance-status');
-      const scopeLabel = t(scope === 'session'
-        ? 'st.display.cost_session_limit.label'
-        : 'st.display.cost_total_limit.label');
-      const success = `${scopeLabel}: ${formatCostAllowanceUsd(nextLimit)}`;
-      if (status) status.textContent = success;
-      showComposerToast(success, { duration: 5000 });
-      schedulePersist();
-    } catch (error) {
-      btn.disabled = false;
-      btn.textContent = '+ $10';
-      btn.setAttribute('aria-busy', 'false');
-      const failure = t('sp.error_prefix', {
-        msg: error?.message || String(error || 'unknown error'),
-      });
-      const status = btn.closest('.cost-allowance-error')?.querySelector('.cost-allowance-status');
-      if (status) status.textContent = failure;
-      showComposerToast(failure, { duration: 5000 });
-    }
-  });
-}
-
 function parseSubscribeError(content) {
   if (typeof content !== 'string') return null;
   const m = content.match(SUBSCRIBE_ERROR_RE);
@@ -10299,73 +10116,6 @@ function renderSubscribeError(textEl, content, resumeMode = '') {
   return true;
 }
 
-function renderCostAllowanceError(textEl, content, resumeMode = '', resumeOptions = {}) {
-  const parsed = parseCostAllowanceError(content);
-  if (!parsed) return false;
-
-  textEl.replaceChildren();
-  textEl.classList.add('cost-allowance-error');
-
-  const msg = document.createElement('div');
-  msg.className = 'cost-allowance-error-text';
-  msg.textContent = parsed.message;
-  textEl.appendChild(msg);
-
-  const actions = document.createElement('div');
-  actions.className = 'cost-allowance-actions';
-
-  const bumpBtn = document.createElement('button');
-  bumpBtn.type = 'button';
-  bumpBtn.className = 'cost-allowance-bump-btn';
-  bumpBtn.textContent = '+ $10';
-  bumpBtn.dataset.costAllowanceScope = parsed.scope;
-  bumpBtn.dataset.costAllowanceLimit = String(parsed.limitUsd);
-  const allowanceLabel = t(parsed.scope === 'session'
-    ? 'st.display.cost_session_limit.label'
-    : 'st.display.cost_total_limit.label');
-  bumpBtn.title = `${allowanceLabel}: +$10`;
-  bumpBtn.setAttribute('aria-label', bumpBtn.title);
-  bindCostAllowanceButton(bumpBtn);
-  actions.appendChild(bumpBtn);
-
-  const canContinue = resumeOptions?.submittedTurnDurable === true;
-  const requiresRetry = !canContinue;
-  if (requiresRetry && resumeOptions?.retryPayload?.text) {
-    const retryBtn = document.createElement('button');
-    retryBtn.type = 'button';
-    retryBtn.className = 'cost-allowance-retry-btn';
-    retryBtn.textContent = t('sp.retry');
-    retryBtn.hidden = true;
-    configureRetryButton(retryBtn, resumeOptions.retryPayload);
-    actions.appendChild(retryBtn);
-  } else if (canContinue) {
-    const continueBtn = document.createElement('button');
-    continueBtn.type = 'button';
-    continueBtn.className = 'cost-allowance-continue-btn';
-    continueBtn.textContent = t('sp.continue_btn');
-    continueBtn.dataset.resumeMode = ['ask', 'act', 'dev'].includes(resumeMode)
-      ? resumeMode
-      : (textEl.closest('.message.assistant')?.dataset.runMode || agentMode);
-    continueBtn.dataset.resumeForeground = resumeOptions?.retryPayload?.foreground === true
-      || textEl.closest('.message.assistant')?.dataset.retryForeground === 'true'
-      ? 'true'
-      : 'false';
-    continueBtn.hidden = true;
-    continueBtn.dataset.bound = 'true';
-    continueBtn.addEventListener('click', () => resumeAfterSubscription(continueBtn));
-    actions.appendChild(continueBtn);
-  }
-
-  textEl.appendChild(actions);
-
-  const status = document.createElement('div');
-  status.className = 'cost-allowance-status';
-  status.setAttribute('role', 'status');
-  status.setAttribute('aria-live', 'polite');
-  textEl.appendChild(status);
-  return true;
-}
-
 function configureRetryButton(btn, retryPayload) {
   if (!btn || !retryPayload?.text) return false;
   const retryId = `retry-${Date.now()}-${++retryPayloadSeq}`;
@@ -10394,7 +10144,7 @@ function configureRetryButton(btn, retryPayload) {
 
 function addErrorRetryButton(msgEl, retryPayload) {
   if (!msgEl || !retryPayload?.text
-      || msgEl.querySelector('.error-retry-btn, .cost-allowance-retry-btn, .planner-request-failure-retry-btn')) return;
+      || msgEl.querySelector('.error-retry-btn, .planner-request-failure-retry-btn')) return;
   msgEl.classList.add('retryable');
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -10703,13 +10453,7 @@ function addMessage(role, content, options = {}) {
   } else if (role === 'system') {
     if (isSystemHtml(content)) textEl.innerHTML = content.__systemHtml;
     else textEl.textContent = content || '';
-  } else if (!renderCostAllowanceError(
-    textEl,
-    content,
-    options.subscribeResumeMode,
-    options.costAllowanceResume,
-  )
-      && !renderSubscribeError(textEl, content, options.subscribeResumeMode)) {
+  } else if (!renderSubscribeError(textEl, content, options.subscribeResumeMode)) {
     textEl.innerHTML = content ? formatMarkdown(content) : '';
   }
 
@@ -10733,8 +10477,7 @@ function addMessage(role, content, options = {}) {
     bindMessageInfoToggle(msgEl);
   }
 
-  if (role === 'error' && options.retryPayload
-      && !textEl.classList.contains('cost-allowance-error')) {
+  if (role === 'error' && options.retryPayload) {
     addErrorRetryButton(msgEl, options.retryPayload);
   }
 
@@ -10882,7 +10625,6 @@ async function continueAgent(options = {}) {
       mode: modeForSend,
       foreground: foregroundForSend,
       ...(isStandaloneWindow ? { standaloneChat: true } : {}),
-      ...standaloneWebgpuRunPayload(),
     });
     applyConversationScopeState(tabId, res);
     if (res?.conversationId) {
@@ -10892,20 +10634,10 @@ async function continueAgent(options = {}) {
 
     if (currentTabId === tabId && res?.content && assistantEl) {
       const textEl = assistantEl.querySelector('.message-text');
-      if (textEl && parseCostAllowanceError(res.content)) {
-        if (!textEl.classList.contains('cost-allowance-error')) {
-          renderCostAllowanceError(textEl, res.content, modeForSend, {
-            submittedTurnDurable: res.submittedTurnDurable,
-          });
-        }
-        addMessageCopyButton(assistantEl);
-      } else if (textEl && getStreamedAssistantText(textEl) === String(res.content)) {
+      if (textEl && getStreamedAssistantText(textEl) === String(res.content)) {
         renderAssistantTextUpdate(assistantEl, res.content);
       } else if (textEl && !textEl.textContent.trim()) {
-        if (!renderCostAllowanceError(textEl, res.content, modeForSend, {
-              submittedTurnDurable: res.submittedTurnDurable,
-            })
-            && !renderSubscribeError(textEl, res.content)) {
+        if (!renderSubscribeError(textEl, res.content)) {
           textEl.innerHTML = formatMarkdown(res.content);
         }
         addMessageCopyButton(assistantEl);
@@ -12790,13 +12522,6 @@ providerSelect.addEventListener('change', async () => {
   }
   selectedProviderId = providerId;
   await testConnection({ providerId });
-});
-
-standaloneWebgpuBtn?.addEventListener('click', async () => {
-  await refreshStandaloneWebgpuStatus();
-  if (!standaloneWebgpuEnabled) return;
-  standaloneWebgpuActive = !standaloneWebgpuActive;
-  syncStandaloneWebgpuUi();
 });
 
 providerPickerBtn?.addEventListener('click', (event) => {

@@ -383,8 +383,14 @@ body {
   font-size: 0.9375rem;
 }
 
-#vision-card.agentx-cloud-vision-managed .vision-endpoint-divider,
-#vision-card.agentx-cloud-vision-managed .vision-local-option {
+/* When the gateway owns the sidecar model, the hand-rolled endpoint below the
+   panel stays visible but recedes — it is disabled, not removed, so the user
+   can still see what they had configured before signing in and gets it back on
+   sign-out. Dimming the whole block is what makes "the gateway owns this now"
+   legible; a disabled fieldset alone reads as an accident. */
+#vision-card.agentx-cloud-vision-managed #vision-endpoint-fields,
+#vision-card.agentx-cloud-vision-managed .vision-test-actions,
+#transcription-card.agentx-cloud-transcription-managed #transcription-endpoint-fields {
   opacity: 0.58;
 }
 

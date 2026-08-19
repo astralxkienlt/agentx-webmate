@@ -1,8 +1,6 @@
 ﻿// German (de).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -525,10 +523,6 @@ export default {
   'st.display.search.placeholder': 'Allgemeine Einstellungen durchsuchen',
   'st.display.search.empty': 'Keine passenden allgemeinen Einstellungen.',
   'st.display.advanced': 'Erweitert',
-  ...getApocalypseModeCopy('de'),
-  ...getEmergencyBoxCopy('de'),
-  'st.display.help_improve.label': 'Bei der Verbesserung von WebBrain helfen',
-  'st.display.help_improve.desc_html': 'Ermöglichen Sie, dass geeignete WebBrain Cloud-Text- und Tool-Interaktionen gespeichert und für Auswertung, Verbesserung, Feinabstimmung und Training verwendet werden. Standardmäßig aktiviert. Wenn Sie dies deaktivieren, wird die aktuelle Unterhaltung dauerhaft ausgeschlossen; eine erneute Aktivierung gilt ab der nächsten neuen Unterhaltung. Screenshots und Bilddaten werden nicht in der WebBrain-Verbesserungsdatenbank gespeichert. <u>Anfragen an lokale Modelle und mit eigenen APIs werden niemals von WebBrain erfasst.</u> <a href="https://webbrain.one/privacy" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Datenschutzrichtlinie →</a>',
   'st.display.clarify_timeout.label': 'Zeitlimit für Klärungsfragen',
   'st.display.clarify_timeout.desc': 'Wie lange auf eine Antwort auf eine Klärungsfrag gewartet wird, bevor die erste Option automatisch ausgewählt wird.',
   'st.display.clarify_timeout.off': 'Aus',
@@ -571,11 +565,6 @@ export default {
   'st.display.auto_screenshot.every_step': 'Bei jedem Schritt',
   'st.display.tracing.label': 'Traces aufzeichnen (zum Modellvergleich)',
   'st.display.tracing.desc_html': 'Speichert jeden Durchlauf in der lokalen IndexedDB, damit Sie Modelle seitenweise inspizieren und vergleichen können. <a href="traces.html" target="_blank" style="color:var(--accent);">Traces öffnen →</a>',
-  'st.display.cost_session_limit.label': 'Cloud-Kosten-Sitzungskontingent',
-  'st.display.cost_session_limit.desc': 'Stoppt Cloud- und OpenRouter-Durchläufe vor einem weiteren kostenpflichtigen Modellaufruf, wenn diese Sitzung das Kostenkontingent erreicht.',
-  'st.display.cost_total_limit.label': 'Cloud-Kosten-Gesamtkontingent',
-  'st.display.cost_total_limit.desc': 'Verfolgt gemeldete oder geschätzte Cloud/OpenRouter-Modellausgaben in der gesamten Erweiterung und stoppt weitere kostenpflichtige Aufrufe am Kontingent.',
-  'st.display.cost_reset': 'Ausgaben zurücksetzen',
   'st.display.strict_secret.label': 'Strenge Geheimnisverwaltung',
   'st.display.strict_secret.desc': 'Weigert sich, Anmeldeinformationen in Zusammenfassungen oder Assistententext zu zitieren — auch wenn Sie ausdrücklich danach fragen.',
   'st.display.allow_local_network.label': 'Agenten den Zugriff auf das lokale Netzwerk erlauben',
@@ -967,6 +956,4 @@ export default {
   "sp.workflows.healing.keep": "Gespeichertes Ziel beibehalten",
   "sp.workflows.healing.saved": "{count} Locator in „{name}“ aktualisiert.",
   "sp.workflows.healing.not_saved": "Der bestätigte Locator für „{name}“ wurde nicht gespeichert, weil sich der Workflow geändert hat oder die Prüfung nicht eindeutig war.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

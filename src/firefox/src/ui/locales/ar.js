@@ -1,8 +1,6 @@
 // Arabic (ar).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -26,11 +24,6 @@ export default {
   'sp.context_compacted': "تم ضغط السياق تلقائيًا",
   'sp.context_compacted_detail': "تم تلخيص {summarized} من الرسائل السابقة · تم الاحتفاظ بـ {remaining}",
   'ob.tokens.context_hint': "للحصول على تشغيل موثوق للوكيل، اختر نموذجًا بنافذة سياق لا تقل عن 16k رمز. يمكن أن يعمل 8k مع تفعيل الوضع المضغوط؛ أما 4k فهو صغير جدًا لمجموعة الأدوات. يقوم WebBrain بضغط المحادثة تلقائيًا كلما اقتربت من حد النافذة.",
-  'st.display.cost_session_limit.label': "حد تكلفة السحابة لكل جلسة",
-  'st.display.cost_session_limit.desc': "يوقف عمليات التشغيل السحابية وOpenRouter قبل أي استدعاء مدفوع آخر للنموذج بمجرد وصول هذه الجلسة إلى حد التكلفة المُبلّغ عنه أو المُقدَّر. الافتراضي 10 $.",
-  'st.display.cost_total_limit.label': "حد التكلفة الإجمالي للسحابة",
-  'st.display.cost_total_limit.desc': "يتتبع إنفاق نماذج السحابة/OpenRouter المُبلّغ عنه أو المُقدَّر عبر الامتداد ويوقف الاستدعاءات المدفوعة الإضافية عند بلوغ الحد. لا تُحتسب الموفّرات المحلية.",
-  'st.display.cost_reset': "إعادة تعيين الإنفاق",
   'st.provider.field.prompt_tier': "مستوى المُوجِّه",
   'st.provider.field.prompt_tier.compact': "مضغوط — نماذج صغيرة جدًا (أقل من 8B): أقل عدد من الأدوات، قواعد موجزة",
   'st.provider.field.prompt_tier.mid': "متوسط — نماذج صغيرة/محلية (~9B–32B): مُوجِّه أخف، أدوات مُقلّصة (الافتراضي للمحلي)",
@@ -680,8 +673,6 @@ export default {
   'st.display.search.placeholder': 'البحث في الإعدادات العامة',
   'st.display.search.empty': 'لا توجد إعدادات عامة مطابقة.',
   'st.display.advanced': 'متقدم',
-  ...getApocalypseModeCopy('ar'),
-  ...getEmergencyBoxCopy('ar'),
   'st.display.clarify_timeout.label': 'مهلة التوضيح',
   'st.display.clarify_timeout.desc': 'مدة انتظار الرد على سؤال التوضيح قبل اختيار الخيار الأول تلقائيًا (أو انتهاء المهلة إن لم توجد خيارات). 0 = فوري (اختيار تلقائي دائمًا). أعلى من 1200 ثانية = انتظار بلا حدود (إيقاف). الافتراضي 60 ثانية. لا ينطبق على أذونات أو تأكيدات إرسال النماذج.',
   'st.display.clarify_timeout.off': 'إيقاف',
@@ -911,8 +902,6 @@ export default {
   "sp.export_traces.no_conversation": "لا يوجد ما يُصدَّر بعد — ابدأ محادثة أولًا.",
   "sp.export_traces.partial": "تم تصدير سلسلة الأدوات، لكن تعذّر قراءة بعض أحداث الجولات.",
   "sp.export_traces.truncated": "تم تصدير سلسلة الأدوات. قد تُفقد الجولات الأقدم إذا كان لهذه المحادثة كثير من التتبعات.",
-  "st.display.help_improve.label": "المساعدة في تحسين WebBrain",
-  "st.display.help_improve.desc_html": "السماح بالاحتفاظ بتفاعلات محددة مع WebBrain Cloud واستخدامها للتقييم والتحسين والضبط الدقيق والتدريب. مفعّل افتراضيًا. عطّله لمنع استخدام تفاعلات Cloud المستقبلية لهذه الأغراض. <u>لا يجمع WebBrain أبدًا طلبات النماذج المحلية أو الطلبات المرسلة مباشرة باستخدام بيانات اعتماد API الخاصة بك.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">سياسة الخصوصية →</a>",
   "st.providers.webbrain_data_use.body": "يتضمن WebBrain Cloud استخدامًا يوميًا مجانيًا. عندما تكون «المساعدة في تحسين WebBrain» مفعّلة افتراضيًا، قد يتم الاحتفاظ بمحادثات Cloud محددة واستخدامها للتقييم والتحسين والضبط الدقيق والتدريب. عطّلها من عام لاستبعاد تفاعلات Cloud المستقبلية من هذه الاستخدامات. <u>لا يجمع WebBrain أبدًا طلبات النماذج المحلية أو الطلبات المرسلة مباشرة باستخدام بيانات اعتماد API الخاصة بك.</u> {privacyLink}. لمزيد من الاستخدام، اشترك عبر {subscribeLink}. أدِر الفوترة عبر {accountLink}.",
   'st.providers.compat.title': 'توافق متقدم للنموذج',
   'st.providers.compat.blurb': 'اترك هذه الخيارات على «تلقائي» ما لم يوثّق النموذج أو نقطة النهاية عقد طلب مختلفًا.',
@@ -974,6 +963,4 @@ export default {
   "sp.workflows.healing.keep": "الاحتفاظ بالهدف المحفوظ",
   "sp.workflows.healing.saved": "تم تحديث {count} محددات في «{name}».",
   "sp.workflows.healing.not_saved": "لم يُحفظ المحدد الموافق عليه لـ «{name}» لأن سير العمل تغيّر أو لأن التحقق لم يكن حاسماً.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

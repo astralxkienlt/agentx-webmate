@@ -1,6 +1,4 @@
 // Persian — translated from the canonical English locale.
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -530,10 +528,6 @@ export default {
   'st.display.search.placeholder': "تنظیمات عمومی را جستجو کنید",
   'st.display.search.empty': "تنظیمات عمومی مطابقت ندارد.",
   'st.display.advanced': "پیشرفته",
-  ...getApocalypseModeCopy('fa'),
-  ...getEmergencyBoxCopy('fa'),
-  'st.display.help_improve.label': "به بهبود WebBrain کمک کنید",
-  'st.display.help_improve.desc_html': "اجازه دهید تا تعاملات متن و ابزار Cloud واجد شرایط WebBrain حفظ شود و برای ارزیابی، بهبود، تنظیم دقیق و آموزش استفاده شود. به طور پیش فرض روشن است. با خاموش کردن این حالت به طور دائم از مکالمه فعلی انصراف داده می شود. روشن کردن مجدد آن برای مکالمه جدید بعدی اعمال می شود. عکس های صفحه و بایت های تصویر در پایگاه داده بهبود WebBrain حفظ نمی شوند. <u>درخواست‌های API مدل محلی و خود را بیاورید هرگز توسط WebBrain جمع‌آوری نمی‌شوند.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">سیاست حفظ حریم خصوصی →</a>",
   'st.display.clarify_timeout.label': "روشن کردن مهلت زمانی",
   'st.display.clarify_timeout.desc': "قبل از انتخاب خودکار اولین گزینه (یا زمانی که هیچ گزینه ای وجود ندارد) چه مدت باید منتظر پاسخ به یک درخواست شفاف سازی بود. 0 = فوری (همیشه انتخاب خودکار). مقادیر بالای 1200 به طور نامحدود منتظر می مانند (خاموش). پیش فرض دهه 60 برای تأییدیه های مجوز یا ارسال فرم اعمال نمی شود.",
   'st.display.clarify_timeout.off': "خاموش",
@@ -576,11 +570,6 @@ export default {
   'st.display.auto_screenshot.every_step': "هر قدم",
   'st.display.tracing.label': "ثبت ردیابی (برای مقایسه مدل)",
   'st.display.tracing.desc_html': "هر اجرا (درخواست‌های LLM، پاسخ‌ها، تماس‌های ابزار، تصاویر صفحه) را در IndexedDB محلی ادامه دهید تا بتوانید مدل‌ها را در کنار یکدیگر بررسی و مقایسه کنید. در یک برگه Traces جداگانه باز می شود. به‌طور پیش‌فرض خاموش است زیرا نوشته‌های دیسک را در هر مرحله اضافه می‌کند. <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">باز کردن صفحه Traces →</a>",
-  'st.display.cost_session_limit.label': "کمک هزینه جلسه هزینه ابر",
-  'st.display.cost_session_limit.desc': "هنگامی که این جلسه به میزان هزینه گزارش شده یا تخمین زده شده رسید، ابر را متوقف می کند و OpenRouter قبل از تماس مدل پولی دیگر اجرا می شود. پیش فرض 10 دلار.",
-  'st.display.cost_total_limit.label': "هزینه کل کمک هزینه",
-  'st.display.cost_total_limit.desc': "هزینه‌های گزارش‌شده یا تخمینی مدل ابر/OpenRouter را در سراسر برنامه افزودنی ردیابی می‌کند و تماس‌های پولی بیشتر را با کمک هزینه متوقف می‌کند. ارائه دهندگان محلی به حساب نمی آیند.",
-  'st.display.cost_reset': "بازنشانی هزینه",
   'st.display.strict_secret.label': "برخورد محرمانه دقیق",
   'st.display.strict_secret.desc': "از نقل قول اعتبارنامه ها (گذرواژه، کلیدهای API، نشانه ها، OTPها) در خلاصه ها یا متن دستیار خودداری کنید - حتی زمانی که صریحاً آنها را درخواست می کنید. اگر به طور منظم فایل های ردیابی یا اشتراک گذاری صفحه را به اشتراک می گذارید مفید است. به‌طور پیش‌فرض خاموش: webbrain در مرورگر شما اجرا می‌شود، بنابراین به‌طور پیش‌فرض نماینده مقادیری را که درخواست می‌کنید به شما نشان می‌دهد و فقط خلاصه‌های `done` را مرتب نگه می‌دارد.",
   'st.display.allow_local_network.label': "به عامل اجازه دسترسی به شبکه محلی را بدهید",
@@ -994,6 +983,4 @@ export default {
   "sp.workflows.healing.keep": "حفظ هدف ذخیره‌شده",
   "sp.workflows.healing.saved": "{count} مکان‌یاب در «{name}» به‌روزرسانی شد.",
   "sp.workflows.healing.not_saved": "مکان‌یاب تأییدشدهٔ «{name}» ذخیره نشد، زیرا گردش‌کار تغییر کرده بود یا نتیجهٔ تأیید قطعی نبود.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} بدون هیچ نقطهٔ پایانی API کاملاً در Chrome اجرا می‌شود. نخستین تولید حدود 4.85 GB دانلود می‌کند و آن را در مرورگر ذخیره می‌کند. آزمایش اتصال، محیط اجرایی بسته‌بندی‌شده و آداپتور سخت‌افزاری را بدون دانلود مدل بررسی می‌کند.',
 };

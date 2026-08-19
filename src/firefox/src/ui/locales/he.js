@@ -1,8 +1,6 @@
 // Hebrew (he).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -495,8 +493,6 @@ export default {
   "st.display.search.placeholder": "חפש בהגדרות כלליות",
   "st.display.search.empty": "אין הגדרות כלליות תואמות.",
   "st.display.advanced": "מִתקַדֵם",
-  ...getApocalypseModeCopy('he'),
-  ...getEmergencyBoxCopy('he'),
   "st.display.clarify_timeout.label": "פסק זמן להבהרה",
   "st.display.clarify_timeout.desc": "כמה זמן להמתין לתשובה לשאלת הבהרה לפני בחירה אוטומטית של האפשרות הראשונה (או פקיעת זמן אם אין אפשרויות). 0 = מיידי (בחירה אוטומטית תמיד). מעל 1200 שנ׳ = המתנה ללא הגבלה (כבוי). ברירת מחדל 60 שנ׳. לא חל על הרשאות או אישורי שליחת טופס.",
   "st.display.clarify_timeout.off": "כבוי",
@@ -539,11 +535,6 @@ export default {
   "st.display.auto_screenshot.every_step": "כל צעד",
   "st.display.tracing.label": "הקלטת עקבות (להשוואת מודלים)",
   "st.display.tracing.desc_html": "תתמיד בכל ריצה (LLM בקשות, תגובות, קריאות לכלים, צילומי מסך) לתוך IndexedDB המקומי כדי שתוכל לבדוק ולהשוות מודלים זה לצד זה. נפתח בלשונית Traces נפרדת. כבוי כברירת מחדל מכיוון שהוא מוסיף כתיבה בדיסק בכל שלב. <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">פתח את דף העקבות →</a>",
-  "st.display.cost_session_limit.label": "קצבת הפגישה בעלות ענן",
-  "st.display.cost_session_limit.desc": "מפסיק ענן ו OpenRouter פועל לפני שיחת מודל בתשלום נוספת ברגע שההפעלה הזו מגיעה לקצבת העלות המדווחת או המשוערת. ברירת מחדל 10 $.",
-  "st.display.cost_total_limit.label": "הקצבה כוללת של עלות ענן",
-  "st.display.cost_total_limit.desc": "עוקבים מדווחים או ענן משוער/OpenRouter הוצאה של הדגם ברחבי השלוחה ומפסיקה שיחות נוספות בתשלום בקצבה. ספקים מקומיים אינם נספרים.",
-  "st.display.cost_reset": "אפס את ההוצאה",
   "st.display.strict_secret.label": "טיפול סודי קפדני",
   "st.display.strict_secret.desc": "מנע ציטוט של פרטי גישה (סיסמאות, מפתחות API, אסימונים וקודים חד-פעמיים) בסיכומים או בתשובות — גם אם ביקשת אותם במפורש. שימושי בעת שיתוף עקבות או מסך. כבוי כברירת מחדל: WebBrain פועל בדפדפן שלך, ולכן הסוכן מציג ערכים שביקשת אך נמנע מלכלול אותם בסיכומי השלמה.",
   "st.display.allow_local_network.label": "אפשר לסוכן לגשת לרשת המקומית",
@@ -864,8 +855,6 @@ export default {
   "sp.export_traces.no_conversation": "אין עדיין מה לייצא — התחילו שיחה קודם.",
   "sp.export_traces.partial": "שרשרת הכלים יוצאה, אך חלק מאירועי התורות לא נקראו.",
   "sp.export_traces.truncated": "שרשרת הכלים יוצאה. תורות ישנות עשויות לחסר אם לשיחה יש הרבה מעקבים.",
-  "st.display.help_improve.label": "עזרה בשיפור WebBrain",
-  "st.display.help_improve.desc_html": "אפשרו לשמור אינטראקציות נבחרות עם WebBrain Cloud ולהשתמש בהן להערכה, שיפור, כוונון עדין ואימון. מופעל כברירת מחדל. כבו כדי למנוע שימוש באינטראקציות Cloud עתידיות למטרות אלה. <u>WebBrain לעולם אינו אוסף בקשות למודלים מקומיים או בקשות שנשלחות ישירות באמצעות פרטי ה-API שלכם.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">מדיניות פרטיות →</a>",
   "st.providers.webbrain_data_use.body": "שימוש יומי חינמי ב-WebBrain Cloud כלול. כאשר ״עזרה בשיפור WebBrain״ מופעלת כברירת מחדל, ייתכן ששיחות Cloud נבחרות יישמרו וישמשו להערכה, שיפור, כוונון עדין ואימון. כבו את האפשרות ב״כללי״ כדי להחריג אינטראקציות Cloud עתידיות משימושים אלה. <u>WebBrain לעולם אינו אוסף בקשות למודלים מקומיים או בקשות שנשלחות ישירות באמצעות פרטי ה-API שלכם.</u> {privacyLink}. לשימוש נוסף, הירשמו דרך {subscribeLink}. נהלו את החיוב דרך {accountLink}.",
   'st.providers.compat.title': 'תאימות מתקדמת של המודל',
   'st.providers.compat.blurb': 'השאירו על אוטומטי אלא אם המודל או נקודת הקצה מתעדים חוזה בקשה אחר.',
@@ -927,6 +916,4 @@ export default {
   "sp.workflows.healing.keep": "להשאיר את היעד השמור",
   "sp.workflows.healing.saved": "עודכנו {count} מאתרים ב־„{name}”.",
   "sp.workflows.healing.not_saved": "המאתר שאושר עבור „{name}” לא נשמר משום שתהליך העבודה השתנה או שהאימות לא היה חד־משמעי.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

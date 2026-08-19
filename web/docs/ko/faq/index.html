@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ko" dir="ltr" data-theme="dark">
+<html lang="ko" dir="ltr" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>자주 묻는 질문 — WebBrain</title>
   <meta name="description" content="설정, 모델, 결제, 안전 및 브라우저에서 WebBrain이 작동하는 방식에 대한 빠른 답변입니다.">
   <link rel="canonical" href="https://webbrain.one/docs/ko/faq/">
-  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/faq/">
+  <link rel="alternate" hreflang="en" href="https://webbrain.one/docs/en/faq/">
   <link rel="alternate" hreflang="es" href="https://webbrain.one/docs/es/faq/">
   <link rel="alternate" hreflang="fr" href="https://webbrain.one/docs/fr/faq/">
   <link rel="alternate" hreflang="tr" href="https://webbrain.one/docs/tr/faq/">
@@ -23,7 +23,7 @@
   <link rel="alternate" hreflang="he" href="https://webbrain.one/docs/he/faq/">
   <link rel="alternate" hreflang="hi" href="https://webbrain.one/docs/hi/faq/">
   <link rel="alternate" hreflang="pt" href="https://webbrain.one/docs/pt/faq/">
-  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/vi/faq/">
+  <link rel="alternate" hreflang="vi" href="https://webbrain.one/docs/faq/">
   <link rel="alternate" hreflang="bn" href="https://webbrain.one/docs/bn/faq/">
   <link rel="alternate" hreflang="fa" href="https://webbrain.one/docs/fa/faq/">
   <link rel="alternate" hreflang="nl" href="https://webbrain.one/docs/nl/faq/">
@@ -36,8 +36,8 @@
   <meta property="og:image" content="https://webbrain.one/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/favicon.png">
-  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'dark'}catch(_){}</script>
-  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260809">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('webbrain-theme')||'light'}catch(_){}</script>
+  <link rel="stylesheet" href="/docs/assets/docs.css?v=20260818">
   <!-- Plausible analytics: start -->
   <!-- Privacy-friendly analytics by Plausible -->
   <script async src="https://plausible.io/js/pa-yWGfwxkkKSVs-eTuaKYpy.js"></script>
@@ -114,14 +114,6 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "2026년 4월 21일 기준 최상위 추천은 Qwen 3.6 35B입니다. 이유: 자체 비전 벤치마크(vision-model-shootout)에서 스크린샷 이해 성능이 Gemma 4를 능가했고, 동시에 로컬 추론에도 실용적이었습니다. 컨슈머 GPU에서는 RTX 5090이 이상적이며, RTX 4090도 Intel/Qwen3.6-35B-A3B-int4-AutoRound의 INT4 AutoRound 양자화로 충분히 돌릴 수 있는 경우가 많습니다. 최대 속도를 원한다면 vLLM으로 서빙하는 것을 추천합니다. 명령어 예시: python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{\"image\": 4, \"video\": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '[\"*\"]' --speculative-config '{\"method\": \"dflash\", \"model\": \"z-lab/Qwen3.6-35B-A3B-DFlash\", \"num_speculative_tokens\": 15}' --attention-backend flash_attn DFlash speculative decoding은 선택 사항입니다."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "WebGPU가 아포칼립스 모드에서만 제공되는 이유는 무엇인가요?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "브라우저 내 WebGPU 텍스트 추론이 아직 대부분의 사용자에게 충분히 좋은 수준이라고 보지 않으며, 좋지 않은 경험을 감수하게 하고 싶지 않기 때문입니다. 같은 LFM2.5 2.6B 모델을 로컬에서 사용하려면 컴퓨터에서 llama.cpp 또는 Ollama로 추론을 실행하고, WebGPU에 의존하는 대신 WebBrain을 해당 로컬 엔드포인트에 연결하세요. WebGPU 비전 폴백은 모델이 훨씬 작고 가끔만 사용되므로 계속 제공됩니다."
       }
     },
     {
@@ -483,7 +475,7 @@
       <nav class="top-nav" aria-label="문서">
         <a href="/docs/">문서</a>
         <a href="/blog/">블로그</a>
-        <a href="https://github.com/webbrain-one/webbrain">GitHub</a>
+        <a href="https://github.com/astralxkienlt/agentx-webmate">GitHub</a>
       </nav>
       <div class="header-tools">
         <label class="faq-language">
@@ -581,7 +573,7 @@
     <section class="faq-topic" id="topic-models" data-faq-topic>
       <header class="faq-topic-header">
         <h2>모델 및 로컬 설정</h2>
-        <span aria-label="7">7</span>
+        <span aria-label="6">6</span>
       </header>
       <details class="faq-question" id="offline" data-faq-item>
         <summary><span>WebBrain을 완전히 오프라인에서 사용할 수 있나요?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -594,10 +586,6 @@
       <details class="faq-question" id="recommended-model" data-faq-item>
         <summary><span>가장 추천하는 모델은 무엇인가요?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
         <div class="faq-answer"><p><strong>2026년 4월 21일</strong> 기준 최상위 추천은 <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B" target="_blank">Qwen 3.6 35B</a>입니다. 이유: 자체 비전 벤치마크(<a href="https://www.webbrain.one/blog/vision-model-shootout" target="_blank">vision-model-shootout</a>)에서 스크린샷 이해 성능이 Gemma 4를 능가했고, 동시에 로컬 추론에도 실용적이었습니다.</p><p>컨슈머 GPU에서는 RTX 5090이 이상적이며, RTX 4090도 <a href="https://huggingface.co/Intel/Qwen3.6-35B-A3B-int4-AutoRound" target="_blank">Intel/Qwen3.6-35B-A3B-int4-AutoRound</a>의 INT4 AutoRound 양자화로 충분히 돌릴 수 있는 경우가 많습니다.</p><p>최대 속도를 원한다면 <strong>vLLM</strong>으로 서빙하는 것을 추천합니다. 명령어 예시:</p><p><code>python -u -m vllm.entrypoints.openai.api_server --model Intel/Qwen3.6-35B-A3B-int4-AutoRound --served-model-name qwen3.6-35b --quantization auto --dtype bfloat16 --max-model-len 65536 --max-num-batched-tokens 32768 --max-num-seqs 4 --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --limit-mm-per-prompt '{"image": 4, "video": 1}' --mm-processor-cache-type shm --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code --allowed-origins '["*"]' --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3.6-35B-A3B-DFlash", "num_speculative_tokens": 15}' --attention-backend flash_attn</code></p><p><em>DFlash speculative decoding은 선택 사항입니다.</em></p></div>
-      </details>
-      <details class="faq-question" id="webgpu-apocalypse" data-faq-item>
-        <summary><span>WebGPU가 아포칼립스 모드에서만 제공되는 이유는 무엇인가요?</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
-        <div class="faq-answer"><p>브라우저 내 WebGPU 텍스트 추론이 아직 대부분의 사용자에게 충분히 좋은 수준이라고 보지 않으며, 좋지 않은 경험을 감수하게 하고 싶지 않기 때문입니다. 같은 LFM2.5 2.6B 모델을 로컬에서 사용하려면 컴퓨터에서 <strong>llama.cpp</strong> 또는 <strong>Ollama</strong>로 추론을 실행하고, WebGPU에 의존하는 대신 WebBrain을 해당 로컬 엔드포인트에 연결하세요.</p><p>WebGPU 비전 폴백은 모델이 훨씬 작고 가끔만 사용되므로 계속 제공됩니다.</p></div>
       </details>
       <details class="faq-question" id="cors" data-faq-item>
         <summary><span>네트워크의 로컬 LLM 서버(vLLM, Ollama, llama.cpp)에 연결할 때 &quot;Failed to fetch&quot;가 나타납니다</span><span class="faq-question-mark" aria-hidden="true"></span></summary>
@@ -676,7 +664,7 @@
   </div>
 
   <footer class="site-footer">
-    <div class="footer-inner"><span>WebBrain · 자주 묻는 질문</span><div class="footer-links"><a href="/docs/">문서</a><a href="/privacy">개인정보 처리방침</a><a href="https://github.com/webbrain-one/webbrain/issues">버그 신고</a></div></div>
+    <div class="footer-inner"><span>WebBrain · 자주 묻는 질문</span><div class="footer-links"><a href="/docs/">문서</a><a href="/privacy">개인정보 처리방침</a><a href="https://github.com/astralxkienlt/agentx-webmate/issues">버그 신고</a></div></div>
   </footer>
 
   <script>
@@ -685,7 +673,7 @@
       const themeButton = document.querySelector('[data-theme-toggle]');
       const sidebarButton = document.querySelector('[data-sidebar-toggle]');
       const languageSelect = document.querySelector('[data-faq-language]');
-      const languageRoutes = Object.freeze({"en":"/docs/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/vi/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
+      const languageRoutes = Object.freeze({"en":"/docs/en/faq/","es":"/docs/es/faq/","fr":"/docs/fr/faq/","tr":"/docs/tr/faq/","zh":"/docs/zh/faq/","ru":"/docs/ru/faq/","uk":"/docs/uk/faq/","ar":"/docs/ar/faq/","ja":"/docs/ja/faq/","ko":"/docs/ko/faq/","id":"/docs/id/faq/","th":"/docs/th/faq/","ms":"/docs/ms/faq/","tl":"/docs/tl/faq/","he":"/docs/he/faq/","hi":"/docs/hi/faq/","pt":"/docs/pt/faq/","vi":"/docs/faq/","bn":"/docs/bn/faq/","fa":"/docs/fa/faq/","nl":"/docs/nl/faq/","de":"/docs/de/faq/"});
       const searchInput = document.querySelector('[data-faq-search]');
       const emptyState = document.querySelector('[data-faq-empty]');
       const topics = Array.from(document.querySelectorAll('[data-faq-topic]'));

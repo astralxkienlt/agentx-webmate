@@ -1,8 +1,6 @@
 // Polski — translated from en.js. Keys mirror the English canonical file.
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -399,11 +397,6 @@ export default {
   'st.display.auto_screenshot.every_step': 'Przy każdym kroku',
   'st.display.tracing.label': 'Rejestruj ślady (do porównywania modeli)',
   'st.display.tracing.desc_html': 'Zapisuj każde wykonanie (żądania LLM, odpowiedzi, wywołania narzędzi, zrzuty ekranu) w lokalnej bazie IndexedDB, aby móc je analizować i porównywać modele obok siebie. Otwiera się w osobnej karcie Ślady. Domyślnie wyłączone, ponieważ dodaje zapisy na dysk przy każdym kroku. <a href="traces.html" target="_blank" style="color:var(--accent);">Otwórz stronę Ślady →</a>',
-  'st.display.cost_session_limit.label': 'Limit kosztów chmury na sesję',
-  'st.display.cost_session_limit.desc': 'Zatrzymuje wykonania w chmurze i OpenRouter przed kolejnym płatnym wywołaniem modelu, gdy ta sesja osiągnie zgłoszony lub szacowany limit kosztów. Domyślnie 10 USD.',
-  'st.display.cost_total_limit.label': 'Całkowity limit kosztów chmury',
-  'st.display.cost_total_limit.desc': 'Śledzi zgłoszone lub szacowane wydatki na modele chmury/OpenRouter w całym rozszerzeniu i zatrzymuje dalsze płatne wywołania po osiągnięciu limitu. Dostawcy lokalni nie są liczeni.',
-  'st.display.cost_reset': 'Zresetuj wydatki',
   'st.display.strict_secret.label': 'Ścisłe traktowanie sekretów',
   'st.display.strict_secret.desc': 'Odmawiaj cytowania poświadczeń (hasła, klucze API, tokeny, kody OTP) w podsumowaniach lub tekście asystenta — nawet gdy o nie wprost poprosisz. Przydatne, jeśli regularnie udostępniasz pliki śladów lub ekran. Domyślnie wyłączone: WebBrain działa w Twojej własnej przeglądarce, więc domyślnie agent pokazuje wartości, o które prosisz, a jedynie utrzymuje porządek w podsumowaniach `done`.',
   'st.display.allow_local_network.label': 'Zezwól agentowi na dostęp do sieci lokalnej',
@@ -671,8 +664,6 @@ export default {
   'st.display.search.placeholder': 'Szukaj w ustawieniach ogólnych',
   'st.display.search.empty': 'Brak pasujących ustawień ogólnych.',
   'st.display.advanced': 'Zaawansowane',
-  ...getApocalypseModeCopy('pl'),
-  ...getEmergencyBoxCopy('pl'),
   'st.display.clarify_timeout.label': 'Limit czasu dopytania',
   'st.display.clarify_timeout.desc': 'Jak długo czekać na odpowiedź na dopytanie, zanim automatycznie wybrana zostanie pierwsza opcja (lub upłynie limit, gdy brak opcji). 0 = Natychmiast (zawsze auto-wybór). Powyżej 1200s czekaj bez limitu (Wył.). Domyślnie 60s. Nie dotyczy uprawnień ani potwierdzeń wysyłki formularza.',
   'st.display.clarify_timeout.off': 'Wył.',
@@ -902,8 +893,6 @@ export default {
   "sp.export_traces.no_conversation": "Nie ma jeszcze nic do eksportu — najpierw rozpocznij rozmowę.",
   "sp.export_traces.partial": "Wyeksportowano łańcuch narzędzi, ale niektórych zdarzeń tury nie udało się odczytać.",
   "sp.export_traces.truncated": "Wyeksportowano łańcuch narzędzi. Starsze tury mogą brakować, jeśli ta rozmowa ma wiele śladów.",
-  "st.display.help_improve.label": "Pomóż ulepszać WebBrain",
-  "st.display.help_improve.desc_html": "Zezwól na przechowywanie wybranych interakcji z WebBrain Cloud i używanie ich do oceny, ulepszania, dostrajania i trenowania. Domyślnie włączone. Wyłącz, aby przyszłe interakcje Cloud nie były używane do tych celów. <u>WebBrain nigdy nie zbiera żądań do modeli lokalnych ani żądań wysyłanych bezpośrednio przy użyciu własnych danych logowania API.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Polityka prywatności →</a>",
   "st.providers.webbrain_data_use.body": "Darmowe dzienne korzystanie z WebBrain Cloud jest wliczone. Gdy opcja „Pomóż ulepszać WebBrain” jest domyślnie włączona, wybrane rozmowy Cloud mogą być przechowywane i używane do oceny, ulepszania, dostrajania i trenowania. Wyłącz ją w Ogólne, aby wykluczyć przyszłe interakcje Cloud z tych zastosowań. <u>WebBrain nigdy nie zbiera żądań do modeli lokalnych ani żądań wysyłanych bezpośrednio przy użyciu własnych danych logowania API.</u> {privacyLink}. Aby korzystać więcej, subskrybuj na {subscribeLink}. Zarządzaj rozliczeniami na {accountLink}.",
   "sp.slash.export_config": "Eksportuj wszystkie ustawienia, w tym klucze API dostawców",
   "sp.slash.import_config": "Importuj migawkę konfiguracji WebBrain w formacie JSON",
@@ -934,6 +923,4 @@ export default {
   "sp.workflows.healing.keep": "Zachowaj zapisany cel",
   "sp.workflows.healing.saved": "Zaktualizowano {count} lokalizatorów w „{name}”.",
   "sp.workflows.healing.not_saved": "Zatwierdzony lokalizator dla „{name}” nie został zapisany, ponieważ przepływ się zmienił lub weryfikacja nie była jednoznaczna.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} runs entirely in Chrome with no API endpoint. The first generation downloads about 4.85 GB and caches it in the browser. Test Connection checks the packaged runtime and hardware adapter without downloading the model.',
 };

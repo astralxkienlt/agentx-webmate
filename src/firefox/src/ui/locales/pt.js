@@ -1,6 +1,4 @@
 // Portuguese — translated from the canonical English locale.
-import { getApocalypseModeCopy } from './apocalypse-copy.mjs';
-import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 
 export default {
   'sp.message_info.sent': 'sent {time}',
@@ -530,10 +528,6 @@ export default {
   'st.display.search.placeholder': "Pesquisar configurações gerais",
   'st.display.search.empty': "Nenhuma configuração geral corresponde.",
   'st.display.advanced': "Avançado",
-  ...getApocalypseModeCopy('pt'),
-  ...getEmergencyBoxCopy('pt'),
-  'st.display.help_improve.label': "Ajude a melhorar WebBrain",
-  'st.display.help_improve.desc_html': "Permitir que textos qualificados da nuvem WebBrain e interações de ferramentas sejam retidos e usados para avaliação, melhoria, ajuste fino e treinamento. Ativado por padrão. Desativar isso permanentemente desativa a conversa atual; ativá-lo novamente se aplica à próxima nova conversa. Capturas de tela e bytes de imagem não são retidos no banco de dados de melhorias WebBrain. <u>Solicitações de API de modelo local e de criação própria nunca são coletadas por WebBrain.</u> <a href=\"https://webbrain.one/privacy\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--accent);\">Política de privacidade →</a>",
   'st.display.clarify_timeout.label': "Esclarecer o tempo limite",
   'st.display.clarify_timeout.desc': "Quanto tempo esperar por uma resposta a um prompt de esclarecimento antes de selecionar automaticamente a primeira opção (ou expirar se não houver opções). 0 = Instantâneo (sempre seleção automática). Valores acima de 1200 aguardam indefinidamente (Desligado). Padrão dos anos 60. Não se aplica a permissões ou confirmações de envio de formulário.",
   'st.display.clarify_timeout.off': "Desligado",
@@ -576,11 +570,6 @@ export default {
   'st.display.auto_screenshot.every_step': "Cada passo",
   'st.display.tracing.label': "Registrar rastreamentos (para comparação de modelos)",
   'st.display.tracing.desc_html': "Persista cada execução (solicitações LLM, respostas, chamadas de ferramentas, capturas de tela) no IndexedDB local para que você possa inspecionar e comparar modelos lado a lado. Abre em uma guia Traces separada. Desativado por padrão porque adiciona gravações de disco por etapa. <a href=\"traces.html\" target=\"_blank\" style=\"color:var(--accent);\">Abra a página Traces →</a>",
-  'st.display.cost_session_limit.label': "Subsídio de sessão de custo na nuvem",
-  'st.display.cost_session_limit.desc': "Interrompe a nuvem e OpenRouter é executado antes de outra chamada de modelo pago quando esta sessão atinge o limite de custo relatado ou estimado. Padrão $ 10.",
-  'st.display.cost_total_limit.label': "Permissão total de custos de nuvem",
-  'st.display.cost_total_limit.desc': "Rastreia os gastos relatados ou estimados do modelo de nuvem/OpenRouter em todo o ramal e interrompe outras chamadas pagas no limite. Os provedores locais não são contabilizados.",
-  'st.display.cost_reset': "Redefinir gastos",
   'st.display.strict_secret.label': "Tratamento estrito de segredos",
   'st.display.strict_secret.desc': "Recuse-se a citar credenciais (senhas, chaves de API, tokens, OTPs) em resumos ou textos de assistente – mesmo quando você as solicitar explicitamente. Útil se você compartilha regularmente arquivos de rastreamento ou compartilhamento de tela. Desativado por padrão: o webbrain é executado em seu próprio navegador, portanto, por padrão, o agente mostra os valores solicitados e apenas mantém os resumos `done` organizados.",
   'st.display.allow_local_network.label': "Permitir que o agente acesse a rede local",
@@ -994,6 +983,4 @@ export default {
   "sp.workflows.healing.keep": "Manter o alvo salvo",
   "sp.workflows.healing.saved": "Foram atualizados {count} localizadores em “{name}”.",
   "sp.workflows.healing.not_saved": "O localizador aprovado para “{name}” não foi salvo porque o fluxo mudou ou a verificação foi inconclusiva.",
-  'st.display.cost_allowance_scope': 'Applies only to usage-billed cloud and router providers. WebBrain Cloud and local providers are excluded.',
-  'st.providers.webgpu_note.body': '{modelLink} é executado inteiramente no Chrome, sem endpoint de API. A primeira geração baixa cerca de 4,85 GB e armazena o modelo no cache do navegador. Testar conexão verifica o runtime incluído e o adaptador de hardware sem baixar o modelo.',
 };
