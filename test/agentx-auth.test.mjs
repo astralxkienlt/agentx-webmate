@@ -1340,7 +1340,7 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.match(html, /agentx-cloud\.css/);
     assert.match(html, /agentx-cloud-vision-panel/);
     assert.match(settings, /createAgentXCloudSettingsController/);
-    assert.match(settings, /renderAgentXCloudVisionSettings/);
+    assert.match(settings, /renderAgentXCloudMultimodalSettings/);
     assert.doesNotMatch(settings, /btn-manage-billing|api\.webbrain\.one\/account/);
     assert.match(
       runtime,
@@ -1398,8 +1398,8 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     fs.readFile(path.join(CHROME_ROOT, 'src/recorder/host.js'), 'utf8'),
   ]);
   assert.match(transcribe, /restrictedProviderId/);
-  assert.match(transcribe, /active netMind Extension model is not in the gateway model list/);
-  assert.match(recorderHost, /allowedModels: activeConfig\.models/);
+  assert.match(transcribe, /Transcription blocked: choose a netMind Extension transcription model/);
+  assert.match(recorderHost, /allowedModels: cloudTranscription\?\.models/);
 });
 
 let failed = 0;
