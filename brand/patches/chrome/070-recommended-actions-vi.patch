@@ -1,0 +1,67 @@
+--- a/src/ui/recommended-actions.js
++++ b/src/ui/recommended-actions.js
+@@ -1,6 +1,7 @@
+ import { isDirectPublicMediaUrl } from '../agent/public-media-url.js';
+ import { COUPON_MERCHANT_DOMAINS } from './coupon-domains.js';
+ import { t } from './i18n.js';
++import { buildTranslatePageAction, localizeRecommendedActions } from './agentx-recommended-actions-vi.js';
+ 
+ const SOCIAL_HOST_RE = /(^|\.)(instagram\.com|tiktok\.com|x\.com|twitter\.com|facebook\.com|fb\.com|threads\.net|youtube\.com|youtu\.be|reddit\.com|pinterest\.com|snapchat\.com)$/i;
+ const PUBLIC_MEDIA_HOST_RE = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|x\.com|twitter\.com|reddit\.com|redd\.it|facebook\.com|fb\.com|fb\.watch|pinterest\.com|pin\.it|linkedin\.com|threads\.net)$/i;
+@@ -341,24 +342,11 @@
+   const host = hostFromUrl(pageInfo.url || '');
+   const path = pathFromUrl(pageInfo.url || '');
+   const actions = [];
+-  const webbrainPostText = t('sp.recommended.tweet.text');
+-  const webbrainPromotionVariant = options.webbrainPromotionVariant === 'linkedin' ? 'linkedin' : 'x';
+ 
+-  addUnique(actions, webbrainPromotionVariant === 'linkedin'
+-    ? {
+-      id: 'post-webbrain-linkedin',
+-      label: t('sp.recommended.linkedin.label'),
+-      prompt: t('sp.recommended.linkedin.prompt', { post: webbrainPostText }),
+-      mode: 'act',
+-      runOptions: webbrainLinkedInRunOptions(webbrainPostText),
+-    }
+-    : {
+-      id: 'tweet-webbrain',
+-      label: t('sp.recommended.tweet.label'),
+-      prompt: t('sp.recommended.tweet.prompt', { post: webbrainPostText }),
+-      mode: 'act',
+-      runOptions: webbrainTweetRunOptions(webbrainPostText),
+-    });
++  // AgentX WebMate ships no social promotion: the always-visible first slot offers to
++  // translate the open page instead. webbrain{Tweet,LinkedIn}RunOptions above
++  // stay put so restoring the promotion is a one-block revert.
++  addUnique(actions, buildTranslatePageAction(pageInfo));
+ 
+   if (MEETING_HOST_RE.test(host)) {
+     addUnique(actions, {
+@@ -537,7 +525,7 @@
+     });
+   }
+ 
+-  if (!actions.some((action) => !['tweet-webbrain', 'post-webbrain-linkedin'].includes(action.id)) && pageInfo.title) {
++  if (!actions.some((action) => action.id !== 'translate-page') && pageInfo.title) {
+     const explainUsesArticleRead = isLongArticle(pageInfo);
+     addUnique(actions, {
+       id: 'explain-page',
+@@ -563,7 +551,7 @@
+     });
+   }
+ 
+-  return actions.slice(0, Math.max(0, max));
++  return localizeRecommendedActions(actions.slice(0, Math.max(0, max)));
+ }
+ 
+ /**
+--- a/src/agent/agent.js
++++ b/src/agent/agent.js
+@@ -3723,6 +3723,7 @@
+   static RECOMMENDED_ACTION_FAST_PATH_IDS = new Set(['download-media', 'tweet-webbrain', 'post-webbrain-linkedin', 'find-coupons']);
+   static RECOMMENDED_ACTION_FIRST_TOOLS = Object.freeze({
+     'download-media': new Set(['screenshot']),
++    'translate-page': new Set(['read_page']),
+     'summarize-page': new Set(['read_page']),
+     'explain-page': new Set(['read_page', 'get_accessibility_tree']),
+     'summarize-youtube-video': new Set(['read_youtube_transcript']),
