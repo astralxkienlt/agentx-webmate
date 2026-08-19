@@ -180,11 +180,16 @@ const runCaptureController = createRunCaptureController({
 const cloudRunController = createCloudRunController({
   chromeApi: chrome,
   agent,
+  ensureOffscreen,
   sendIndicator: (tabId, type) => sendIndicatorMessage(tabId, type),
   startRecording: startTabRecording,
   stopRecording: stopTabRecording,
   workflowTrace,
 });
+alwaysAllowApiMutationsReady
+  .then(() => cloudRunController.syncBridge())
+  .catch(() => {});
+
 const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
 const CONTEXT_MENU_ASK_SELECTION_ID = 'webbrain-ask-selection';
@@ -933,6 +938,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await loadMaxSteps();
   await loadClarifyTimeout();
   await syncAgentUserMemoryFromStorage().catch(() => {});
+  await cloudRunController.syncBridge().catch(() => {});
   scheduleUserMemoryExtractionDrain(5000);
   console.log('[WebBrain] Extension installed, providers loaded.');
 });
@@ -944,6 +950,7 @@ chrome.runtime.onStartup?.addListener(async () => {
   await loadMaxSteps();
   await loadClarifyTimeout();
   await syncAgentUserMemoryFromStorage().catch(() => {});
+  await cloudRunController.syncBridge().catch(() => {});
   scheduleUserMemoryExtractionDrain(5000);
 });
 
@@ -954,6 +961,9 @@ chrome.storage.onChanged.addListener((changes) => {
     createContextMenus().catch(() => {});
   }
   if (changes.providers || changes.activeProvider) providerManager.load().catch(() => {});
+  if (changes.webbrainCloudBridgeEnabled || changes.webbrainCloudBridgeUrl) {
+    cloudRunController.syncBridge().catch(() => {});
+  }
   if (changes.maxAgentSteps) {
     agent.maxSteps = normalizeMaxAgentSteps(changes.maxAgentSteps.newValue);
   }
@@ -2171,6 +2181,12 @@ async function handleMessage(msg, sender) {
       return await cloudRunController.respond(msg);
     case 'cloud_abort':
       return await cloudRunController.abort(msg);
+    case 'cloud_bridge_start':
+      return await cloudRunController.startBridge(msg.url);
+    case 'cloud_bridge_stop':
+      return await cloudRunController.stopBridge();
+    case 'cloud_bridge_status':
+      return await cloudRunController.bridgeStatus();
     case 'prepare_recording_host':
       return await prepareRecordingHost();
     case 'start_tab_recording': {

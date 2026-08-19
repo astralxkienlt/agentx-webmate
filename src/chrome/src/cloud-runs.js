@@ -4,6 +4,7 @@ import {
 } from './agent/workflows.js';
 import { isCredentialField } from './agent/credential-fields.js';
 
+const DEFAULT_CLOUD_BRIDGE_URL = 'ws://127.0.0.1:17373/extension';
 const CLOUD_RUN_STORAGE_KEY = 'webbrainCloudRunSnapshots';
 const CLOUD_UPDATE_LIMIT = 200;
 const CLOUD_RUN_LIMIT = 50;
@@ -66,6 +67,18 @@ export function normalizeCloudRunMode(value, fallback = 'act') {
 
 function normalizedCloudKey(key) {
   return String(key || '').replace(/[^a-z0-9]/gi, '');
+}
+
+export function normalizeCloudBridgeUrl(value = DEFAULT_CLOUD_BRIDGE_URL) {
+  const url = new URL(String(value || DEFAULT_CLOUD_BRIDGE_URL));
+  const host = url.hostname.toLowerCase();
+  // WHATWG URL keeps the brackets on IPv6 literals: ws://[::1]/… parses to
+  // hostname "[::1]", so both spellings must be allowlisted (same as
+  // LOCAL_OLLAMA_HOSTS in ollama-handoff.js).
+  if (url.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) {
+    throw new Error('WebBrain cloud bridge URL must use ws:// on localhost.');
+  }
+  return url.href;
 }
 
 function isSensitiveCloudKey(key) {
@@ -672,6 +685,7 @@ function isUsableCloudTab(tab) {
 export function createCloudRunController({
   chromeApi,
   agent,
+  ensureOffscreen,
   sendIndicator = () => {},
   startRecording = null,
   stopRecording = null,
@@ -1344,6 +1358,26 @@ export function createCloudRunController({
     return cloudSnapshot(run);
   }
 
+  async function startBridge(url = DEFAULT_CLOUD_BRIDGE_URL) {
+    await ensureOffscreen();
+    return api.runtime.sendMessage({ type: 'cloud-bridge-start', url: normalizeCloudBridgeUrl(url) });
+  }
+
+  async function stopBridge() {
+    return api.runtime.sendMessage({ type: 'cloud-bridge-stop' });
+  }
+
+  async function bridgeStatus() {
+    await ensureOffscreen();
+    return api.runtime.sendMessage({ type: 'cloud-bridge-status' });
+  }
+
+  async function syncBridge() {
+    const stored = await api.storage.local.get(['webbrainCloudBridgeEnabled', 'webbrainCloudBridgeUrl']);
+    if (!stored.webbrainCloudBridgeEnabled) return stopBridge().catch(() => ({ enabled: false, connected: false }));
+    return startBridge(stored.webbrainCloudBridgeUrl || DEFAULT_CLOUD_BRIDGE_URL);
+  }
+
   return {
     runs,
     isRunning: (tabId) => startingTabs.has(tabId),
@@ -1353,6 +1387,10 @@ export function createCloudRunController({
     status,
     respond,
     abort,
+    startBridge,
+    stopBridge,
+    bridgeStatus,
+    syncBridge,
     hydrate,
   };
 }

@@ -402,7 +402,7 @@ const {
 } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/run-reconnect.js').replace(/\\/g, '/')
 );
-const { buildCloudPersistenceRows, createCloudRunController } = await import(
+const { buildCloudPersistenceRows, createCloudRunController, normalizeCloudBridgeUrl } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/cloud-runs.js').replace(/\\/g, '/')
 );
 const { handleDoneJson: handleDoneJsonCh } = await import(
@@ -15943,7 +15943,7 @@ test('cloud run controller uses the visible tab and persists terminal status', a
     },
     windows: { update: async () => ({}) },
     storage: {
-      local: { get: async () => ({}) },
+      local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
       session: {
         get: async key => ({ [key]: session[key] || [] }),
         set: async value => Object.assign(session, value),
@@ -16113,7 +16113,7 @@ test('cloud run controller rejects duplicate caller-supplied run IDs', async () 
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16156,7 +16156,7 @@ test('strict cloud runs register credential-labeled form values and fail closed 
         },
         windows: { update: async () => ({}) },
         storage: {
-          local: { get: async () => ({}) },
+          local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
           session: {
             get: async key => ({ [key]: session[key] || [] }),
             set: async value => Object.assign(session, value),
@@ -16372,7 +16372,7 @@ test('cloud run controller forwards Ask mode and inherits it for continuations',
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16423,7 +16423,7 @@ test('cloud run controller fails clarification-required terminals without schema
         },
         windows: { update: async () => ({}) },
         storage: {
-          local: { get: async () => ({}) },
+          local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
           session: {
             get: async key => ({ [key]: session[key] || [] }),
             set: async value => Object.assign(session, value),
@@ -16485,7 +16485,7 @@ test('cloud run controller appends child runs to the same tab conversation', asy
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16545,7 +16545,7 @@ test('cloud run controller pauses and resumes clarify, permission, and submit in
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16650,7 +16650,7 @@ test('cloud run text_delta coalesce scrubs live status payloads', async () => {
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16700,7 +16700,7 @@ test('cloud run controller keeps the newest 200 monotonically sequenced updates'
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16751,7 +16751,7 @@ test('cloud run controller fails immediately if an interactive plan review leaks
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16836,7 +16836,7 @@ test('cloud workflow bridge compiles the correlated trace and never persists run
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16935,7 +16935,7 @@ test('cloud trace keeps CAPTCHA frame/vendor diagnostics after the rolling updat
       },
       windows: { update: async () => ({}) },
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: {
           get: async key => ({ [key]: session[key] || [] }),
           set: async value => Object.assign(session, value),
@@ -16985,7 +16985,7 @@ test('cloud run controller fails interrupted runs after service-worker restart',
     chromeApi: {
       tabs: {},
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, value) },
       },
       runtime: { sendMessage: async () => ({}) },
@@ -17060,7 +17060,7 @@ test('cloud run status exposes persistence truncation after service-worker resta
     chromeApi: {
       tabs: {},
       storage: {
-        local: { get: async () => ({}) },
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
         session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, value) },
       },
       runtime: { sendMessage: async () => ({}) },
@@ -17082,6 +17082,194 @@ test('cloud run default IDs use cryptographically secure randomness', () => {
   const controllerBody = source.slice(controllerStart, source.indexOf('\n  const api = chromeApi;', controllerStart));
   assert.match(controllerBody, /makeRunId = \(\) => `run_\$\{globalThis\.crypto\.randomUUID\(\)\}`/);
   assert.doesNotMatch(controllerBody, /Math\.random\(/);
+});
+
+test('cloud bridge accepts only loopback WebSocket URLs', () => {
+  assert.equal(normalizeCloudBridgeUrl('ws://127.0.0.1:17373/extension'), 'ws://127.0.0.1:17373/extension');
+  assert.equal(normalizeCloudBridgeUrl('ws://localhost:17373/extension'), 'ws://localhost:17373/extension');
+  assert.throws(() => normalizeCloudBridgeUrl('wss://example.com/extension'), /localhost/);
+  assert.throws(() => normalizeCloudBridgeUrl('ws://192.168.1.10/extension'), /localhost/);
+});
+
+function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), closeSynchronously = true } = {}) {
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/cloud-bridge.js'), 'utf8');
+  const sockets = [];
+  const timers = [];
+  const runtimeCalls = [];
+  let listener = null;
+  class FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    constructor(url) {
+      this.url = url;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.listeners = new Map();
+      this.sent = [];
+      sockets.push(this);
+    }
+    addEventListener(type, callback) { this.listeners.set(type, callback); }
+    send(value) { this.sent.push(JSON.parse(value)); }
+    close() {
+      this.readyState = FakeWebSocket.CLOSING;
+      if (closeSynchronously) this.emit('close');
+    }
+    emit(type, value = {}) {
+      if (type === 'open') this.readyState = FakeWebSocket.OPEN;
+      if (type === 'close') this.readyState = FakeWebSocket.CLOSED;
+      this.listeners.get(type)?.(value);
+    }
+  }
+  vm.runInNewContext(source, {
+    URL,
+    WebSocket: FakeWebSocket,
+    chrome: {
+      runtime: {
+        onMessage: { addListener: callback => { listener = callback; } },
+        sendMessage: async message => {
+          runtimeCalls.push(message);
+          return await sendMessage(message);
+        },
+      },
+    },
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  });
+
+  return { listener: (...args) => listener(...args), runtimeCalls, sockets, timers };
+}
+
+test('offscreen cloud bridge reconnects with backoff and rejects remote control URLs', () => {
+  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness();
+
+  let started;
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, value => { started = value; });
+  assert.equal(started.enabled, true);
+  assert.equal(sockets.length, 1);
+  sockets[0].emit('open');
+  assert.equal(sockets[0].sent[0].type, 'hello');
+  assert.equal(sockets[0].sent[0].protocolVersion, 2);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sockets[0].sent[0].capabilities)),
+    ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1'],
+  );
+  sockets[0].close();
+  assert.equal(timers[0].delay, 500);
+  timers[0].callback();
+  assert.equal(sockets.length, 2);
+
+  let rejected;
+  listener({ type: 'cloud-bridge-start', url: 'wss://attacker.example/extension' }, null, value => { rejected = value; });
+  assert.match(rejected.error, /localhost/);
+  assert.equal(sockets.length, 2);
+});
+
+test('offscreen cloud bridge preserves failed run envelopes and rejects unauthorized actions', async () => {
+  const failed = { runId: 'run_failed', status: 'failed', error: 'Agent failed.' };
+  const aborting = { runId: 'run_abort', status: 'aborting', error: 'Abort requested.' };
+  const { listener, runtimeCalls, sockets } = createOffscreenCloudBridgeHarness({
+    sendMessage: async message => {
+      if (message.action === 'cloud_status' && message.runId === 'run_failed') return failed;
+      if (message.action === 'cloud_status') return { error: 'Unknown cloud run.' };
+      if (message.action === 'cloud_abort') return aborting;
+      return {};
+    },
+  });
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
+  const socket = sockets[0];
+  socket.emit('open');
+
+  socket.emit('message', {
+    data: JSON.stringify({ id: 'status-1', action: 'cloud_status', payload: { runId: 'run_failed' } }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const statusResponse = socket.sent.find(message => message.id === 'status-1');
+  assert.equal(statusResponse.ok, true, 'failed run snapshots are domain results, not bridge failures');
+  assert.equal(statusResponse.result.status, 'failed');
+  assert.equal(statusResponse.result.error, 'Agent failed.');
+
+  socket.emit('message', {
+    data: JSON.stringify({ id: 'abort-1', action: 'cloud_abort', payload: { runId: 'run_abort' } }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const abortResponse = socket.sent.find(message => message.id === 'abort-1');
+  assert.equal(abortResponse.ok, true, 'aborting snapshots with an error explanation must remain successful protocol responses');
+  assert.equal(abortResponse.result.status, 'aborting');
+
+  socket.emit('message', {
+    data: JSON.stringify({
+      id: 'respond-1',
+      action: 'cloud_respond',
+      payload: { runId: 'run_input', clarifyId: 'clr_1', answer: 'Continue' },
+    }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const respondCall = runtimeCalls.find(message => message.action === 'cloud_respond');
+  assert.deepEqual(JSON.parse(JSON.stringify(respondCall)), {
+    runId: 'run_input',
+    clarifyId: 'clr_1',
+    answer: 'Continue',
+    target: 'background',
+    action: 'cloud_respond',
+  });
+
+  for (const [id, action] of [
+    ['workflow-compile', 'cloud_workflow_compile'],
+    ['workflow-run', 'cloud_workflow_run'],
+    ['scheduled-jobs', 'cloud_scheduled_jobs'],
+  ]) {
+    socket.emit('message', {
+      data: JSON.stringify({ id, action, payload: { runId: 'run_source' } }),
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runtimeCalls.some(message => message.action === action), true);
+  }
+
+  socket.emit('message', {
+    data: JSON.stringify({ id: 'missing-1', action: 'cloud_status', payload: { runId: 'run_missing' } }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const missing = socket.sent.find(message => message.id === 'missing-1');
+  assert.equal(missing.ok, false, 'background exception envelopes must still reject the bridge request');
+  assert.equal(missing.error, 'Unknown cloud run.');
+
+  const callCount = runtimeCalls.length;
+  for (const [id, action] of [
+    ['forbidden-provider-read', 'get_providers'],
+    ['forbidden-config-write', 'import_config_patch'],
+  ]) {
+    socket.emit('message', {
+      data: JSON.stringify({ id, action, payload: {} }),
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    const forbidden = socket.sent.find(message => message.id === id);
+    assert.equal(forbidden.ok, false);
+    assert.match(forbidden.error, /unsupported cloud bridge action/i);
+  }
+  assert.equal(
+    runtimeCalls.length,
+    callCount,
+    'provider reads and provisioning config writes must not cross the run-only cloud bridge',
+  );
+});
+
+test('offscreen cloud bridge ignores asynchronous close events from replaced sockets', () => {
+  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
+  const first = sockets[0];
+  first.emit('open');
+
+  listener({ type: 'cloud-bridge-start', url: 'ws://localhost:17374/extension' }, null, () => {});
+  const replacement = sockets[1];
+  assert.ok(replacement, 'URL change should create a replacement WebSocket');
+
+  first.emit('close');
+  replacement.emit('open');
+
+  assert.equal(sockets.length, 2, 'stale close must not create a duplicate connection');
+  assert.equal(timers.length, 0, 'stale close must not schedule reconnect for the replacement');
+  assert.equal(replacement.sent.filter(message => message.type === 'hello').length, 1, 'replacement socket should remain current and announce itself');
 });
 
 test('getToolsForMode: `done` outcome is required in every supported Act and Dev prompt tier', () => {
@@ -39224,6 +39412,66 @@ test('inspect_event_listeners resolves marked ref targets through CDP and always
   }
 });
 
+test('Cloud bridge settings are Chromium-only, live under Advanced, and keep setup guidance in sync', () => {
+  const chromeHtml = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.html'), 'utf8');
+  const chromeSettings = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.js'), 'utf8');
+  const chromeLocale = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/locales/en.js'), 'utf8');
+  const firefoxHtml = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.html'), 'utf8');
+  const firefoxSettings = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.js'), 'utf8');
+  const firefoxLocale = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/locales/en.js'), 'utf8');
+
+  const generalStart = chromeHtml.indexOf('<section class="tab-panel" data-panel="display"');
+  const providersStart = chromeHtml.indexOf('<section class="tab-panel active" data-panel="providers"', generalStart);
+  const generalPanel = chromeHtml.slice(generalStart, providersStart);
+  const advancedStart = generalPanel.indexOf('<details class="advanced-settings">');
+  const bridgeStart = generalPanel.indexOf('id="cloud-bridge-setting"');
+  assert.notEqual(generalStart, -1, 'Chrome General settings panel missing');
+  assert.notEqual(advancedStart, -1, 'Chrome General settings should include Advanced');
+  assert.ok(bridgeStart > advancedStart, 'Cloud bridge should live inside General > Advanced');
+  assert.match(generalPanel, /id="toggle-cloud-bridge"/, 'Chrome Advanced should expose the bridge toggle');
+  assert.match(generalPanel, /id="input-cloud-bridge-url"/, 'Chrome Advanced should expose the bridge URL');
+  assert.match(generalPanel, /id="cloud-bridge-status"[^>]*role="status"[^>]*aria-live="polite"/, 'bridge status should be announced accessibly');
+  assert.doesNotMatch(generalPanel, /id="toggle-cloud-bridge"\s+checked/, 'Cloud bridge must default off');
+  assert.match(chromeHtml, /prefers-reduced-motion: reduce[\s\S]*cloud-bridge-status/, 'waiting animation should respect reduced-motion preferences');
+
+  assert.doesNotMatch(firefoxHtml, /cloud-bridge-setting|toggle-cloud-bridge|input-cloud-bridge-url/, 'Firefox should not show unsupported bridge controls');
+  assert.doesNotMatch(firefoxSettings, /webbrainCloudBridgeEnabled|webbrainCloudBridgeUrl|cloud_bridge_status/, 'Firefox settings should not wire the Chromium bridge');
+  assert.doesNotMatch(firefoxLocale, /st\.display\.cloud_bridge/, 'Firefox should not ship copy for an unavailable setting');
+
+  assert.match(chromeSettings, /const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';/, 'Chrome settings should use the runtime bridge enable key');
+  assert.match(chromeSettings, /const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';/, 'Chrome settings should use the runtime bridge URL key');
+  assert.match(chromeSettings, /cloudBridgeToggle\.checked = stored\[CLOUD_BRIDGE_ENABLED_KEY\] === true/, 'bridge should hydrate only explicit opt-in');
+  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_start', \{ url: normalized \}\)/, 'bridge controls should start the configured endpoint');
+  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_stop'\)/, 'bridge controls should stop the endpoint');
+  assert.match(chromeSettings, /sendToBackground\('cloud_bridge_status'\)/, 'bridge controls should report live connection status');
+  const saveUrlStart = chromeSettings.indexOf('async function saveCloudBridgeUrl()');
+  const toggleStart = chromeSettings.indexOf('async function toggleCloudBridge()', saveUrlStart);
+  const saveUrlBody = chromeSettings.slice(saveUrlStart, toggleStart);
+  assert.doesNotMatch(saveUrlBody, /setCloudBridgeControlsBusy|cloudBridgeToggle\.disabled/, 'URL blur saves must not disable and cancel the pending bridge-toggle click');
+  assert.match(chromeSettings, /status\.lastError === 'WebSocket error'[\s\S]*status_unreachable/, 'generic WebSocket failures should explain that the local bridge is unreachable');
+  assert.match(chromeSettings, /url\.protocol !== 'ws:'[\s\S]*127\.0\.0\.1[\s\S]*localhost[\s\S]*\[::1\]/, 'settings should reject non-loopback bridge URLs before saving');
+  assert.match(chromeLocale, /'st\.display\.cloud_bridge\.label': 'Cloud bridge'/, 'Chrome English bridge label missing');
+  assert.match(chromeLocale, /Use port 17373 for WebBrain Cloud, 17374 for MCP clients, or 17375 for LM Studio/, 'bridge copy should explain the one-socket destinations');
+
+  for (const rel of ['README.md', 'mcp-server/README.md', 'lmstudio-plugin/README.md']) {
+    const readme = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(readme, /Settings → General → Advanced → Cloud bridge/, `${rel}: bridge setup path should match the Chromium UI`);
+  }
+  const rootReadme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  const mcpReadme = fs.readFileSync(path.join(ROOT, 'mcp-server/README.md'), 'utf8');
+  for (const [label, readme] of [['root README', rootReadme], ['MCP README', mcpReadme]]) {
+    assert.match(readme, /npx -y @webbrain\/mcp-server/, `${label}: should document how to launch the MCP bridge`);
+    assert.match(readme, /Connection error: WebSocket error/, `${label}: should explain the generic listener failure`);
+    assert.match(readme, /17373[\s\S]*17374[\s\S]*17375/, `${label}: should distinguish the three bridge destinations`);
+  }
+  const mcpBridge = fs.readFileSync(path.join(ROOT, 'mcp-server/src/bridge.ts'), 'utf8');
+  const mcpIndex = fs.readFileSync(path.join(ROOT, 'mcp-server/src/index.ts'), 'utf8');
+  const lmBridge = fs.readFileSync(path.join(ROOT, 'lmstudio-plugin/src/util/bridgeClient.ts'), 'utf8');
+  for (const [label, source] of [['MCP error', mcpBridge], ['MCP connection', mcpIndex], ['LM Studio connection', lmBridge]]) {
+    assert.match(source, /Settings → General → Advanced → Cloud bridge/, `${label}: runtime setup guidance should match the UI`);
+  }
+});
+
 test('Experimental WebMCP is Chrome-only, opt-in, and absent from default model context', async () => {
   const html = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/settings.html'), 'utf8');
   const firefoxHtml = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/settings.html'), 'utf8');
@@ -41454,8 +41702,8 @@ test('local vision detection uses official metadata endpoints with Chrome/Firefo
   const previousChrome = globalThis.chrome;
   const previousBrowser = globalThis.browser;
   const calls = [];
-  globalThis.chrome = { runtime: {}, storage: { local: { get: async () => ({}) }, onChanged: { addListener() {} } } };
-  globalThis.browser = { storage: { local: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+  globalThis.chrome = { runtime: {}, storage: { local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) }, onChanged: { addListener() {} } } };
+  globalThis.browser = { storage: { local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) }, onChanged: { addListener() {} } } };
   globalThis.fetch = async (url) => {
     calls.push(String(url));
     if (String(url).includes('/props')) return new Response(JSON.stringify({ modalities: { vision: false } }), { status: 200 });
