@@ -27,7 +27,7 @@
       "_why": "Temporarily shield upstream API header names from display-name replacement.",
       "from": "X-WebBrain-",
       "to": "X-__AGENTX_UPSTREAM_HEADER__-",
-      "only": ["src/providers/openai.js", "src/profile-sync.js"]
+      "only": ["src/providers/openai.js"]
     },
     {
       "_why": "Display name in UI and skill text. Guards keep it out of identifiers and protocol tokens such as ensureWebBrainGroup and X-WebBrain-Help-Improve.",
@@ -39,7 +39,7 @@
       "_why": "Restore upstream API header names after display-name replacement.",
       "from": "X-__AGENTX_UPSTREAM_HEADER__-",
       "to": "X-WebBrain-",
-      "only": ["src/providers/openai.js", "src/profile-sync.js"]
+      "only": ["src/providers/openai.js"]
     },
     {
       "_why": "Lowercase brand name inside translated sentences. Scoped to locale files only; the lookarounds keep it off webbrain.one, webbrain_note and webbrain-tools.",
