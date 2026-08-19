@@ -998,7 +998,7 @@ export const AGENT_TOOLS = [
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS selector for the file input element' },
-          attachmentId: { type: 'string', description: 'Opaque id from the current [UNTRUSTED USER ATTACHMENTS] notice. Reuses that exact user-selected file without another picker. Valid only during the current agent run.' },
+          attachmentId: { type: 'string', description: 'Opaque id from the current [UNTRUSTED USER ATTACHMENTS] notice. Reuses that exact user-selected file without another picker. att_… ids stay resolvable from local storage for up to 24 hours; other handles last only for the current agent run.' },
           downloadId: { type: 'number', description: 'Id of a previously downloaded file (from download_files or list_downloads). Preferred over filePath: it resolves to the real saved path automatically, so you never have to remember it. Survives context compaction via the scratchpad.' },
           filePath: { type: 'string', description: 'Absolute path to the local file. Optional if downloadId is given.' },
         },
