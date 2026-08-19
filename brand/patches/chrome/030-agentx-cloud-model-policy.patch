@@ -56,7 +56,7 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 +    if (!requestedModel || !allowedModels.includes(requestedModel)) {
 +      return {
 +        ok: false,
-+        error: 'Transcription blocked: the active netMind Cloud model is not in the gateway model list.',
++        error: 'Transcription blocked: the active netMind Extension model is not in the gateway model list.',
 +      };
 +    }
 +  }
@@ -103,10 +103,10 @@ diff --git a/src/providers/openai.js b/src/providers/openai.js
 +        ? [...new Set(this.config.models.map(String).map((model) => model.trim()).filter(Boolean))]
 +        : [];
 +      if (!configuredModel) {
-+        throw new Error('netMind Cloud requires an active model selected from the gateway.');
++        throw new Error('netMind Extension requires an active model selected from the gateway.');
 +      }
 +      if (!availableModels.includes(configuredModel)) {
-+        throw new Error(`netMind Cloud model "${configuredModel}" is not available through this gateway key.`);
++        throw new Error(`netMind Extension model "${configuredModel}" is not available through this gateway key.`);
 +      }
 +      return configuredModel;
 +    }

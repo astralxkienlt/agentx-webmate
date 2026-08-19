@@ -1,7 +1,7 @@
 const COPY = {
   en: {
     eyebrow: 'ACCOUNT CONNECTION',
-    titleSignedOut: 'Sign in to use netMind Cloud',
+    titleSignedOut: 'Sign in to use netMind Extension',
     bodySignedOut: 'Your browser opens the organization’s Viettel SSO sign-in page. netMind Extension never receives your password.',
     signIn: 'Sign in with Viettel SSO',
     signingIn: 'Opening secure sign-in…',
@@ -58,7 +58,7 @@ const COPY = {
   },
   vi: {
     eyebrow: 'KẾT NỐI TÀI KHOẢN',
-    titleSignedOut: 'Đăng nhập để dùng netMind Cloud',
+    titleSignedOut: 'Đăng nhập để dùng netMind Extension',
     bodySignedOut: 'Trình duyệt sẽ mở trang đăng nhập Viettel SSO của tổ chức. netMind Extension không nhận mật khẩu của bạn.',
     signIn: 'Đăng nhập bằng Viettel SSO',
     signingIn: 'Đang mở trang đăng nhập bảo mật…',

@@ -1,0 +1,18 @@
+--- a/src/providers/manager.js
++++ b/src/providers/manager.js
+@@ -699,6 +699,15 @@
+         contextWindow: WEBBRAIN_CLOUD_CONTEXT_WINDOW,
+       };
+     }
++    // The cloud provider's label is a shipped brand string and no UI renames
++    // it, but load() lets stored fields override defaults. First run persists
++    // the whole config, so the name an install saved back then outlives every
++    // later rebrand and no rebuild can dislodge it. Drop it and let the
++    // shipped default win.
++    if (migrated.webbrain_cloud && Object.hasOwn(migrated.webbrain_cloud, 'label')) {
++      migrated.webbrain_cloud = { ...migrated.webbrain_cloud };
++      delete migrated.webbrain_cloud.label;
++    }
+     for (const id of ROUTER_PROVIDER_IDS) {
+       if (migrated[id] && migrated[id].category !== 'router') {
+         migrated[id] = {

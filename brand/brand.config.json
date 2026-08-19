@@ -41,6 +41,12 @@
       "only": ["src/providers/openai.js", "src/profile-sync.js"]
     },
     {
+      "_why": "Upstream sells a hosted tier next to the extension, so its provider is labelled \"WebBrain Cloud\". netMind has no such split — the managed gateway is simply what the product runs on — and letting the rule below rename only the first word leaves \"netMind Extension Cloud\" in the model picker. Must stay ahead of that rule, which would otherwise consume the WebBrain half first. Only the two-word display name is matched: the provider id webbrain_cloud, api.webbrain.one and the X-WebBrain-* headers carry no space and are untouched.",
+      "from": "WebBrain Cloud",
+      "to": "netMind Extension",
+      "except": ["vendor/**"]
+    },
+    {
       "_why": "Display name in UI and skill text. Guards keep it out of identifiers and protocol tokens such as ensureWebBrainGroup and X-WebBrain-Help-Improve.",
       "regex": "(?<![A-Za-z0-9_$])WebBrain(?![A-Za-z0-9_$])",
       "to": "netMind Extension",
