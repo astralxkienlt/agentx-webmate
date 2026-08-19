@@ -17,7 +17,7 @@ export const MAX_CONFIG_IMPORT_CHARS = 10_000_000;
 
 // This is intentionally an allowlist of user-controlled Settings state. It
 // excludes conversations, traces, schedules, usage counters, the WebBrain
-// Cloud device ID, and Cloud Sync session/token metadata.
+// Cloud device ID.
 export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
   wbLocale: 'en',
   themeMode: 'system',

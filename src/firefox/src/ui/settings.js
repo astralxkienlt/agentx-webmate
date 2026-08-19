@@ -140,23 +140,6 @@ const profileTextArea = document.getElementById('profile-text');
 const btnSaveProfile = document.getElementById('btn-save-profile');
 const btnClearProfile = document.getElementById('btn-clear-profile');
 const profileTestResult = document.getElementById('test-profile');
-const profileSyncStatus = document.getElementById('profile-sync-status');
-const profileSyncResult = document.getElementById('test-profile-sync');
-const profileSyncEmail = document.getElementById('profile-sync-email');
-const profileSyncPassword = document.getElementById('profile-sync-password');
-const profileSyncConfirm = document.getElementById('profile-sync-confirm');
-const profileSyncEmailField = document.getElementById('profile-sync-email-field');
-const profileSyncPasswordField = document.getElementById('profile-sync-password-field');
-const profileSyncConfirmField = document.getElementById('profile-sync-confirm-field');
-const profileSyncAdvanced = document.getElementById('profile-sync-advanced');
-const btnProfileSyncAuth = document.getElementById('btn-profile-sync-auth');
-const btnProfileSyncEnable = document.getElementById('btn-profile-sync-enable');
-const btnProfileSyncUnlock = document.getElementById('btn-profile-sync-unlock');
-const btnProfileSyncNow = document.getElementById('btn-profile-sync-now');
-const btnProfileSyncLock = document.getElementById('btn-profile-sync-lock');
-const btnProfileSyncChange = document.getElementById('btn-profile-sync-change');
-const btnProfileSyncDisable = document.getElementById('btn-profile-sync-disable');
-const btnProfileSyncReset = document.getElementById('btn-profile-sync-reset');
 const userMemoryEnabledToggle = document.getElementById('toggle-user-memory-enabled');
 const userMemoryAutoToggle = document.getElementById('toggle-user-memory-auto');
 const userMemoryFormToggle = document.getElementById('toggle-user-memory-form');
@@ -299,7 +282,6 @@ if (languageSelect) {
     if (providersContainer) renderProviders();
     renderSkills();
     renderPermissions();
-    refreshProfileSyncState();
     refreshApocalypseModeStatus();
   });
 }
@@ -1412,75 +1394,6 @@ if (btnClearTranscription) {
 transcriptionBaseUrlInput?.addEventListener('input', () => updateMultimodalDetectedProvider('transcription'));
 
 // --- Profile auto-fill ---
-let profileSyncChallenge = null;
-function showProfileSyncResult(ok, text) { if (!profileSyncResult) return; profileSyncResult.className = `test-result show ${ok ? 'ok' : 'fail'}`; profileSyncResult.textContent = text; }
-function setProfileSyncVisible(el, visible) { if (el) el.hidden = !visible; }
-function describeProfileSyncState(state) {
-  if (state.status === 'syncing') return t('st.sync.status.syncing');
-  if (state.status === 'offline') return t('st.sync.status.offline');
-  if (state.status === 'subscription') return t('st.sync.status.subscription');
-  if (state.status === 'error') return state.error || t('st.sync.status.error');
-  if (!state.authenticated) return t('st.sync.status.auth_required');
-  if (!state.enabled || state.status === 'empty') return t('st.sync.status.password_required');
-  if (state.unlocked) return t('st.sync.status.unlocked');
-  return t('st.sync.status.locked');
-}
-function renderProfileSyncState(state) {
-  const authenticated = !!state.authenticated;
-  const enabled = state.enabled === true && state.status !== 'empty';
-  const unlocked = !!state.unlocked;
-  setProfileSyncVisible(profileSyncEmailField, !authenticated);
-  setProfileSyncVisible(profileSyncPasswordField, authenticated && !unlocked);
-  setProfileSyncVisible(profileSyncConfirmField, authenticated && !enabled);
-  setProfileSyncVisible(btnProfileSyncAuth, !authenticated);
-  setProfileSyncVisible(btnProfileSyncEnable, authenticated && !enabled);
-  setProfileSyncVisible(btnProfileSyncUnlock, authenticated && enabled && !unlocked);
-  setProfileSyncVisible(btnProfileSyncNow, authenticated && enabled && unlocked);
-  setProfileSyncVisible(profileSyncAdvanced, authenticated && enabled && unlocked);
-  if (profileSyncPassword) profileSyncPassword.autocomplete = enabled ? 'current-password' : 'new-password';
-  if (profileSyncPasswordField?.hidden && profileSyncPassword) profileSyncPassword.value = '';
-  if (profileSyncConfirmField?.hidden && profileSyncConfirm) profileSyncConfirm.value = '';
-  if (profileSyncStatus) profileSyncStatus.textContent = describeProfileSyncState(state || {});
-}
-async function refreshProfileSyncState() { const state = await sendToBackground('profile_sync_state').catch(e => ({ status: 'error', error: e.message })); renderProfileSyncState(state); return state; }
-async function reloadProfileSyncData() { const stored = await browser.storage.local.get(['profileEnabled', 'profileText', 'visionModel', 'transcriptionModel']); if (profileEnabledToggle) profileEnabledToggle.checked = !!stored.profileEnabled; if (profileTextArea) profileTextArea.value = stored.profileText || ''; const vision = stored.visionModel || {}; visionBaseUrlInput.value = vision.baseUrl || ''; visionApiKeyInput.value = vision.apiKey || ''; visionModelInput.value = vision.model || ''; const transcription = stored.transcriptionModel || {}; if (transcriptionBaseUrlInput) transcriptionBaseUrlInput.value = transcription.baseUrl || ''; if (transcriptionApiKeyInput) transcriptionApiKeyInput.value = transcription.apiKey || ''; if (transcriptionModelInput) transcriptionModelInput.value = transcription.model || ''; updateMultimodalDetectedProvider('vision'); updateMultimodalDetectedProvider('transcription'); await loadUserMemorySettings(); const res = await sendToBackground('get_providers'); providersData = res.providers; activeProviderId = res.active; renderProviders(); }
-async function requestProfileSyncDataConsent() { const permissions = await browser.permissions.getAll(); if (!Object.hasOwn(permissions, 'data_collection')) return window.confirm(t('st.sync.consent.legacy')); return browser.permissions.request({ data_collection: ['personallyIdentifyingInfo', 'authenticationInfo', 'personalCommunications', 'websiteContent', 'technicalAndInteraction'] }); }
-function profileSyncButtonRestore(button, pendingLabel) {
-  if (!button) return () => {};
-  const previousDisabled = button.disabled;
-  const previousText = button.textContent;
-  button.disabled = true;
-  if (pendingLabel) button.textContent = pendingLabel;
-  return () => { button.disabled = previousDisabled; button.textContent = previousText; };
-}
-async function profileSyncAction(action, data = {}, options = {}) {
-  const restoreButton = profileSyncButtonRestore(options.button, options.pendingLabel);
-  try {
-    if (options.pending) showProfileSyncResult(true, options.pending);
-    const result = await sendToBackground(action, data);
-    if (['profile_sync_unlock', 'profile_sync_now', 'profile_sync_reset'].includes(action)) await reloadProfileSyncData();
-    showProfileSyncResult(true, options.success || t('st.sync.result.updated'));
-    await refreshProfileSyncState();
-    return result;
-  } catch (error) {
-    showProfileSyncResult(false, t('st.sync.error.generic', { error: error?.message || t('st.sync.error.unknown') }));
-    throw error;
-  } finally {
-    restoreButton();
-  }
-}
-function checkedSyncPassword(requireConfirmation = false) { const password = profileSyncPassword?.value || ''; const confirmation = profileSyncConfirm?.value || ''; if (password.length < 12) throw new Error(t('st.sync.validation.password_length')); if (requireConfirmation && !confirmation) throw new Error(t('st.sync.validation.confirm_required')); if (confirmation && password !== confirmation) throw new Error(t('st.sync.validation.password_mismatch')); return password; }
-function promptConfirmedSyncPassword(label = t('st.sync.prompt.new_password')) { const password = window.prompt(t('st.sync.prompt.password', { label })); if (!password) return null; if (password.length < 12) throw new Error(t('st.sync.validation.password_length')); const confirmation = window.prompt(t('st.sync.prompt.confirm_password')); if (!confirmation) throw new Error(t('st.sync.validation.confirm_required')); if (password !== confirmation) throw new Error(t('st.sync.validation.password_mismatch')); return password; }
-btnProfileSyncAuth?.addEventListener('click', async () => { const email = (profileSyncEmail?.value || '').trim(); if (!email) return showProfileSyncResult(false, t('st.sync.validation.email_required')); try { profileSyncChallenge = await profileSyncAction('profile_sync_auth_start', { email }); showProfileSyncResult(true, t('st.sync.auth.check_email')); const poll = setInterval(async () => { if (!profileSyncChallenge) return clearInterval(poll); try { const result = await sendToBackground('profile_sync_auth_status', { challengeId: profileSyncChallenge.challenge_id, verifier: profileSyncChallenge.verifier }); if (result.token) { clearInterval(poll); profileSyncChallenge = null; showProfileSyncResult(true, t('st.sync.auth.success')); await refreshProfileSyncState(); } } catch (error) { clearInterval(poll); profileSyncChallenge = null; showProfileSyncResult(false, t('st.sync.error.generic', { error: error?.message || t('st.sync.error.unknown') })); } }, 3000); setTimeout(() => clearInterval(poll), 30 * 60 * 1000); } catch { } });
-btnProfileSyncEnable?.addEventListener('click', async () => { let password; try { password = checkedSyncPassword(true); if (!await requestProfileSyncDataConsent()) throw new Error(t('st.sync.consent.denied')); } catch (e) { showProfileSyncResult(false, e.message); return; } await profileSyncAction('profile_sync_unlock', { password, create: true }).catch(() => {}); });
-btnProfileSyncUnlock?.addEventListener('click', async () => { let password; try { password = checkedSyncPassword(); if (!await requestProfileSyncDataConsent()) throw new Error(t('st.sync.consent.denied')); } catch (e) { showProfileSyncResult(false, e.message); return; } await profileSyncAction('profile_sync_unlock', { password, create: false }).catch(() => {}); });
-btnProfileSyncNow?.addEventListener('click', () => profileSyncAction('profile_sync_now', {}, { button: btnProfileSyncNow, pending: t('st.sync.pending.syncing'), pendingLabel: t('st.sync.pending.syncing_short'), success: t('st.sync.result.current') }).catch(() => {}));
-btnProfileSyncLock?.addEventListener('click', () => profileSyncAction('profile_sync_lock').catch(() => {}));
-btnProfileSyncChange?.addEventListener('click', async () => { const oldPassword = window.prompt(t('st.sync.prompt.current_password')); if (!oldPassword) return; let newPassword; try { newPassword = promptConfirmedSyncPassword(); } catch (e) { showProfileSyncResult(false, e.message); return; } if (newPassword) await profileSyncAction('profile_sync_change_password', { oldPassword, newPassword }).catch(() => {}); });
-btnProfileSyncDisable?.addEventListener('click', () => { if (window.confirm(t('st.sync.confirm.disable'))) profileSyncAction('profile_sync_disable').catch(() => {}); });
-btnProfileSyncReset?.addEventListener('click', async () => { if (!window.confirm(t('st.sync.confirm.reset'))) return; let password; try { password = promptConfirmedSyncPassword(t('st.sync.prompt.replacement_password')); } catch (e) { showProfileSyncResult(false, e.message); return; } if (password) await profileSyncAction('profile_sync_reset', { password }).catch(() => {}); });
-refreshProfileSyncState();
-
 // Persisted to browser.storage.local in plaintext; the agent picks the
 // changes up via the storage.onChanged listener in background.js and
 // refreshes open conversations' system prompts on the next turn.

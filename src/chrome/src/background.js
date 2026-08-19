@@ -86,7 +86,6 @@ import {
   normalizeUserMemoryText,
   parseUserMemoryExtractionResult,
 } from './agent/user-memory.js';
-import { PROFILE_SYNC_DATA_KEYS, PROFILE_SYNC_KEYS, ProfileSyncManager } from './profile-sync.js';
 import { shouldAutoGroupTabs } from './tab-group-preference.js';
 import {
   CONFIG_STORAGE_KEYS,
@@ -211,7 +210,6 @@ const teacherRunInterlock = createTeacherRunInterlock(teacherSessionStore, {
     || cloudRunController.isRunning(tabId),
 });
 agent.setRunStartGuard((tabId) => teacherRunInterlock.guardRunStart(tabId));
-const profileSync = new ProfileSyncManager(chrome.storage.local);
 installDownloadDirectoryRouting(chrome);
 
 async function playWatchAlert({ style = 'default' } = {}) {
@@ -1046,7 +1044,6 @@ chrome.storage.onChanged.addListener((changes) => {
     selectionShortcutLocale = normalizeSelectionShortcutLocale(changes.wbLocale.newValue);
     createContextMenus().catch(() => {});
   }
-  if (PROFILE_SYNC_DATA_KEYS.some((key) => changes[key])) profileSync.noteChanges(changes).catch(() => {});
   if (changes.providers || changes.activeProvider || changes.helpImproveWebBrain) providerManager.load().catch(() => {});
   if (changes.webbrainCloudBridgeEnabled || changes.webbrainCloudBridgeUrl) {
     cloudRunController.syncBridge().catch(() => {});
@@ -2338,35 +2335,6 @@ async function handleMessage(msg, sender) {
       };
 
     // --- User Memory ---
-    case 'profile_sync_state':
-      return { ok: true, ...(await profileSync.state()) };
-    case 'profile_sync_auth_start':
-      return { ok: true, ...(await profileSync.authStart(String(msg.email || '').trim())) };
-    case 'profile_sync_auth_status':
-      return { ok: true, ...(await profileSync.authStatus(msg.challengeId, msg.verifier)) };
-    case 'profile_sync_unlock': {
-      const previous = await chrome.storage.local.get(PROFILE_SYNC_KEYS.enabled);
-      await chrome.storage.local.set({ [PROFILE_SYNC_KEYS.enabled]: true });
-      let state;
-      try { state = await profileSync.unlock(String(msg.password || ''), !!msg.create); await chrome.storage.local.set({ [PROFILE_SYNC_KEYS.everEnabled]: true }); }
-      catch (error) { await chrome.storage.local.set({ [PROFILE_SYNC_KEYS.enabled]: previous[PROFILE_SYNC_KEYS.enabled] === true }); throw error; }
-      await providerManager.load();
-      return { ok: true, ...state };
-    }
-    case 'profile_sync_now': {
-      const state = await profileSync.sync();
-      await providerManager.load();
-      return { ok: true, ...state };
-    }
-    case 'profile_sync_lock':
-      profileSync.lock(); return { ok: true, ...(await profileSync.state()) };
-    case 'profile_sync_change_password':
-      return { ok: true, ...(await profileSync.changePassword(String(msg.oldPassword || ''), String(msg.newPassword || ''))) };
-    case 'profile_sync_disable':
-      await profileSync.disable(); return { ok: true };
-    case 'profile_sync_reset':
-      return { ok: true, ...(await profileSync.reset(String(msg.password || ''))) };
-
     case 'get_user_memory': {
       const store = await userMemoryStore.load();
       const settings = await chrome.storage.local.get([

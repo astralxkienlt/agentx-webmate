@@ -67,7 +67,6 @@ import {
   normalizeUserMemoryText,
   parseUserMemoryExtractionResult,
 } from './agent/user-memory.js';
-import { PROFILE_SYNC_DATA_KEYS, PROFILE_SYNC_KEYS, ProfileSyncManager } from './profile-sync.js';
 import { shouldAutoGroupTabs } from './tab-group-preference.js';
 import {
   SHORTCUT_COMMAND_STORAGE_KEY,
@@ -129,7 +128,6 @@ const teacherRunInterlock = createTeacherRunInterlock(teacherSessionStore, {
     || scheduler.isRunning(tabId),
 });
 agent.setRunStartGuard((tabId) => teacherRunInterlock.guardRunStart(tabId));
-const profileSync = new ProfileSyncManager(browser.storage.local);
 const runCaptureController = createRunCaptureController({
   api: browser,
   unsupportedRecordingMessage: 'Tab recording is not supported in Firefox.',
@@ -923,7 +921,6 @@ browser.storage.onChanged.addListener((changes) => {
     selectionShortcutLocale = normalizeSelectionShortcutLocale(changes.wbLocale.newValue);
     createContextMenus().catch(() => {});
   }
-  if (PROFILE_SYNC_DATA_KEYS.some((key) => changes[key])) profileSync.noteChanges(changes).catch(() => {});
   if (changes.providers || changes.activeProvider || changes.helpImproveWebBrain) providerManager.load().catch(() => {});
   if (changes.maxAgentSteps) {
     agent.maxSteps = normalizeMaxAgentSteps(changes.maxAgentSteps.newValue);
@@ -1965,15 +1962,6 @@ async function handleMessage(msg, sender) {
   switch (msg.action) {
     case 'apocalypse_mode':
       return await apocalypseController.handle(msg.command, msg);
-    case 'profile_sync_state': return { ok: true, ...(await profileSync.state()) };
-    case 'profile_sync_auth_start': return { ok: true, ...(await profileSync.authStart(String(msg.email || '').trim())) };
-    case 'profile_sync_auth_status': return { ok: true, ...(await profileSync.authStatus(msg.challengeId, msg.verifier)) };
-    case 'profile_sync_unlock': { const previous = await browser.storage.local.get(PROFILE_SYNC_KEYS.enabled); await browser.storage.local.set({ [PROFILE_SYNC_KEYS.enabled]: true }); let state; try { state = await profileSync.unlock(String(msg.password || ''), !!msg.create); await browser.storage.local.set({ [PROFILE_SYNC_KEYS.everEnabled]: true }); } catch (error) { await browser.storage.local.set({ [PROFILE_SYNC_KEYS.enabled]: previous[PROFILE_SYNC_KEYS.enabled] === true }); throw error; } await providerManager.load(); return { ok: true, ...state }; }
-    case 'profile_sync_now': { const state = await profileSync.sync(); await providerManager.load(); return { ok: true, ...state }; }
-    case 'profile_sync_lock': profileSync.lock(); return { ok: true, ...(await profileSync.state()) };
-    case 'profile_sync_change_password': return { ok: true, ...(await profileSync.changePassword(String(msg.oldPassword || ''), String(msg.newPassword || ''))) };
-    case 'profile_sync_disable': await profileSync.disable(); return { ok: true };
-    case 'profile_sync_reset': return { ok: true, ...(await profileSync.reset(String(msg.password || ''))) };
     case 'get_user_memory': {
       const store = await userMemoryStore.load();
       const settings = await browser.storage.local.get([
