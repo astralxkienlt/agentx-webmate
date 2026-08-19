@@ -2786,6 +2786,41 @@ html[data-standalone="true"] #mode-toggle {
   color: var(--text-primary);
 }
 
+.attachment-chip-hint {
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+/* Drag-and-drop target state for the composer (ingestion v2). The hint
+   label rides ::after so no extra DOM node is needed. */
+#input-wrapper.attachment-drop-active {
+  outline: 2px dashed var(--accent, #7c5cff);
+  outline-offset: -2px;
+  border-radius: 12px;
+  position: relative;
+}
+
+#input-wrapper.attachment-drop-active::after {
+  content: attr(data-drop-hint);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-input) 88%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+}
+
 #input-text-layer {
   flex: 1;
   display: grid;

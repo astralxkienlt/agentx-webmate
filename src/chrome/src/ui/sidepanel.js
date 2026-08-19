@@ -23,6 +23,8 @@ import {
   saveChatHistoryRecord,
 } from './chat-history-store.js';
 import { historyTextFromElement } from './history-text.js';
+import { sniffAttachment } from '../media/media-core.js';
+import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../media/attachment-store.js';
 import { claimRunError } from './run-error-dedupe.js';
 import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
 import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
@@ -1039,8 +1041,6 @@ let busySlashNoticeLastShownAt = 0;
 let composerToastTimer = null;
 let retryPayloadSeq = 0;
 const activeChatPayloadsByTab = new Map();
-const retryAttachmentPayloads = new Map();
-const retryAttachmentIdsByTab = new Map();
 
 function setTabProcessing(tabId, processing) {
   const numericTabId = Number(tabId);
@@ -1883,49 +1883,76 @@ function setPlanReviewAwaiting(tabId, awaiting, assistantEl = null) {
   }
 }
 
-function normalizeRetryAttachmentTabId(tabId = renderedTabId ?? currentTabId) {
-  const numericTabId = Number(tabId);
-  return Number.isFinite(numericTabId) ? numericTabId : null;
-}
-
-function trackRetryAttachmentId(tabId, retryId) {
-  if (!retryId) return;
-  const numericTabId = normalizeRetryAttachmentTabId(tabId);
-  if (numericTabId == null) return;
-  let ids = retryAttachmentIdsByTab.get(numericTabId);
-  if (!ids) {
-    ids = new Set();
-    retryAttachmentIdsByTab.set(numericTabId, ids);
+// Retry attachments ride the button's dataset as compact claim-check refs
+// (ids + display metadata, never bytes), so a retry survives the side panel
+// being closed and reopened: store-backed files re-resolve from IndexedDB,
+// staged screenshots from their durable storage records. This replaced the
+// in-memory retry payload maps that DoD-5 retired.
+function retryAttachmentRef(att) {
+  if (!att || typeof att !== 'object') return null;
+  if (isAttachmentId(att.id)) {
+    return {
+      id: att.id,
+      kind: att.kind,
+      ...(att.docType ? { docType: att.docType } : {}),
+      name: String(att.name || 'attachment').slice(0, 240),
+      mimeType: String(att.mimeType || '').slice(0, 160),
+      size: Number(att.size) || 0,
+      source: 'user_upload',
+    };
   }
-  ids.add(retryId);
+  if (att.source === 'slash_screenshot' && att.stagedAttachmentId) {
+    return { source: 'slash_screenshot', stagedAttachmentId: att.stagedAttachmentId, name: String(att.name || '').slice(0, 240) };
+  }
+  // Degraded inline payload (store unavailable at ingest): match it back to
+  // a restored composer chip by shape; the bytes themselves cannot ride the
+  // dataset.
+  return { inline: true, kind: att.kind, name: String(att.name || '').slice(0, 240), size: Number(att.size) || 0 };
 }
 
-function releaseRetryAttachmentPayload(retryId) {
-  if (!retryId) return;
-  retryAttachmentPayloads.delete(retryId);
-  for (const [tabId, ids] of retryAttachmentIdsByTab) {
-    ids.delete(retryId);
-    if (!ids.size) retryAttachmentIdsByTab.delete(tabId);
+function encodeRetryAttachmentRefs(attachments) {
+  const refs = (Array.isArray(attachments) ? attachments : []).map(retryAttachmentRef).filter(Boolean);
+  if (!refs.length) return '';
+  try {
+    return encodeURIComponent(JSON.stringify(refs));
+  } catch {
+    return '';
   }
 }
 
-function releaseRetryAttachmentsInTree(root) {
-  if (!root) return;
-  if (root.matches?.('.error-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]')) {
-    releaseRetryAttachmentPayload(root.dataset.retryId);
+function decodeRetryAttachmentRefs(value) {
+  try {
+    const refs = JSON.parse(decodeURIComponent(String(value || '')));
+    return Array.isArray(refs) ? refs.filter(ref => ref && typeof ref === 'object') : [];
+  } catch {
+    return [];
   }
-  root.querySelectorAll?.('.error-retry-btn[data-retry-id], .planner-request-failure-retry-btn[data-retry-id], .plan-review-retry[data-retry-id]').forEach((btn) => {
-    releaseRetryAttachmentPayload(btn.dataset.retryId);
-  });
 }
 
-function clearRetryAttachmentsForTab(tabId) {
-  const numericTabId = normalizeRetryAttachmentTabId(tabId);
-  if (numericTabId == null) return;
-  const ids = retryAttachmentIdsByTab.get(numericTabId);
-  if (!ids) return;
-  ids.forEach((retryId) => retryAttachmentPayloads.delete(retryId));
-  retryAttachmentIdsByTab.delete(numericTabId);
+/**
+ * Rebuild the concrete attachment payloads for a retry click. Composer
+ * chips restored after the failure are preferred (they carry staged
+ * screenshot pixels and inline fallbacks); a store-backed ref is
+ * self-sufficient even without a chip because the agent resolves its bytes
+ * by id. Refs that resolve nowhere are simply omitted — the send goes out
+ * and the per-file outcome states tell the user what was available.
+ */
+function resolveRetryAttachments(refs, tabId = renderedTabId ?? currentTabId) {
+  const pending = getPendingAttachmentsForTab(tabId, { create: false });
+  const resolved = [];
+  for (const ref of refs) {
+    let match = null;
+    if (ref.id) {
+      match = pending.find(att => att?.id === ref.id) || { ...ref };
+    } else if (ref.stagedAttachmentId) {
+      match = pending.find(att => att?.stagedAttachmentId === ref.stagedAttachmentId) || null;
+    } else if (ref.inline) {
+      match = pending.find(att => !att?.id && !att?.stagedAttachmentId
+        && att?.name === ref.name && Number(att?.size) === Number(ref.size)) || null;
+    }
+    if (match) resolved.push(match);
+  }
+  return resolved;
 }
 
 function getQueuedComposerMessages(tabId) {
@@ -2257,8 +2284,6 @@ async function renderClearedConversationForTab(tabId) {
   saveInputDraftForTab(tabId, '');
   clearPendingAttachmentsForTab(tabId);
   clearQueuedComposerMessagesForTab(tabId);
-  if (sameTabId(currentTabId, tabId)) releaseRetryAttachmentsInTree(messagesEl);
-  clearRetryAttachmentsForTab(tabId);
   setApiMutationsAllowedForTab(tabId, false);
   await resetChatHistoryStateForTab(tabId);
   if (currentTabId !== tabId) return;
@@ -5864,9 +5889,8 @@ function retryPayloadFromButton(btn) {
   const mode = ['ask', 'act', 'dev'].includes(btn.dataset.retryMode)
     ? btn.dataset.retryMode
     : agentMode;
-  const retryId = btn.dataset.retryId || '';
-  const attachments = retryAttachmentPayloads.get(retryId) || [];
-  const attachmentCount = Number(btn.dataset.retryAttachmentCount || 0) || 0;
+  const refs = decodeRetryAttachmentRefs(btn.dataset.retryAttachments);
+  const attachments = resolveRetryAttachments(refs, currentTabId);
   const sourceGrounding = normalizeSelectionSourceGrounding(btn.dataset.retrySourceGrounding) || null;
   const selectionAction = sourceGrounding
     ? normalizeSelectionAction(btn.dataset.retrySelectionAction)
@@ -5880,7 +5904,6 @@ function retryPayloadFromButton(btn) {
     ...(sourceGrounding ? { sourceGrounding } : {}),
     ...(selectionAction ? { selectionAction } : {}),
     attachments,
-    missingAttachments: attachmentCount > 0 && attachments.length === 0,
   };
 }
 
@@ -5897,9 +5920,6 @@ function bindErrorRetryButton(btn) {
     const payload = retryPayloadFromButton(btn);
     if (!payload) return;
     if (rejectSelectionScopedMode(payload.mode, currentTabId, payload.sourceGrounding)) return;
-    if (payload.missingAttachments) {
-      showComposerToast(t('sp.retry.attachments_unavailable'), { duration: 5000 });
-    }
     setMode(payload.mode);
     if (payload.apiMutationsAllowed) {
       grantApiMutationsForTab(currentTabId);
@@ -5923,7 +5943,6 @@ function bindErrorRetryButton(btn) {
       },
     });
     if (accepted) {
-      releaseRetryAttachmentPayload(btn.dataset.retryId);
       btn.disabled = true;
     }
   });
@@ -6120,6 +6139,7 @@ function renderAgentErrorUpdate(data, tabId = currentTabId, requestId = '', opti
 
 function rebindRestoredMessageControls() {
   restoreStagedScreenshotAttachments();
+  void restoreStoredAttachmentChips();
   rebindCopyButtons();
   rebindMessageInfoToggles();
   rebindCompactStepDetailsToggles();
@@ -8142,7 +8162,11 @@ async function sendMessage(extraChatParams = {}) {
           saveAs: runCaptureDirective.saveAs,
         },
       } : {}),
-      ...(attachmentsForSend.length ? { attachments: attachmentsForSend } : {}),
+      // Claim-check contract (DoD-6): store-backed files cross the runtime
+      // boundary as id + display metadata only — the background reads the
+      // bytes from IndexedDB. Screenshots and degraded inline payloads keep
+      // their historical full shape.
+      ...(attachmentsForSend.length ? { attachments: attachmentsForSend.map(outboundAttachmentPayload) } : {}),
       ...chatExtraParams,
     });
     applyConversationScopeState(tabId, res);
@@ -8203,10 +8227,14 @@ async function sendMessage(extraChatParams = {}) {
       // message card keeps its "delivery not confirmed" marker either way.
       if (deliveryState === 'included') {
         await removePersistedStagedAttachments(tabId, attachmentsForSend);
+        // Store records flip to 'sent': the chip is gone but the bytes stay
+        // addressable for read_attachment/upload replay until the TTL sweep.
+        markStoreAttachmentsSent(attachmentsForSend);
       } else {
         await restorePendingAttachmentsForTab(tabId, attachmentsForSend);
       }
       setMessageAttachmentState(userEl, deliveryState);
+      applyAttachmentOutcomesToMessage(userEl, res?.updates);
       await persistMessageAttachmentState(tabId, userEl);
     }
 
@@ -8925,6 +8953,18 @@ function handleAgentUpdateMessage(msg) {
         name: data?.workflowName || '',
       }), { duration: 9000 });
       break;
+
+    case 'attachment_outcomes': {
+      // Per-file delivery verdicts (ingestion v2): land them on the run's
+      // user message as soon as materialization finishes, so a skipped file
+      // reads "not sent — needs vision" while the agent is still working.
+      const outcomeUserEl = userMessageForRunAssistant(eventAssistantEl || currentAssistantEl);
+      if (outcomeUserEl && Array.isArray(data?.outcomes)) {
+        applyAttachmentOutcomes(outcomeUserEl, data.outcomes);
+        void persistMessageAttachmentState(eventTabId, outcomeUserEl);
+      }
+      break;
+    }
 
     case 'run_complete':
       setMessageCreatedAt(eventAssistantEl || currentAssistantEl, data?.endedAt, { replace: true });
@@ -10120,10 +10160,8 @@ function configureRetryButton(btn, retryPayload) {
   if (!btn || !retryPayload?.text) return false;
   const retryId = `retry-${Date.now()}-${++retryPayloadSeq}`;
   const attachments = Array.isArray(retryPayload.attachments) ? retryPayload.attachments.slice() : [];
-  if (attachments.length) {
-    retryAttachmentPayloads.set(retryId, attachments);
-    trackRetryAttachmentId(renderedTabId ?? currentTabId, retryId);
-  }
+  const encodedRefs = encodeRetryAttachmentRefs(attachments);
+  if (encodedRefs) btn.dataset.retryAttachments = encodedRefs;
   btn.dataset.retryId = retryId;
   btn.dataset.retryText = String(retryPayload.text || '');
   btn.dataset.retryDisplayText = String(retryPayload.displayText || retryPayload.text || '');
@@ -10163,6 +10201,93 @@ function addErrorRetryButton(msgEl, retryPayload) {
 
 const MESSAGE_ATTACHMENT_STATES = new Set(['sending', 'included', 'not-sent', 'unknown']);
 
+/**
+ * Wire form of one attachment for chat_start/chat payloads. Store-backed
+ * files send their claim-check id plus display metadata — never bytes.
+ */
+function outboundAttachmentPayload(att) {
+  if (!isAttachmentId(att?.id)) return att;
+  return {
+    id: att.id,
+    kind: att.kind,
+    ...(att.docType ? { docType: att.docType } : {}),
+    name: att.name,
+    mimeType: att.mimeType,
+    size: att.size,
+    source: 'user_upload',
+  };
+}
+
+function markStoreAttachmentsSent(attachments) {
+  const ids = (Array.isArray(attachments) ? attachments : [])
+    .map(att => att?.id)
+    .filter(isAttachmentId);
+  if (ids.length) attachmentStoreOrNull()?.setState(ids, 'sent').catch(() => {});
+}
+
+/** Map one agent delivery outcome onto a chip state + human tooltip. */
+function attachmentOutcomeLabel(outcome) {
+  if (!outcome || typeof outcome !== 'object') return null;
+  if (outcome.skipped) {
+    const key = outcome.skipped === 'capability'
+      ? (outcome.reasonKey === 'vision_required_scan'
+        ? 'sp.attach.outcome.needs_vision_scan'
+        : 'sp.attach.outcome.needs_vision')
+      : outcome.skipped === 'policy'
+        ? 'sp.attach.outcome.policy'
+        : outcome.reasonKey === 'expired'
+          ? 'sp.attach.outcome.expired'
+          : 'sp.attach.outcome.error';
+    return { state: 'not-sent', label: t(key) };
+  }
+  const key = outcome.lane === 'text'
+    ? 'sp.attach.outcome.sent_text'
+    : outcome.lane === 'native_pages'
+      ? 'sp.attach.outcome.sent_pages'
+      : outcome.lane === 'reference'
+        ? 'sp.attach.outcome.reference'
+        : 'sp.attach.outcome.sent_native';
+  return { state: 'included', label: t(key) };
+}
+
+/**
+ * Per-file delivery outcomes onto the message card. Items are matched by
+ * claim-check id when present, else by position (outcomes preserve the
+ * attachments' send order). Skipped files lock their state so a later
+ * coarse "included" reconcile cannot paper over them.
+ */
+function applyAttachmentOutcomes(msgEl, outcomes) {
+  if (!msgEl || !Array.isArray(outcomes) || !outcomes.length) return false;
+  const items = Array.from(msgEl.querySelectorAll('.message-attachment'));
+  if (!items.length) return false;
+  let changed = false;
+  items.forEach((item, index) => {
+    const outcome = outcomes.find(entry => entry?.id && entry.id === item.dataset.attachmentId)
+      || outcomes[index];
+    const info = attachmentOutcomeLabel(outcome);
+    if (!info) return;
+    for (const known of MESSAGE_ATTACHMENT_STATES) item.classList.remove(`message-attachment-${known}`);
+    item.classList.add(`message-attachment-${info.state}`);
+    item.dataset.deliveryState = info.state;
+    item.dataset.outcomeLocked = 'true';
+    const name = item.dataset.name || 'attachment';
+    const stateInfo = attachmentStateLabel(info.state);
+    item.querySelector('.message-attachment-state')?.replaceChildren(stateInfo.symbol);
+    item.title = `${name} — ${info.label}`;
+    item.setAttribute('aria-label', `${name}: ${info.label}`);
+    changed = true;
+  });
+  return changed;
+}
+
+function applyAttachmentOutcomesToMessage(msgEl, updates) {
+  const outcomeUpdate = Array.isArray(updates)
+    ? [...updates].reverse().find(update => update?.type === 'attachment_outcomes')
+    : null;
+  const outcomes = outcomeUpdate?.data?.outcomes;
+  if (outcomes) applyAttachmentOutcomes(msgEl, outcomes);
+}
+
 function attachmentDataUrlBytes(dataUrl) {
   const encoded = String(dataUrl || '').split(',', 2)[1] || '';
   if (!encoded) return 0;
@@ -10173,11 +10298,12 @@ function attachmentDataUrlBytes(dataUrl) {
 function attachmentMetadata(att, deliveryState = 'included') {
   const state = MESSAGE_ATTACHMENT_STATES.has(deliveryState) ? deliveryState : 'included';
   return {
-    kind: ['image', 'document', 'text'].includes(att?.kind) ? att.kind : 'document',
+    kind: ['image', 'document', 'text', 'binary'].includes(att?.kind) ? att.kind : 'document',
     name: String(att?.name || 'attachment').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240) || 'attachment',
     mimeType: String(att?.mimeType || '').slice(0, 120),
     size: Number.isFinite(Number(att?.size)) ? Math.max(0, Number(att.size)) : 0,
     source: att?.source === 'slash_screenshot' ? 'slash_screenshot' : 'user_upload',
+    ...(isAttachmentId(att?.id) ? { attachmentId: att.id } : {}),
     deliveryState: state,
   };
 }
@@ -10202,6 +10328,7 @@ function renderMessageAttachments(msgEl, attachments, state = 'included') {
     item.dataset.mimeType = meta.mimeType;
     item.dataset.size = String(meta.size);
     item.dataset.source = meta.source;
+    if (meta.attachmentId) item.dataset.attachmentId = meta.attachmentId;
     item.dataset.deliveryState = meta.deliveryState;
 
     const icon = document.createElement('span');
@@ -10230,6 +10357,12 @@ function setMessageAttachmentState(msgEl, state) {
   if (!msgEl || !MESSAGE_ATTACHMENT_STATES.has(state)) return false;
   let changed = false;
   msgEl.querySelectorAll('.message-attachment').forEach((item) => {
+    // A per-file outcome ("not sent — needs vision") outranks a later coarse
+    // "included" reconcile; a whole-message failure still overrides it.
+    if (item.dataset.outcomeLocked === 'true') {
+      if (state === 'included') return;
+      delete item.dataset.outcomeLocked;
+    }
     if (item.dataset.deliveryState !== state) changed = true;
     for (const known of MESSAGE_ATTACHMENT_STATES) item.classList.remove(`message-attachment-${known}`);
     item.classList.add(`message-attachment-${state}`);
@@ -12125,6 +12258,10 @@ function clearPendingAttachmentsForTab(tabId, { preserveStoredScreenshots = fals
   pending.forEach(attachment => setScreenshotAttachmentStaged(numericTabId, attachment, false));
   if (!preserveStoredScreenshots) {
     clearStagedScreenshots(chrome.storage.local, numericTabId).catch(() => {});
+    // Same lifecycle for claim-check records: a cleared conversation drops
+    // this tab's never-sent files. The send path passes
+    // preserveStoredScreenshots and keeps them for the in-flight turn.
+    attachmentStoreOrNull()?.removeByTab(numericTabId).catch(() => {});
   }
   pendingAttachmentsByTab.delete(numericTabId);
   bumpAttachmentGeneration(numericTabId);
@@ -12206,9 +12343,15 @@ function consumePendingAttachmentsForTab(tabId, attachments) {
   const consumedScreenshotIds = new Set(attachments
     .filter(attachment => attachment?.source === 'slash_screenshot' && attachment.stagedAttachmentId)
     .map(attachment => attachment.stagedAttachmentId));
+  // Store-backed chips can likewise be re-materialized from a retry ref, so
+  // object identity is not enough — match on the durable claim-check id too.
+  const consumedStoreIds = new Set(attachments
+    .map(attachment => attachment?.id)
+    .filter(id => isAttachmentId(id)));
   const remaining = pending.filter(attachment => !consumed.has(attachment)
     && !(attachment?.source === 'slash_screenshot'
-      && consumedScreenshotIds.has(attachment.stagedAttachmentId)));
+      && consumedScreenshotIds.has(attachment.stagedAttachmentId))
+    && !(isAttachmentId(attachment?.id) && consumedStoreIds.has(attachment.id)));
   attachments.forEach(attachment => setScreenshotAttachmentStaged(numericTabId, attachment, false));
   if (remaining.length) pendingAttachmentsByTab.set(numericTabId, remaining);
   else pendingAttachmentsByTab.delete(numericTabId);
@@ -12285,6 +12428,17 @@ function renderAttachmentPreviews() {
     const label = document.createElement('span');
     label.className = 'attachment-chip-name';
     label.textContent = att.name;
+    // Probe facts ("PDF · 12 pages" / "PDF scan — needs vision") land as a
+    // pre-send hint so the user learns about a capability mismatch before
+    // spending the turn, not after.
+    const hint = attachmentChipHint(att);
+    let hintEl = null;
+    if (hint) {
+      hintEl = document.createElement('span');
+      hintEl.className = 'attachment-chip-hint';
+      hintEl.textContent = hint;
+      chip.title = `${att.name} — ${hint}`;
+    }
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'attachment-chip-remove';
@@ -12298,12 +12452,18 @@ function renderAttachmentPreviews() {
         attachments[i]?.stagedAttachmentId,
       ).catch(() => {});
       setScreenshotAttachmentStaged(previewTabId, attachments[i], false);
+      // A removed chip's claim-check record dies with it — the file was
+      // never sent, so nothing else may reference the id.
+      if (isAttachmentId(attachments[i]?.id)) {
+        attachmentStoreOrNull()?.remove(attachments[i].id).catch(() => {});
+      }
       attachments.splice(i, 1);
       if (attachments.length === 0 && previewTabId != null) pendingAttachmentsByTab.delete(previewTabId);
       renderAttachmentPreviews();
       syncSendButtonState();
     });
-    chip.append(label, removeBtn);
+    if (hintEl) chip.append(label, hintEl, removeBtn);
+    else chip.append(label, removeBtn);
     attachmentPreviewList.appendChild(chip);
   });
 }
@@ -12317,74 +12477,136 @@ function readFileAsDataUrl(file) {
   });
 }
 
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
+// ── Attachment Store bridge (ingestion v2) ────────────────────────────────
+// Chips reference claim-check ids; the bytes live once in IndexedDB, shared
+// with the background. When the store is unavailable (quota/corruption) the
+// composer degrades to the historical inline payloads so the user can still
+// send — persistence is a feature, never a gate.
+
+function attachmentStoreOrNull() {
+  try {
+    return getSharedAttachmentStore();
+  } catch {
+    return null;
+  }
 }
 
-async function handleAttachedFiles(fileList, tabId = renderedTabId ?? currentTabId) {
+function decodeAttachmentText(bytes, encoding) {
+  try {
+    return new TextDecoder(encoding || 'utf-8').decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+}
+
+/** Probe PDFs/DOCX in the background and label the chip ("PDF · 12 pages"). */
+async function requestAttachmentProbe(attachment, tabId) {
+  try {
+    const res = await sendToBackground('attachment_probe', { id: attachment.id });
+    if (!res?.ok || !res.facts) return;
+    attachment.facts = res.facts;
+    if (res.valid === false) attachment.facts = { ...res.facts, invalidPackage: true };
+    if (normalizeAttachmentTabId() === normalizeAttachmentTabId(tabId)) renderAttachmentPreviews();
+  } catch { /* probe is advisory only */ }
+}
+
+function attachmentChipHint(att) {
+  const facts = att?.facts || {};
+  if (att?.docType === 'pdf' && Number(facts.pages) > 0) {
+    return facts.hasTextLayer === false
+      ? t('sp.attach.hint.pdf_scan', { pages: facts.pages })
+      : t('sp.attach.hint.pdf', { pages: facts.pages });
+  }
+  if (facts.invalidPackage === true) return t('sp.attach.hint.invalid_docx');
+  return '';
+}
+
+async function ingestFiles(fileList, tabId = renderedTabId ?? currentTabId) {
   const numericTabId = normalizeAttachmentTabId(tabId);
   if (numericTabId == null) return;
   const files = Array.from(fileList || []);
   if (!files.length) return;
   const generation = getAttachmentGeneration(numericTabId);
   updateAttachmentReadCount(numericTabId, 1);
+  let persistenceToastShown = false;
   try {
     for (const file of files) {
-      const isImage = file.type.startsWith('image/');
-      const isPdf = file.type === 'application/pdf';
-      // The reported MIME type for text files is OS-registry dependent and
-      // often empty — fall back to the extension.
-      const isTextFile = file.type === 'application/json'
-        || file.type === 'text/plain'
-        || file.type === 'text/csv'
-        || (!isImage && !isPdf && /\.(json|txt|csv)$/i.test(file.name || ''));
-      if (!isImage && !isPdf && !isTextFile) {
-        if (normalizeAttachmentTabId() === numericTabId) {
-          addMessage('system', systemHtml(tSystemHtml('sp.attach.unsupported_type', { name: file.name })));
-        }
-        continue;
-      }
-      const maxBytes = isTextFile ? MAX_TEXT_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
-      if (file.size > maxBytes) {
-        if (normalizeAttachmentTabId() === numericTabId) {
-          addMessage('system', systemHtml(tSystemHtml('sp.attach.too_large', { name: file.name, max: isTextFile ? '5MB' : '16MB' })));
-        }
-        continue;
-      }
       try {
-        if (isTextFile) {
-          // Keep the decoded text for model context and the original bytes for
-          // an exact upload_file replay (encoding/BOM and MIME must survive).
-          const [textContent, dataUrl] = await Promise.all([
-            readFileAsText(file),
-            readFileAsDataUrl(file),
-          ]);
-          if (generation !== getAttachmentGeneration(numericTabId)) continue;
-          getPendingAttachmentsForTab(numericTabId).push({
-            kind: 'text',
-            name: file.name,
-            textContent,
-            dataUrl,
-            mimeType: file.type || '',
-            size: file.size,
-            source: 'user_upload',
-          });
-        } else {
-          const dataUrl = await readFileAsDataUrl(file);
-          if (generation !== getAttachmentGeneration(numericTabId)) continue;
-          getPendingAttachmentsForTab(numericTabId).push({
-            kind: isImage ? 'image' : 'document',
-            name: file.name,
-            dataUrl,
-            mimeType: file.type || (isPdf ? 'application/pdf' : ''),
-            size: file.size,
-            source: 'user_upload',
-          });
+        // Classify from the actual bytes (magic ▸ header ▸ extension) —
+        // file.type is OS-registry dependent and trivially spoofed by a
+        // rename. A "PNG" that is really HTML is rejected here, before it
+        // can reach a vision model as an image.
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const sniff = sniffAttachment(bytes, { name: file.name, declaredMime: file.type });
+        if (!sniff.ok) {
+          if (normalizeAttachmentTabId() === numericTabId) {
+            const reasonKey = sniff.reason === 'mime_mismatch'
+              ? 'sp.attach.mime_mismatch'
+              : sniff.reason === 'legacy_doc'
+                ? 'sp.attach.doc_legacy'
+                : 'sp.attach.read_failed';
+            addMessage('system', systemHtml(tSystemHtml(reasonKey, { name: file.name })));
+          }
+          continue;
+        }
+        const isText = sniff.kind === 'text';
+        const maxBytes = isText ? MAX_TEXT_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
+        if (file.size > maxBytes) {
+          if (normalizeAttachmentTabId() === numericTabId) {
+            addMessage('system', systemHtml(tSystemHtml('sp.attach.too_large', { name: file.name, max: isText ? '5MB' : '16MB' })));
+          }
+          continue;
+        }
+        const textContent = isText ? decodeAttachmentText(bytes, sniff.textEncoding) : undefined;
+        const attachment = {
+          id: newAttachmentId(),
+          kind: sniff.kind,
+          docType: sniff.docType,
+          name: file.name,
+          mimeType: sniff.mime,
+          size: file.size,
+          source: 'user_upload',
+        };
+        let persisted = false;
+        const store = attachmentStoreOrNull();
+        if (store) {
+          try {
+            await store.put({
+              id: attachment.id,
+              tabId: numericTabId,
+              origin: 'user_upload',
+              name: file.name,
+              mime: sniff.mime,
+              kind: sniff.kind,
+              docType: sniff.docType,
+              size: file.size,
+              ...(isText ? { textContent } : {}),
+              facts: {},
+              state: 'pending',
+            }, buffer);
+            persisted = true;
+          } catch { /* degrade below */ }
+        }
+        if (!persisted) {
+          // Degraded mode: carry the payload inline exactly like the
+          // pre-store composer did. One toast per batch, never a blocked
+          // attach.
+          delete attachment.id;
+          attachment.dataUrl = await readFileAsDataUrl(file);
+          if (isText) attachment.textContent = textContent;
+          if (!persistenceToastShown && normalizeAttachmentTabId() === numericTabId) {
+            showComposerToast(t('sp.persistence.unavailable'));
+            persistenceToastShown = true;
+          }
+        }
+        if (generation !== getAttachmentGeneration(numericTabId)) {
+          if (persisted) attachmentStoreOrNull()?.remove(attachment.id).catch(() => {});
+          continue;
+        }
+        getPendingAttachmentsForTab(numericTabId).push(attachment);
+        if (persisted && (sniff.docType === 'pdf' || sniff.docType === 'docx')) {
+          void requestAttachmentProbe(attachment, numericTabId);
         }
       } catch {
         if (generation === getAttachmentGeneration(numericTabId) && normalizeAttachmentTabId() === numericTabId) {
@@ -12400,6 +12622,41 @@ async function handleAttachedFiles(fileList, tabId = renderedTabId ?? currentTab
   }
 }
 
+/**
+ * DoD-5 (reload survival): chips are rebuilt from the store's pending
+ * records whenever a tab's conversation is (re)rendered, so closing and
+ * reopening the side panel never loses a staged file.
+ */
+async function restoreStoredAttachmentChips(tabId = renderedTabId ?? currentTabId) {
+  const numericTabId = normalizeAttachmentTabId(tabId);
+  const store = attachmentStoreOrNull();
+  if (numericTabId == null || !store) return;
+  updateAttachmentReadCount(numericTabId, 1);
+  try {
+    const records = await store.listByTab(numericTabId);
+    if (!sameTabId(renderedTabId ?? currentTabId, numericTabId)) return;
+    const pending = getPendingAttachmentsForTab(numericTabId);
+    const known = new Set(pending.map(att => att?.id).filter(Boolean));
+    for (const record of records) {
+      if (record.state !== 'pending' || record.origin !== 'user_upload' || known.has(record.id)) continue;
+      pending.push({
+        id: record.id,
+        kind: record.kind,
+        docType: record.docType,
+        name: record.name,
+        mimeType: record.mime,
+        size: record.size,
+        source: 'user_upload',
+        facts: record.facts,
+      });
+    }
+    if (pending.length) pendingAttachmentsByTab.set(numericTabId, pending);
+    if (normalizeAttachmentTabId() === numericTabId) renderAttachmentPreviews();
+  } catch { /* store degraded — chips simply do not restore */ } finally {
+    updateAttachmentReadCount(numericTabId, -1);
+  }
+}
+
 if (attachBtn && fileAttachInput) {
   attachBtn.addEventListener('click', () => fileAttachInput.click());
   fileAttachInput.addEventListener('change', () => {
@@ -12408,9 +12665,59 @@ if (attachBtn && fileAttachInput) {
     // one they picked files for — is still the rendered tab's. Sends are
     // gated while processing, and renderedTabId catches up to currentTabId
     // before the next send, so chips and sent attachments stay consistent.
-    handleAttachedFiles(fileAttachInput.files, renderedTabId ?? currentTabId);
+    ingestFiles(fileAttachInput.files, renderedTabId ?? currentTabId);
     fileAttachInput.value = ''; // allow re-selecting the same file
   });
+}
+
+// Paste-to-attach: clipboard images and copied files land in the composer
+// exactly like picked files. Text pastes keep their default behavior.
+inputEl.addEventListener('paste', (event) => {
+  const items = Array.from(event.clipboardData?.items || []);
+  const files = items
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  void ingestFiles(files, renderedTabId ?? currentTabId);
+});
+
+// Drag-and-drop onto the composer. Scoped to the composer container so the
+// plan-review card's own drag-drop surface keeps working untouched.
+{
+  const dropTarget = document.getElementById('input-wrapper') || inputEl?.parentElement;
+  if (dropTarget) {
+    let dragDepth = 0;
+    const syncDropHint = () => { dropTarget.dataset.dropHint = t('sp.attach.drop_hint'); };
+    syncDropHint();
+    document.addEventListener('wb-locale-changed', syncDropHint);
+    const clearDropState = () => {
+      dragDepth = 0;
+      dropTarget.classList.remove('attachment-drop-active');
+    };
+    dropTarget.addEventListener('dragenter', (event) => {
+      if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+      event.preventDefault();
+      dragDepth += 1;
+      dropTarget.classList.add('attachment-drop-active');
+    });
+    dropTarget.addEventListener('dragover', (event) => {
+      if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+      event.preventDefault();
+    });
+    dropTarget.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) dropTarget.classList.remove('attachment-drop-active');
+    });
+    dropTarget.addEventListener('drop', (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      clearDropState();
+      if (!files.length) return;
+      event.preventDefault();
+      void ingestFiles(files, renderedTabId ?? currentTabId);
+    });
+  }
 }
 
 // --- Event Listeners ---

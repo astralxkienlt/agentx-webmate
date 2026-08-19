@@ -61,6 +61,20 @@ export function compactRunUiData(type, data) {
   if (type === 'text' || type === 'text_delta') {
     return { ...data, content: String(data.content || '').slice(0, 30000) };
   }
+  if (type === 'attachment_outcomes') {
+    // Per-file delivery verdicts (ingestion v2). Bounded defensively so a
+    // pathological outcome list can never bloat the persisted snapshot.
+    return {
+      outcomes: (Array.isArray(data.outcomes) ? data.outcomes : []).slice(0, 50).map(outcome => ({
+        id: String(outcome?.id || '').slice(0, 80),
+        name: String(outcome?.name || '').slice(0, 120),
+        kind: String(outcome?.kind || '').slice(0, 16),
+        ...(outcome?.lane ? { lane: String(outcome.lane).slice(0, 16) } : {}),
+        ...(outcome?.skipped ? { skipped: String(outcome.skipped).slice(0, 16) } : {}),
+        ...(outcome?.reasonKey ? { reasonKey: String(outcome.reasonKey).slice(0, 40) } : {}),
+      })),
+    };
+  }
   return data;
 }
 

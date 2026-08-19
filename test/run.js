@@ -29263,25 +29263,28 @@ test('sidepanel keeps retry metadata long enough for returned error updates', ()
       /function createActiveChatPayloadState\(retryPayload, requestId = ''\) \{[\s\S]*?requestId: String\(requestId \|\| ''\)[\s\S]*?renderedErrorMessages: new Set\(\)[\s\S]*?\}/,
       `${label}: active retry metadata should track rendered error messages`,
     );
-    assert.match(
+    // Ingestion v2: retry attachments ride the button's dataset as durable
+    // claim-check refs instead of in-memory payload maps, so a retry
+    // survives the side panel being closed and reopened (DoD-5).
+    assert.doesNotMatch(
       source,
-      /const retryAttachmentIdsByTab = new Map\(\);/,
-      `${label}: retry attachment payloads should be indexed by tab for cleanup`,
+      /retryAttachmentPayloads|retryAttachmentIdsByTab\s*=/,
+      `${label}: the in-memory retry payload maps must stay retired`,
     );
     assert.match(
       source,
-      /function clearRetryAttachmentsForTab\(tabId\) \{[\s\S]*?retryAttachmentPayloads\.delete\(retryId\)[\s\S]*?retryAttachmentIdsByTab\.delete\(numericTabId\);[\s\S]*?\}/,
-      `${label}: clearing a conversation should release retry attachment payloads for that tab`,
+      /const encodedRefs = encodeRetryAttachmentRefs\(attachments\);[\s\S]*?btn\.dataset\.retryAttachments = encodedRefs;/,
+      `${label}: configureRetryButton should stash compact attachment refs on the button dataset`,
     );
     assert.match(
       source,
-      /function renderClearedConversationForTab\(tabId\) \{[\s\S]*?releaseRetryAttachmentsInTree\(messagesEl\);[\s\S]*?clearRetryAttachmentsForTab\(tabId\);[\s\S]*?messagesEl\.innerHTML = '';/,
-      `${label}: reset should release retry attachment payloads before removing retry buttons from the DOM`,
+      /const refs = decodeRetryAttachmentRefs\(btn\.dataset\.retryAttachments\);[\s\S]*?resolveRetryAttachments\(refs, currentTabId\);/,
+      `${label}: retryPayloadFromButton should rebuild payloads from durable refs`,
     );
     assert.match(
       source,
-      /retryAttachmentPayloads\.set\(retryId, attachments\);[\s\S]*?trackRetryAttachmentId\(renderedTabId \?\? currentTabId, retryId\);/,
-      `${label}: retry attachment payload IDs should be associated with the rendered tab`,
+      /function retryAttachmentRef\(att\) \{[\s\S]*?isAttachmentId\(att\.id\)[\s\S]*?stagedAttachmentId: att\.stagedAttachmentId[\s\S]*?inline: true/,
+      `${label}: retry refs should cover store-backed files, staged screenshots, and inline fallbacks`,
     );
     assert.match(
       source,
@@ -68051,10 +68054,12 @@ test('planner request failures expose provider settings and retry actions in bot
       /document\.querySelectorAll\('\.error-retry-btn, \.planner-request-failure-retry-btn'\)\.forEach\(bindErrorRetryButton\);/,
       `${label}: restored planner Retry buttons are not rebound`,
     );
-    assert.match(
+    // Ingestion v2 retired the in-memory retry payload maps: refs ride the
+    // button dataset, so removing a card no longer needs a release pass.
+    assert.doesNotMatch(
       panel,
-      /planner-request-failure-retry-btn\[data-retry-id\]/,
-      `${label}: planner Retry attachment payloads are not released with the card`,
+      /releaseRetryAttachmentsInTree|retryAttachmentPayloads/,
+      `${label}: planner retry buttons must rely on durable dataset refs, not payload maps`,
     );
     assert.match(
       panel,
@@ -72548,8 +72553,8 @@ test('sidepanel: pending attachments are tab-scoped and send-gated while loading
     );
     assert.match(
       source,
-      /const accepted = await sendMessage\(\{[\s\S]*?__retry:[\s\S]*?if \(accepted\) \{[\s\S]*?releaseRetryAttachmentPayload\(btn\.dataset\.retryId\);[\s\S]*?btn\.disabled = true;/,
-      `${label} should retire an accepted retry payload so it cannot be submitted twice`,
+      /const accepted = await sendMessage\(\{[\s\S]*?__retry:[\s\S]*?if \(accepted\) \{[\s\S]*?btn\.disabled = true;/,
+      `${label} should retire an accepted retry button so it cannot be submitted twice`,
     );
     assert.match(
       source,
@@ -72568,29 +72573,37 @@ test('sidepanel: pending attachments are tab-scoped and send-gated while loading
     assert.ok(source.includes('const MAX_TEXT_ATTACHMENT_BYTES = 5 * 1024 * 1024'), `${label} should accept text attachments up to the 5MB text cap`);
     assert.match(
       source,
-      /const maxBytes = isTextFile \? MAX_TEXT_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;/,
+      /const maxBytes = isText \? MAX_TEXT_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;/,
       `${label} should size-check text attachments against the text cap`,
     );
+    // Ingestion v2: classification is byte-first via the shared sniffer, the
+    // decoded text honors the sniffed encoding, and the original bytes land
+    // in the claim-check store for exact upload replay.
     assert.match(
       source,
-      /const \[textContent, dataUrl\] = await Promise\.all\(\[[\s\S]*?readFileAsText\(file\),[\s\S]*?readFileAsDataUrl\(file\),[\s\S]*?mimeType: file\.type \|\| ''/,
-      `${label} should retain both decoded text and exact upload bytes/MIME`,
+      /const sniff = sniffAttachment\(bytes, \{ name: file\.name, declaredMime: file\.type \}\);/,
+      `${label} should classify picked files from their actual bytes`,
     );
     assert.match(
       source,
-      /const isTextFile = file\.type === 'application\/json'[\s\S]*?file\.type === 'text\/plain'[\s\S]*?file\.type === 'text\/csv'[\s\S]*?\/\\\.\(json\|txt\|csv\)\$\/i\.test\(file\.name \|\| ''\)/,
-      `${label} should accept JSON, TXT, and CSV text attachments with extension fallback`,
+      /const textContent = isText \? decodeAttachmentText\(bytes, sniff\.textEncoding\) : undefined;/,
+      `${label} should decode text attachments with the sniffed encoding`,
+    );
+    assert.match(
+      source,
+      /await store\.put\(\{[\s\S]*?origin: 'user_upload',[\s\S]*?state: 'pending',[\s\S]*?\}, buffer\);/,
+      `${label} should persist chip bytes once into the attachment store`,
     );
     assert.match(
       html,
-      /accept="[^"]*application\/json[^"]*text\/plain[^"]*text\/csv[^"]*\.json[^"]*\.txt[^"]*\.csv[^"]*"/,
-      `${label} file picker should advertise JSON, TXT, and CSV text attachments`,
+      /accept="[^"]*application\/json[^"]*text\/plain[^"]*text\/csv[^"]*\.json[^"]*\.txt[^"]*\.csv[^"]*\.docx[^"]*"/,
+      `${label} file picker should advertise JSON, TXT, CSV, and DOCX attachments`,
     );
     assert.ok(!source.includes('let pendingAttachments = []'), `${label} should not keep one global pending attachment list`);
     if (label === 'chrome') {
-      assert.ok(source.includes('handleAttachedFiles(fileAttachInput.files, renderedTabId ?? currentTabId)'), `${label} should bind file reads to the rendered tab`);
+      assert.ok(source.includes('ingestFiles(fileAttachInput.files, renderedTabId ?? currentTabId)'), `${label} should bind file reads to the rendered tab`);
     } else {
-      assert.ok(source.includes('handleAttachedFiles(fileAttachInput.files, currentTabId)'), `${label} should bind file reads to the current tab`);
+      assert.ok(source.includes('ingestFiles(fileAttachInput.files, currentTabId)'), `${label} should bind file reads to the current tab`);
     }
   }
 });
