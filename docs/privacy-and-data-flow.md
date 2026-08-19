@@ -105,6 +105,24 @@ in-progress Markdown can be reconstructed after reconnect. Relevant
 conversation content is sent to the configured provider as request context;
 the stored copies are not separately synced to WebBrain.
 
+### Attached Files
+
+Files attached in the composer (picker, paste, or drag-and-drop) are stored
+locally in an IndexedDB database (`wb_attachments`) as original bytes plus
+display metadata — the claim-check pattern: runtime messages carry only an
+`att_…` id, never file bytes. Records are kept for **up to 24 hours after
+their last use** (an hourly alarm sweeps expired entries), or only for the
+current browser session when Settings → Multimodal → Attachments is set to
+session-only retention; a "Delete all attached files" button clears the
+store immediately, and closing a tab drops its never-sent chips.
+
+PDF text extraction, DOCX conversion (vendored mammoth), and scanned-page
+rendering all run **locally** in the background context. File content
+leaves the device only when a message is sent to the provider you selected
+— as native document/image blocks where supported, otherwise as locally
+extracted text. Files whose delivery was skipped (for example an image on
+a text-only model) are reported per file and never sent.
+
 ### Trace Recorder
 
 When enabled (Settings → Display → "Record traces"), every agent run is written to an IndexedDB database (`webbrain_traces`):
@@ -428,6 +446,7 @@ CDP capture → JPEG/PNG data URL
 | Provider prompt/tool tier | Choose Compact, Mid, or Full tool exposure for non-cloud providers |
 | Ask / Act / Dev mode | Choose read-only, normal action, or developer/page-inspection mode |
 | Tracing toggle | Prevents any trace data from being stored |
+| Attachment retention | Keeps attached files locally for up to 24 hours or only for the current session; delete-all button included |
 | Screenshot fallback | Controls whether page images are sent to the LLM |
 | Auto-screenshot mode | Controls how frequently viewport captures are sent |
 | Strict secret handling | Keeps credentials out of assistant text and completion summaries: an instruction to the model, plus exact-match redaction in cloud runs of anything it typed, sent, or read from a labelled field |

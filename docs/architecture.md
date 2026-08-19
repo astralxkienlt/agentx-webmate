@@ -305,6 +305,7 @@ follow-up turns and retries, and is shown in the side-panel scope banner.
 | `clarify` | agent.js — pauses for user input | Service worker |
 | `solve_captcha` | captcha-solver.js | Service worker + CapSolver API |
 | `read_pdf` | pdf-tools.js | Service worker |
+| `read_attachment` | agent.js + media/attachment-store.js + pdf-tools.js / extract-docx.js | Service worker |
 | `scratchpad_write` | agent.js — in-memory pinned note | Service worker |
 | `read_page_source`, `inspect_element_styles` | agent/content helpers | Dev-only source/style inspection |
 | `inject_css`, `remove_injected_css` | `chrome.scripting.insertCSS/removeCSS` + document-bound session patch metadata | Chrome Dev-only reversible CSS |
@@ -812,6 +813,32 @@ have been acknowledged or trimmed. Chrome uses `chrome.storage.session`;
 Firefox uses `browser.storage.session`.
 
 ---
+
+### Attachment ingestion (v2)
+
+`src/*/src/media/` owns the attachment pipeline shared by the side panel and
+the background:
+
+- **media-core.js** — byte-first sniffing (magic signature ▸ declared header
+  ▸ extension; a generic zip container never overrides a specific hint),
+  positive-allowlist display names, RFC MIME token checks.
+- **attachment-store.js** — the IndexedDB claim-check store
+  (`wb_attachments`): the panel writes bytes once at ingest, the background
+  reads them by `att_…` id at materialize/tool time, so `chat_start`
+  payloads carry ids + metadata instead of base64. Records expire 24 hours
+  after last use (hourly `wb-attachment-sweep` alarm) or at session end.
+- **extract-docx.js** — DOCX → flattened text via the vendored mammoth
+  bundle (tables one row per line with `|` separators, numbering kept).
+- **decode-queue.js** — serializes heavy pdfjs/mammoth decodes so the
+  background holds at most one decoded document in memory at a time.
+
+`Agent._applyAttachments` routes every file through a delivery matrix
+(native document/image blocks, locally extracted text with coverage
+warnings, rendered scan pages, or a lane-C reference) and returns a closed
+per-file outcome union — a single file can no longer fail a send; only the
+screenshot-redaction guards stay fail-closed. Extracted text is neutralized
+and sealed in nonce-tagged `[UNTRUSTED DOCUMENT id=…]` blocks, and the
+`read_attachment` tool pages through stored files on demand.
 
 ## Chrome vs Firefox Key Differences
 

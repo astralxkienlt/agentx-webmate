@@ -24,15 +24,20 @@ browser, no network) that drives the deterministic trust boundary directly:
 
 ## The corpus
 
-27 payloads across six categories: classic instruction-override, role
+33 payloads across seven categories: classic instruction-override, role
 spoofing (`<system>` / fake user turns), **boundary breakout** (literal close
 tags, open-tag spoofing, case + attribute evasion, stacked tags),
 **hidden-text / ARIA** (aria-label, alt-text, off-screen div, SVG
 `<title>`/`<desc>`, `aria-describedby` indirection, `aria-roledescription`,
 `title`/`placeholder` attributes, HTML comments, `<noscript>`, JSON-LD,
 table headers), **unicode evasion** (RTL/bidi override, homoglyph boundary
-spoof, invisible Unicode-tag smuggling, zero-width), and **data exfiltration**
-(navigate-and-paste, markdown-link).
+spoof, invisible Unicode-tag smuggling, zero-width), **data exfiltration**
+(navigate-and-paste, markdown-link), and **document attachments**
+(override commands in extracted PDF text, DOCX text posing as a tool
+result, file names forging the `[UNTRUSTED USER ATTACHMENTS]` notice, fake
+nonce closings, zero-width/RTL smuggling in extracted content, CSV rows
+carrying directives — plus dedicated seals for the `[UNTRUSTED DOCUMENT]`
+block and the positive file-name allowlist).
 
 For every payload, against **both** the Chrome and Firefox builds, the harness
 asserts:

@@ -65,6 +65,13 @@ Click the WebBrain icon to open the side panel, then type something like:
 - "Fill in the search box with 'AI agents' and click Search"
 - "Navigate to github.com and find trending repositories"
 
+Attach files with the paperclip, paste them, or drop them on the composer —
+images, PDFs, DOCX, JSON/TXT/CSV, or anything else as a readable reference.
+Every file is delivered the best way your selected model supports (native
+document blocks, locally extracted text, or rendered pages for scans), chips
+survive panel reloads, and the agent can read more of a long file on demand
+with `read_attachment`.
+
 Three modes control what the agent is allowed to do:
 
 | Mode    | What it can do                                                         |
