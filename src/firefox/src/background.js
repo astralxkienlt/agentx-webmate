@@ -47,6 +47,17 @@ import {
 } from './selection-shortcut-i18n.js';
 import { createTabChatHandoffCoordinator } from './ui/tab-chat-persistence.js';
 import { clearStagedScreenshots } from './ui/staged-screenshot-store.js';
+import {
+  ATTACHMENT_RETENTION_KEY,
+  ATTACHMENT_SESSION_MARKER_KEY,
+  ATTACHMENT_SWEEP_ALARM,
+  ATTACHMENT_SWEEP_PERIOD_MINUTES,
+  ATTACHMENT_TTL_MS,
+  getSharedAttachmentStore,
+} from './media/attachment-store.js';
+import { enqueueDocumentDecode } from './media/decode-queue.js';
+import { looksLikeOoxmlPackage } from './media/extract-docx.js';
+import { probePdfBytes } from './agent/pdf-tools.js';
 import { normalizeOllamaLaunchHandoff } from './ollama-handoff.js';
 import { RunUiJournal, RunUiPersistenceScheduler, compactRunUiSnapshotForPersist, runUiSnapshotForRequest } from './run-ui-journal.js';
 import {
@@ -1265,6 +1276,85 @@ browser.windows?.onRemoved?.addListener?.((windowId) => {
   }
 });
 
+// ── Attachment Store lifecycle (ingestion v2) ───────────────────────────
+// The claim-check store keeps attached files locally for up to 24 hours
+// (Q1): an hourly alarm sweeps expired records, "session only" retention
+// clears the store when a NEW browser session begins, and closing a tab
+// drops its still-pending chips. A missing/broken IndexedDB backend simply
+// degrades — sends fall back to inline payloads and nothing here throws.
+
+function attachmentStoreOrNull() {
+  try {
+    return getSharedAttachmentStore();
+  } catch {
+    return null;
+  }
+}
+
+async function sweepAttachmentStore() {
+  try {
+    await attachmentStoreOrNull()?.sweep(ATTACHMENT_TTL_MS);
+  } catch { /* degraded backend */ }
+}
+
+async function initAttachmentRetention() {
+  try {
+    const stored = await browser.storage.local.get(ATTACHMENT_RETENTION_KEY);
+    if (stored?.[ATTACHMENT_RETENTION_KEY] === 'session') {
+      // storage.session survives service-worker restarts but not browser
+      // restarts, so an absent marker means a fresh browser session: the
+      // previous session's files must go.
+      const marker = await browser.storage.session?.get(ATTACHMENT_SESSION_MARKER_KEY);
+      if (!marker?.[ATTACHMENT_SESSION_MARKER_KEY]) {
+        await attachmentStoreOrNull()?.clearAll();
+      }
+    }
+    await browser.storage.session?.set({ [ATTACHMENT_SESSION_MARKER_KEY]: Date.now() });
+  } catch { /* best-effort */ }
+  try {
+    browser.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES });
+  } catch { /* alarms unavailable */ }
+  void sweepAttachmentStore();
+}
+
+browser.alarms?.onAlarm?.addListener((alarm) => {
+  if (alarm?.name !== ATTACHMENT_SWEEP_ALARM) return;
+  void sweepAttachmentStore();
+});
+
+void initAttachmentRetention();
+
+/**
+ * Structural probe for a freshly ingested attachment: PDF page count +
+ * text-layer sample, DOCX package validation. Serialized behind the shared
+ * decode queue so at most one document is decoded at a time in this worker.
+ */
+async function probeAttachment(id) {
+  const store = attachmentStoreOrNull();
+  if (!store) return { ok: false, error: 'Attachment store unavailable.' };
+  const record = await store.get(String(id || ''));
+  if (!record) return { ok: false, error: 'Unknown or expired attachment id.' };
+  if (record.docType === 'pdf') {
+    const buffer = await store.getBytes(record.id);
+    if (!buffer) return { ok: false, error: 'Attachment bytes are no longer stored.' };
+    const probe = await enqueueDocumentDecode(() => probePdfBytes(new Uint8Array(buffer)));
+    const facts = {
+      ...record.facts,
+      pages: probe.pages,
+      hasTextLayer: probe.hasTextLayer,
+      coverage: probe.coverage,
+    };
+    await store.patch(record.id, { facts });
+    return { ok: true, facts };
+  }
+  if (record.docType === 'docx') {
+    const buffer = await store.getBytes(record.id);
+    if (!buffer) return { ok: false, error: 'Attachment bytes are no longer stored.' };
+    return { ok: true, facts: record.facts, valid: looksLikeOoxmlPackage(new Uint8Array(buffer)) };
+  }
+  return { ok: true, facts: record.facts };
+}
+
 // Clean up per-tab agent state when a tab is closed.
 browser.tabs.onRemoved.addListener((tabId) => {
   clearUserMemoryTurnContext(tabId);
@@ -1273,6 +1363,9 @@ browser.tabs.onRemoved.addListener((tabId) => {
   contextMenuStorage.cleanup(tabId);
   tabChatHandoff.clear(tabId).catch(() => {});
   clearStagedScreenshots(browser.storage.local, tabId).catch(() => {});
+  // Pending (never-sent) attachment chips die with their tab; sent records
+  // stay until the TTL sweep so read_attachment keeps working.
+  attachmentStoreOrNull()?.removeByTab(tabId).catch(() => {});
   scheduler.cancelForTab(tabId).catch(() => {});
   withTeacherSessionStoreLock(() => teacherSessionStore.clear(tabId)).catch(() => {});
   try { agent._cleanupTab(tabId); } catch { /* ignore */ }
@@ -2157,6 +2250,9 @@ async function handleMessage(msg, sender) {
         ...(await agent.getConversationState(tabId, msg.mode || 'ask')),
       };
     }
+
+    case 'attachment_probe':
+      return await probeAttachment(msg.id);
 
     case 'chat_start': {
       const claim = msg.contextMenuClaim;

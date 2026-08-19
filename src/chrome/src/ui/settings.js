@@ -53,6 +53,11 @@ import { ADDITIONAL_PROVIDER_UI } from '../providers/provider-catalog.js';
 import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
 import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
 import { AUTO_GROUP_TABS_KEY } from '../tab-group-preference.js';
+import {
+  ATTACHMENT_RETENTION_KEY,
+  formatAttachmentUsageBytes,
+  getSharedAttachmentStore,
+} from '../media/attachment-store.js';
 
 const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
 
@@ -604,13 +609,17 @@ async function init() {
   chrome.storage.local.remove(['authToken', 'authEmail', 'authDefaultModel']).catch(() => {});
 
   // Load display settings
-  const stored = await chrome.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'webMcpEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'strictSecretMode', 'agentAllowLocalNetwork', CLOUD_BRIDGE_ENABLED_KEY, CLOUD_BRIDGE_URL_KEY, 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension']);
+  const stored = await chrome.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'webMcpEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'strictSecretMode', 'agentAllowLocalNetwork', CLOUD_BRIDGE_ENABLED_KEY, CLOUD_BRIDGE_URL_KEY, 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension', ATTACHMENT_RETENTION_KEY]);
   if (typeof stored.providerFilter === 'string' && ['all','active','local','cloud','router'].includes(stored.providerFilter)) {
     providerFilter = stored.providerFilter;
   }
   verboseToggle.checked = stored.verboseMode || false;
   if (selectionShortcutToggle) selectionShortcutToggle.checked = stored.selectionShortcutEnabled !== false;
   if (autoGroupTabsToggle) autoGroupTabsToggle.checked = stored[AUTO_GROUP_TABS_KEY] !== false;
+  if (attachmentRetentionSelect) {
+    attachmentRetentionSelect.value = stored[ATTACHMENT_RETENTION_KEY] === 'session' ? 'session' : 'ttl';
+  }
+  void refreshAttachmentUsage();
   screenshotToggle.checked = stored.screenshotFallback ?? true; // on by default
   if (isUnlimitedMaxAgentSteps(stored.maxAgentSteps)) {
     maxStepsRange.value = MAX_AGENT_STEPS_UNLIMITED_SENTINEL;
@@ -1195,6 +1204,54 @@ selectionShortcutToggle?.addEventListener('change', async () => {
 
 autoGroupTabsToggle?.addEventListener('change', async () => {
   await chrome.storage.local.set({ [AUTO_GROUP_TABS_KEY]: autoGroupTabsToggle.checked }).catch(() => {});
+});
+
+// ── Attachments (ingestion v2): retention + local store controls ─────────
+const attachmentRetentionSelect = document.getElementById('attachment-retention-select');
+const attachmentClearBtn = document.getElementById('btn-clear-attachments');
+const attachmentUsageEl = document.getElementById('attachment-usage');
+const attachmentsResultEl = document.getElementById('test-attachments');
+
+function attachmentStoreOrNull() {
+  try {
+    return getSharedAttachmentStore();
+  } catch {
+    return null;
+  }
+}
+
+async function refreshAttachmentUsage() {
+  if (!attachmentUsageEl) return;
+  try {
+    const usage = await attachmentStoreOrNull()?.usage();
+    attachmentUsageEl.textContent = usage
+      ? t('st.attach.usage', { count: usage.count, size: formatAttachmentUsageBytes(usage.bytes) })
+      : '';
+  } catch {
+    attachmentUsageEl.textContent = '';
+  }
+}
+
+function flashAttachmentsResult(className, text) {
+  if (!attachmentsResultEl) return;
+  attachmentsResultEl.textContent = text;
+  attachmentsResultEl.className = `test-result show ${className}`;
+  setTimeout(() => attachmentsResultEl.classList.remove('show'), 2500);
+}
+
+attachmentRetentionSelect?.addEventListener('change', async () => {
+  const mode = attachmentRetentionSelect.value === 'session' ? 'session' : 'ttl';
+  await chrome.storage.local.set({ [ATTACHMENT_RETENTION_KEY]: mode }).catch(() => {});
+});
+
+attachmentClearBtn?.addEventListener('click', async () => {
+  try {
+    await attachmentStoreOrNull()?.clearAll();
+    flashAttachmentsResult('ok', t('st.attach.clear.done'));
+  } catch {
+    flashAttachmentsResult('err', t('st.attach.clear.failed'));
+  }
+  await refreshAttachmentUsage();
 });
 
 screenshotToggle.addEventListener('change', async () => {

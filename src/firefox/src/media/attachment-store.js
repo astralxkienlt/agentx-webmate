@@ -60,6 +60,9 @@ function sanitizeFacts(facts) {
   if (Number.isFinite(Number(facts.coverage))) out.coverage = Math.min(1, Math.max(0, Number(facts.coverage)));
   if (Number.isFinite(Number(facts.width))) out.width = Math.max(0, Math.floor(Number(facts.width)));
   if (Number.isFinite(Number(facts.height))) out.height = Math.max(0, Math.floor(Number(facts.height)));
+  // How far into the document the original send (or the last read_attachment
+  // call) delivered — the default resume point for the next read.
+  if (Number.isFinite(Number(facts.sentToPage))) out.sentToPage = Math.max(0, Math.floor(Number(facts.sentToPage)));
   return out;
 }
 
