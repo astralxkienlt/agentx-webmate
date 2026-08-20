@@ -4,7 +4,7 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
-## [Unreleased]
+## [0.1.12] - 2026-08-20
 
 ### Added
 - Attachments are now delivered the best way the active model supports: PDFs become native document blocks on Anthropic models, locally extracted text (with per-page coverage warnings) everywhere else, and scanned PDFs render their first pages as images on vision models; DOCX files convert to text locally via a vendored mammoth build, and unrecognized files ride along as references the agent can read on demand.
@@ -13,10 +13,12 @@ This changelog was generated from the repository Git history and release tags. V
 - Added paste-to-attach and composer drag-and-drop with a localized drop hint, plus pre-send chip hints from a background probe ("PDF · 12 pages" / scanned-PDF vision warnings).
 
 ### Changed
+- The netMind theme now uses its single accent colour across all three mode tabs (pill, label, and composer border) instead of upstream's amber for Act and Dev; the `#act-warning` banner stays amber because it is a caution, not a mode.
 - A single unsupported attachment no longer blocks the whole send: every file resolves to a per-file delivery outcome shown on the message card (sent natively, sent as text, sent as rendered pages, reference, or skipped with the reason), and runtime messages now carry attachment ids plus metadata instead of multi-megabyte base64 payloads.
 - Attachment classification is now byte-first: files renamed to fake an image type are rejected, legacy `.doc` files get a dedicated message asking for `.docx`, and text encodings (UTF-8/UTF-16 BOM) are honored.
 
 ### Fixed
+- Removed the inert `privateNetworkAccess` entry from the Chrome manifest: Chrome never shipped such an extension permission, so it only inflated the install-time permission surface. Reaching local network endpoints still goes through the offscreen fetch proxy, which is unchanged.
 - Attachment document extraction was dead on Chrome: MV3 service workers disallow dynamic `import()`, so the lazy pdfjs/mammoth loads threw at materialize time and every PDF/DOCX rode the error outcome. Vendored bundles now load through per-browser vendor loaders — statically on Chrome (with the pdfjs worker module published for the fake-worker path), lazily on the Firefox background page. This also repairs the pre-existing silent `read_pdf` breakage on Chrome, which failed the same way.
 
 ### Security
