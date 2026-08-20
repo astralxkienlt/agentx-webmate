@@ -26,7 +26,7 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
 +  >
 +    <div class="agentx-gate-card">
 +      <img class="agentx-gate-logo" src="../../icons/icon128.png" alt="" aria-hidden="true">
-+      <p class="agentx-gate-eyebrow" data-agentx-gate-eyebrow>TÀI KHOẢN AGENTX</p>
++      <p class="agentx-gate-eyebrow" data-agentx-gate-eyebrow>AgentX WebMate</p>
 +      <h1 class="agentx-gate-title" id="agentx-gate-title" data-agentx-gate-title>Đăng nhập để bắt đầu</h1>
 +      <p class="agentx-gate-body" data-agentx-gate-body>AgentX WebMate chạy trên cổng mô hình của tổ chức bạn. Đăng nhập một lần là dùng được ngay.</p>
 +      <p class="agentx-gate-notice hidden" role="alert" data-agentx-gate-notice></p>
@@ -36,7 +36,7 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
 +      </p>
 +      <button type="button" class="agentx-gate-button hidden" data-agentx-gate-signin>Đăng nhập AgentX</button>
 +      <button type="button" class="agentx-gate-settings hidden" data-agentx-gate-settings>Mở Cài đặt</button>
-+      <p class="agentx-gate-footnote" data-agentx-gate-footnote>Trình duyệt sẽ mở trang đăng nhập của tổ chức. AgentX WebMate không nhận mật khẩu của bạn.</p>
++      <p class="agentx-gate-footnote" data-agentx-gate-footnote>Được phát triển bởi AstralX</p>
 +    </div>
 +  </div>
 +

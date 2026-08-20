@@ -7,7 +7,7 @@ import { installCloudCredential } from '../agentx/cloud-provider-install.js';
 
 const COPY = {
   en: {
-    eyebrow: 'AGENTX ACCOUNT',
+    eyebrow: 'AgentX WebMate',
     title: 'Sign in to start',
     body: 'AgentX WebMate runs on your organization’s model gateway. Sign in once and the panel is ready to use.',
     checking: 'Checking your session…',
@@ -15,7 +15,7 @@ const COPY = {
     signingIn: 'Opening secure sign-in…',
     provisioning: 'Preparing your model connection…',
     retry: 'Try again',
-    passwordNote: 'Your browser opens the organization’s Keycloak page. AgentX WebMate never receives your password.',
+    passwordNote: 'Developed by AstralX',
     idleExpired: 'You were signed out after a period of inactivity. Sign in again to continue.',
     signedOutElsewhere: 'You signed out of AgentX. Sign in again to keep using the panel.',
     needs_login: 'Your session is no longer valid. Sign in again to continue.',
@@ -36,7 +36,7 @@ const COPY = {
     openSettings: 'Open Settings',
   },
   vi: {
-    eyebrow: 'TÀI KHOẢN AGENTX',
+    eyebrow: 'AgentX WebMate',
     title: 'Đăng nhập để bắt đầu',
     body: 'AgentX WebMate chạy trên cổng mô hình của tổ chức bạn. Đăng nhập một lần là dùng được ngay.',
     checking: 'Đang kiểm tra phiên đăng nhập…',
@@ -44,7 +44,7 @@ const COPY = {
     signingIn: 'Đang mở trang đăng nhập bảo mật…',
     provisioning: 'Đang chuẩn bị kết nối mô hình…',
     retry: 'Thử lại',
-    passwordNote: 'Trình duyệt sẽ mở trang Keycloak của tổ chức. AgentX WebMate không nhận mật khẩu của bạn.',
+    passwordNote: 'Được phát triển bởi AstralX',
     idleExpired: 'Bạn đã bị đăng xuất sau một thời gian không dùng. Hãy đăng nhập lại để tiếp tục.',
     signedOutElsewhere: 'Bạn vừa đăng xuất khỏi AgentX. Hãy đăng nhập lại để dùng tiếp.',
     needs_login: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại để tiếp tục.',
