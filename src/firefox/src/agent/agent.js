@@ -6316,10 +6316,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   /** Draw the audited CSS-pixel target on a viewport capture for vision. */
   async _annotateScreenshot(dataUrl, rect, cssViewport, { fallbackToOriginal = true } = {}) {
+    let bitmap = null;
     try {
       if (!dataUrl || !rect || !rect.w || !rect.h) return fallbackToOriginal ? dataUrl : null;
       const response = await fetch(dataUrl);
-      const bitmap = await createImageBitmap(await response.blob());
+      bitmap = await createImageBitmap(await response.blob());
       const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
       const context = canvas.getContext('2d');
       context.drawImage(bitmap, 0, 0);
@@ -6344,6 +6345,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return `data:image/png;base64,${btoa(binary)}`;
     } catch {
       return fallbackToOriginal ? dataUrl : null;
+    } finally {
+      try { bitmap?.close?.(); } catch {}
     }
   }
 
@@ -6414,8 +6417,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       try {
         const m = await fetch(dataUrl);
         const bmp = await createImageBitmap(await m.blob());
-        imageWidth = bmp.width;
-        imageHeight = bmp.height;
+        try {
+          imageWidth = bmp.width;
+          imageHeight = bmp.height;
+        } finally {
+          try { bmp.close?.(); } catch {}
+        }
       } catch {
         return dataUrl;
       }
