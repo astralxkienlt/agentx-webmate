@@ -713,6 +713,19 @@ export function createAgentXCloudService(options = {}) {
     if (now() < (Number(session.expiresAt) - REFRESH_AHEAD_MS)) {
       return { session, outcome: 'stored' };
     }
+    // An issuer that hands out no refresh token (the netMind branch's SSO
+    // wrapper is one) used to kill the session right here at the ID token's
+    // exp — locking the user out of a panel whose chat never presents that
+    // token at all: chat runs on the provisioned LiteLLM key, which does not
+    // expire. A session with nothing to refresh is therefore held instead of
+    // cleared. What still ends it: the idle window above, sign-out, and the
+    // backend rejecting the stale bearer the next time provisioning actually
+    // needs it (401 invalid_token). Sessions that do carry a refresh token —
+    // everything Keycloak issues — keep the strict path below, where
+    // invalid_grant means sign in again.
+    if (!session.refreshToken) {
+      return { session, outcome: 'stored' };
+    }
     try {
       return await refreshSession(session);
     } catch (error) {
