@@ -15,8 +15,7 @@ Pour la divulgation de vulnérabilités, voir [SECURITY.md](../SECURITY.md).
   "permissions": [
     "sidePanel", "activeTab", "contextMenus", "tabs", "tabGroups",
     "scripting", "storage", "webNavigation", "webRequest", "debugger",
-    "downloads", "alarms", "unlimitedStorage", "offscreen",
-    "privateNetworkAccess", "tabCapture",
+    "downloads", "alarms", "unlimitedStorage", "offscreen", "tabCapture",
     "clipboardWrite", "clipboardRead"
   ],
   "host_permissions": ["<all_urls>", "http://localhost/*", "http://127.0.0.1/*", "http://*/*"]

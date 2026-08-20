@@ -4,7 +4,9 @@
  *
  * This solves Chrome MV3's Private Network Access restrictions that
  * block service worker fetch() to local network IPs (192.168.*, 10.*, etc.)
- * even with host_permissions and privateNetworkAccess.
+ * even with host_permissions. (There is no manifest permission that lifts
+ * this — Chrome never shipped a `privateNetworkAccess` extension permission,
+ * so the offscreen document is the only route.)
  */
 
 import { ensureOffscreen } from '../offscreen/ensure.js';

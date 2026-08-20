@@ -135,7 +135,7 @@ is the development install story and the misleading root manifest.
 ## 6. Audit and stage extension permissions
 
 Chrome currently requests broad permissions up front: `debugger`, `downloads`,
-`unlimitedStorage`, `offscreen`, `privateNetworkAccess`, broad host permissions,
+`unlimitedStorage`, `offscreen`, broad host permissions,
 and `connect-src *`. Most of these map to real features, but the initial install
 surface is large.
 
