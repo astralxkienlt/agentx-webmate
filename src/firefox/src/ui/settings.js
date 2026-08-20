@@ -3169,6 +3169,18 @@ function clearProviderLoadedModels(id) {
 }
 
 const providerModelLoadGenerations = new Map();
+const providerModelLoadSaveQueues = new Map();
+
+function queueProviderModelLoadSave(id, save) {
+  const previous = providerModelLoadSaveQueues.get(id) || Promise.resolve();
+  const queued = previous.catch(() => {}).then(save);
+  providerModelLoadSaveQueues.set(id, queued);
+  const clear = () => {
+    if (providerModelLoadSaveQueues.get(id) === queued) providerModelLoadSaveQueues.delete(id);
+  };
+  queued.then(clear, clear);
+  return queued;
+}
 
 async function loadProviderModels(id) {
   let datalistEl = document.getElementById(`models-${id}`);
@@ -3178,7 +3190,10 @@ async function loadProviderModels(id) {
   const isCurrent = () => providerModelLoadGenerations.get(id) === generation;
   clearProviderLoadedModels(id);
   try {
-    await saveProvider(id, { showFlash: false, markConfigured: false });
+    await queueProviderModelLoadSave(id, async () => {
+      if (!isCurrent()) return;
+      await saveProvider(id, { showFlash: false, markConfigured: false });
+    });
   } catch (e) {
     if (!isCurrent()) return;
     setProviderLoadModelsStatus(id, providerModelLoadErrorMessage(e.message), 'var(--danger, #c33)');
