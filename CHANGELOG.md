@@ -16,6 +16,9 @@ This changelog was generated from the repository Git history and release tags. V
 - A single unsupported attachment no longer blocks the whole send: every file resolves to a per-file delivery outcome shown on the message card (sent natively, sent as text, sent as rendered pages, reference, or skipped with the reason), and runtime messages now carry attachment ids plus metadata instead of multi-megabyte base64 payloads.
 - Attachment classification is now byte-first: files renamed to fake an image type are rejected, legacy `.doc` files get a dedicated message asking for `.docx`, and text encodings (UTF-8/UTF-16 BOM) are honored.
 
+### Fixed
+- Attachment document extraction was dead on Chrome: MV3 service workers disallow dynamic `import()`, so the lazy pdfjs/mammoth loads threw at materialize time and every PDF/DOCX rode the error outcome. Vendored bundles now load through per-browser vendor loaders — statically on Chrome (with the pdfjs worker module published for the fake-worker path), lazily on the Firefox background page. This also repairs the pre-existing silent `read_pdf` breakage on Chrome, which failed the same way.
+
 ### Security
 - The user-attachment notice is now sealed with a per-send random nonce, extracted document text is neutralized against forged notice/document markers and zero-width/bidi control characters before it reaches the model, and attachment display names pass a positive allowlist instead of escape-and-keep.
 - Expanded the injection corpus from 27 to 33 payloads with a document-attachment category (extracted-PDF overrides, DOCX posing as tool results, notice-forging file names, fake nonce closings, zero-width/RTL smuggling, CSV directives), all green on both browsers.

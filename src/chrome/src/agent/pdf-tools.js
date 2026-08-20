@@ -23,21 +23,16 @@
  * additional context.
  */
 
-let pdfjsModule = null;
+import { loadPdfjs } from '../media/vendor-loader.js';
 
 /**
- * Lazy-load pdfjs only on first PDF read. The legacy bundle is ~1 MB
- * and the worker is ~2.3 MB; we don't want to pay that startup cost
- * for users who never open a PDF.
+ * pdfjs comes from the per-browser vendor loader: statically imported on
+ * Chrome, because dynamic import() is disallowed in the MV3 service worker
+ * (the old lazy `import()` here threw on every read_pdf call), lazily
+ * imported on the Firefox background page.
  */
 async function getPdfjs() {
-  if (pdfjsModule) return pdfjsModule;
-  pdfjsModule = await import(chrome.runtime.getURL('vendor/pdfjs/pdf.mjs'));
-  // Worker URL must be set BEFORE the first getDocument() call. We resolve
-  // it via runtime.getURL so it works at any extension-id deploy target.
-  pdfjsModule.GlobalWorkerOptions.workerSrc =
-    chrome.runtime.getURL('vendor/pdfjs/pdf.worker.mjs');
-  return pdfjsModule;
+  return loadPdfjs();
 }
 
 /**

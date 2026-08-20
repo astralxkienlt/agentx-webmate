@@ -45,6 +45,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const imp = (p) => import('file://' + path.join(ROOT, p).replace(/\\/g, '/'));
 
+// The chrome agent graph statically imports vendored pdfjs (the MV3 service
+// worker forbids dynamic import); stub the canvas-adjacent globals pdfjs
+// probes for so a bare Node run stays warning-free.
+globalThis.DOMMatrix = globalThis.DOMMatrix || class DOMMatrix {
+  constructor() { this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0; }
+};
+globalThis.ImageData = globalThis.ImageData || class ImageData {};
+globalThis.Path2D = globalThis.Path2D || class Path2D {};
+
 const { Agent: AgentCh } = await imp('src/chrome/src/agent/agent.js');
 const { Agent: AgentFx } = await imp('src/firefox/src/agent/agent.js');
 const { PLANNER_SYSTEM_PROMPT: PLANNER_PROMPT_CH } = await imp('src/chrome/src/agent/planner.js');
