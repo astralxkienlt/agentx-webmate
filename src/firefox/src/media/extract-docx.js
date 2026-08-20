@@ -1,8 +1,10 @@
 /**
  * DOCX text extraction for attachments (ingestion v2, lane B).
  *
- * Wraps the vendored mammoth browser bundle (see vendor/mammoth/README.md):
- * bytes → mammoth HTML → flattened plain text. Flattening rules:
+ * Wraps the vendored mammoth browser bundle (see vendor/mammoth/README.md),
+ * loaded through the per-browser vendor loader — statically on Chrome (the
+ * MV3 service worker disallows dynamic import()), lazily on the Firefox
+ * background page. Bytes → mammoth HTML → flattened plain text:
  *   - tables: one line per row, cells joined with ` | `
  *   - numbered lists keep their numbers (nested levels indent)
  *   - headings/paragraphs become plain lines
@@ -11,29 +13,7 @@
  * [Content_Types].xml check here and surfaces as a per-file error outcome,
  * not a failed send.
  */
-
-let mammothLoadPromise = null;
-
-/**
- * Load the vendored mammoth UMD bundle. Its wrapper attaches the API to the
- * global scope (`self` in the MV3 service worker, `window` in the Firefox
- * background page) — dynamic import is the only loader MV3 CSP allows.
- */
-async function getMammoth() {
-  if (globalThis.mammoth?.convertToHtml) return globalThis.mammoth;
-  if (!mammothLoadPromise) {
-    mammothLoadPromise = import(browser.runtime.getURL('vendor/mammoth/mammoth.browser.min.js'))
-      .catch((error) => {
-        mammothLoadPromise = null;
-        throw error;
-      });
-  }
-  await mammothLoadPromise;
-  if (!globalThis.mammoth?.convertToHtml) {
-    throw new Error('mammoth bundle loaded but did not register its API');
-  }
-  return globalThis.mammoth;
-}
+import { loadMammoth } from './vendor-loader.js';
 
 function toUint8(bytes) {
   if (bytes instanceof Uint8Array) return bytes;
@@ -213,7 +193,7 @@ export async function extractDocxText(bytesInput, opts = {}) {
   if (!looksLikeOoxmlPackage(bytes)) {
     throw new Error('Not a readable .docx file: the archive is missing its [Content_Types].xml entry.');
   }
-  const mammoth = opts.mammoth || await getMammoth();
+  const mammoth = opts.mammoth || await loadMammoth();
   // Hand mammoth a copy — some engines transfer the buffer to the unzip path.
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   let converted;

@@ -20,6 +20,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 
+// The chrome agent graph statically imports vendored pdfjs (MV3 service
+// workers forbid dynamic import), so these stubs must exist before the
+// first src/ import below, not just before the ingestion tests.
+// pdfjs text/render paths run against the real vendored bundle; these three
+// polyfill stubs are all Node lacks for parsing and text extraction.
+globalThis.DOMMatrix = globalThis.DOMMatrix || class DOMMatrix {
+  constructor() { this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0; }
+};
+globalThis.ImageData = globalThis.ImageData || class ImageData {};
+if (!globalThis.Path2D) {
+  globalThis.Path2D = class Path2D {};
+  for (const m of ['moveTo', 'lineTo', 'bezierCurveTo', 'quadraticCurveTo', 'closePath', 'rect', 'arc', 'addPath', 'ellipse']) {
+    globalThis.Path2D.prototype[m] = function () {};
+  }
+}
+
 function escapeRegExpLiteral(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -79629,19 +79645,6 @@ test('message info toggles behaviorally through a semantic button, terminal repl
 
 console.log('\ningestion v2 attachments');
 
-// pdfjs text/render paths run against the real vendored bundle; these three
-// polyfill stubs are all Node lacks for parsing and text extraction.
-globalThis.DOMMatrix = globalThis.DOMMatrix || class DOMMatrix {
-  constructor() { this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0; }
-};
-globalThis.ImageData = globalThis.ImageData || class ImageData {};
-if (!globalThis.Path2D) {
-  globalThis.Path2D = class Path2D {};
-  for (const m of ['moveTo', 'lineTo', 'bezierCurveTo', 'quadraticCurveTo', 'closePath', 'rect', 'arc', 'addPath', 'ellipse']) {
-    globalThis.Path2D.prototype[m] = function () {};
-  }
-}
-
 const ingestionImport = (p) => import('file://' + path.join(ROOT, p).replace(/\\/g, '/'));
 const mediaCoreCh = await ingestionImport('src/chrome/src/media/media-core.js');
 const mediaCoreFx = await ingestionImport('src/firefox/src/media/media-core.js');
@@ -80429,18 +80432,52 @@ test('document decode queue serializes heavy work per context', async () => {
 });
 
 test('ingestion media modules are byte-identical across browser trees', () => {
-  for (const rel of ['media-core.js', 'attachment-store.js', 'decode-queue.js']) {
+  // vendor-loader.js is the ONE deliberately divergent module: Chrome must
+  // import the bundles statically (dynamic import() is disallowed in the MV3
+  // service worker), Firefox keeps them lazy on its background page.
+  for (const rel of ['media-core.js', 'attachment-store.js', 'decode-queue.js', 'extract-docx.js']) {
     const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/media', rel), 'utf8');
     const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/media', rel), 'utf8');
     assert.equal(chrome, firefox, `${rel} must not drift between trees`);
   }
-  const chromeDocx = fs.readFileSync(path.join(ROOT, 'src/chrome/src/media/extract-docx.js'), 'utf8');
-  const firefoxDocx = fs.readFileSync(path.join(ROOT, 'src/firefox/src/media/extract-docx.js'), 'utf8');
-  assert.equal(firefoxDocx.replaceAll('browser.runtime.getURL', 'chrome.runtime.getURL'), chromeDocx,
-    'extract-docx differs only by the runtime API name');
   const chromeMammoth = fs.readFileSync(path.join(ROOT, 'src/chrome/vendor/mammoth/mammoth.browser.min.js'));
   const firefoxMammoth = fs.readFileSync(path.join(ROOT, 'src/firefox/vendor/mammoth/mammoth.browser.min.js'));
   assert.ok(chromeMammoth.equals(firefoxMammoth), 'vendored mammoth bundles are identical');
+});
+
+test('chrome service-worker attachment modules never dynamic-import (MV3 ban)', () => {
+  // Regression guard for the bug that shipped DOCX/PDF extraction dead on
+  // Chrome: import() throws "disallowed on ServiceWorkerGlobalScope" in the
+  // MV3 background worker, so every vendor load on the chrome SW graph must
+  // be a static import via media/vendor-loader.js.
+  const swModules = [
+    'src/chrome/src/agent/pdf-tools.js',
+    'src/chrome/src/media/extract-docx.js',
+    'src/chrome/src/media/vendor-loader.js',
+    'src/chrome/src/media/attachment-store.js',
+    'src/chrome/src/media/decode-queue.js',
+    'src/chrome/src/media/media-core.js',
+  ];
+  for (const rel of swModules) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    // Real call sites only — prose mentions of `import()` in comments are fine.
+    assert.doesNotMatch(source, /(?:await|=|return)\s+import\s*\(|import\(\s*(?:chrome|browser)\./,
+      `${rel} must not use dynamic import(); it runs inside the MV3 service worker`);
+  }
+  const chromeLoader = fs.readFileSync(path.join(ROOT, 'src/chrome/src/media/vendor-loader.js'), 'utf8');
+  assert.match(chromeLoader, /import \* as pdfjs from '\.\.\/\.\.\/vendor\/pdfjs\/pdf\.mjs';/,
+    'chrome loader imports pdfjs statically');
+  assert.match(chromeLoader, /import \* as pdfjsWorkerModule from '\.\.\/\.\.\/vendor\/pdfjs\/pdf\.worker\.mjs';/,
+    'chrome loader imports the pdf worker statically (fake-worker path may not dynamic-import it)');
+  assert.match(chromeLoader, /globalThis\.pdfjsWorker = pdfjsWorkerModule;/,
+    'chrome loader publishes the worker module for the pdfjs fake-worker path');
+  assert.match(chromeLoader, /import '\.\.\/\.\.\/vendor\/mammoth\/mammoth\.browser\.min\.js';/,
+    'chrome loader imports mammoth statically');
+  const firefoxLoader = fs.readFileSync(path.join(ROOT, 'src/firefox/src/media/vendor-loader.js'), 'utf8');
+  assert.match(firefoxLoader, /import\(browser\.runtime\.getURL\('vendor\/pdfjs\/pdf\.mjs'\)\)/,
+    'firefox loader stays lazy on the background page');
+  assert.match(firefoxLoader, /import\(browser\.runtime\.getURL\('vendor\/mammoth\/mammoth\.browser\.min\.js'\)\)/,
+    'firefox loader lazy-loads mammoth');
 });
 
 test('scanned-pdf rendering respects the shared pixel ceiling per send', async () => {
