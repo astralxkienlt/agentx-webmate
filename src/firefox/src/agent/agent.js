@@ -558,6 +558,7 @@ export class Agent extends LoopDetector {
     // answer. Track long observation-only streaks and remind it to deliver a
     // useful result before exhausting the run.
     this.deliveryObservationStreaks = new Map();
+    this.deliveryActionableDiscoveryResets = new Set();
     // Local screenshot redaction (issue #312). When true, screenshots sent
     // to a Vision endpoint are pixelated over DOM-detected PII regions
     // (form fields + email/phone text) BEFORE leaving the extension. Off by
@@ -2045,6 +2046,7 @@ export class Agent extends LoopDetector {
     this._uploadSelectorRecoveryRequired.delete(tabId);
     this._compactUploadTargets.delete(tabId);
     this.deliveryObservationStreaks.delete(tabId);
+    this.deliveryActionableDiscoveryResets.delete(tabId);
     this.bulkApiMutationClicks.delete(tabId);
     this.bulkApiMutationHints.delete(tabId);
     const replayFailurePrefix = `${tabId}|`;
@@ -2722,10 +2724,14 @@ export class Agent extends LoopDetector {
   _checkDeliveryObservationStreak(tabId, name, args = {}, result = null, options = {}) {
     const observation = this.constructor.DELIVERY_OBSERVATION_TOOLS.has(name)
       && !isNetworkMutation(name, args);
-    if (observation && options.discoveredActionableTargets === true) {
-      // A structured observer adding previously unseen action rows is bounded,
-      // app-owned progress. Do not punish list tasks for the read that found the
-      // next work items; later reads of the same controls will not reset again.
+    if (observation
+      && options.discoveredActionableTargets === true
+      && !this.deliveryActionableDiscoveryResets.has(tabId)) {
+      // Give structured target discovery one free observation per verified
+      // progress interval. Paginating through newly discovered controls cannot
+      // repeatedly erase the delivery guard; meaningful consequential progress
+      // below rearms the one-shot reset.
+      this.deliveryActionableDiscoveryResets.add(tabId);
       this.deliveryObservationStreaks.delete(tabId);
       return { kind: 'none' };
     }
@@ -2749,6 +2755,7 @@ export class Agent extends LoopDetector {
       // verified consequential progress or a real progress-ledger mutation.
       if (this._deliveryCheckpointMadeMeaningfulProgress(name, result, options)) {
         this.deliveryObservationStreaks.delete(tabId);
+        this.deliveryActionableDiscoveryResets.delete(tabId);
       }
       return { kind: 'none' };
     }
