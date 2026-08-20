@@ -4,6 +4,14 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [0.1.13] - 2026-08-20
+
+### Added
+- Chat messages now render GFM pipe tables as real tables — header row, alignment colons, `\|` as literal cell text, and bold/italic/links applied per cell — with wide tables scrolling horizontally inside the panel instead of overflowing it. They previously arrived as raw rows of `|` characters.
+
+### Fixed
+- Sign-in no longer expires after one hour. The Viettel SSO wrapper issues no refresh token, so every session died at its ID token's `exp` — even mid-chat, although chat runs entirely on the provisioned LiteLLM key, which does not expire. A session with no refresh token is now held until the configured 8-day idle window closes, the user signs out, or the backend rejects its stale bearer the next time provisioning needs one.
+
 ## [0.1.12] - 2026-08-20
 
 ### Added
