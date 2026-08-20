@@ -30,7 +30,7 @@
       "http://127.0.0.1:47822/callback",
       "http://127.0.0.1:47823/callback"
     ],
-    "sessionIdleTimeoutMs": 43200000
+    "sessionIdleTimeoutMs": 691200000
   },
 
   "replacements": [
