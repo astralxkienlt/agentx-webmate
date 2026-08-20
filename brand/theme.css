@@ -141,3 +141,23 @@ h1 {
 :root[data-theme="light"] .info-box code {
   background: rgba(44, 32, 32, 0.08);
 }
+
+/* Mode toggle. Upstream paints Act and Dev with the amber --warning colour to
+   flag that they can drive the page; netMind keeps one accent across all three
+   tabs, so the pill, the label and the composer border track --accent instead.
+   The #act-warning banner stays amber — that one is a caution, not a mode. */
+.mode-toggle-highlight.act {
+  background: var(--accent-dim);
+}
+
+.mode-btn.active.act {
+  color: var(--accent);
+}
+
+#input-area.act-mode #input-wrapper {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+#input-area.act-mode #input-wrapper:focus-within {
+  border-color: var(--accent);
+}
