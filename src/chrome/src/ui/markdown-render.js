@@ -206,6 +206,55 @@ export function highlightCode(code, language) {
   }
 }
 
+// A GFM table block: a `| … |` header line, a `|---|:---:|` separator line,
+// then any run of `| …` body rows. Every row must start with a pipe — that is
+// how models emit tables — so prose that merely contains pipes, and the
+// pipe-less GFM variant, stay plain text rather than being guessed at.
+const TABLE_BLOCK = /(?:^|\n)[ \t]*\|[^\n]*\|[ \t]*\n[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*(?:\n[ \t]*\|[^\n]*)*(?:\n|$)/g;
+
+function splitTableRow(line) {
+  // `\|` is literal cell text in GFM; the guard survives HTML escaping
+  // because backslashes pass through it untouched.
+  const guarded = line.replace(/\\\|/g, '\u0000');
+  const inner = guarded.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return inner.split('|').map((cell) => cell.replaceAll('\u0000', '|').trim());
+}
+
+/**
+ * Convert escaped GFM table blocks to `<table>` markup.
+ *
+ * Cell source is inline-rendered one cell at a time via `renderCell`, and the
+ * finished block goes through `emit` — the sidepanel returns a placeholder
+ * there, so the emphasis/link/newline passes that run afterwards cannot reach
+ * into the generated markup or pair a `*` in one cell with a `*` in the next.
+ * Column count follows the header row: shorter body rows pad with empty
+ * cells, longer ones drop the excess, matching GFM.
+ */
+export function renderMarkdownTables(text, { renderCell = (cell) => cell, emit = (html) => html } = {}) {
+  return String(text == null ? '' : text).replace(TABLE_BLOCK, (block) => {
+    const lines = block.trim().split('\n');
+    const header = splitTableRow(lines[0]);
+    const aligns = splitTableRow(lines[1]).map((cell) => {
+      const left = cell.startsWith(':');
+      const right = cell.endsWith(':');
+      return left && right ? 'center' : right ? 'right' : left ? 'left' : '';
+    });
+    const cellsHtml = (cells, tag) => header
+      .map((_, column) => {
+        const align = aligns[column] ? ` style="text-align:${aligns[column]}"` : '';
+        return `<${tag}${align}>${renderCell(cells[column] ?? '')}</${tag}>`;
+      })
+      .join('');
+    const body = lines.slice(2)
+      .map((line) => `<tr>${cellsHtml(splitTableRow(line), 'td')}</tr>`)
+      .join('');
+    return emit(
+      `<div class="md-table-wrap"><table class="md-table"><thead><tr>${cellsHtml(header, 'th')}</tr></thead>` +
+      `${body ? `<tbody>${body}</tbody>` : ''}</table></div>`
+    );
+  });
+}
+
 /** Convert escaped ATX heading lines while leaving inline formatting for the caller. */
 export function renderMarkdownHeadings(text) {
   return String(text == null ? '' : text).replace(

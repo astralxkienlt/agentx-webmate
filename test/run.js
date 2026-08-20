@@ -374,7 +374,7 @@ const ChromeWebStoreReleaseFx = await import(
 const { sanitizeLink, sanitizeMarkdownLinks } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/ui/markdown-link.js').replace(/\\/g, '/')
 );
-const { codeFenceLanguage, highlightCode, renderMarkdownHeadings } = await import(
+const { codeFenceLanguage, highlightCode, renderMarkdownHeadings, renderMarkdownTables } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/ui/markdown-render.js').replace(/\\/g, '/')
 );
 const { renderSkillMarkdown } = await import(
@@ -510,7 +510,7 @@ const {
 const { sanitizeMarkdownLinks: sanitizeMarkdownLinksFx } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/ui/markdown-link.js').replace(/\\/g, '/')
 );
-const { codeFenceLanguage: codeFenceLanguageFx, highlightCode: highlightCodeFx, renderMarkdownHeadings: renderMarkdownHeadingsFx } = await import(
+const { codeFenceLanguage: codeFenceLanguageFx, highlightCode: highlightCodeFx, renderMarkdownHeadings: renderMarkdownHeadingsFx, renderMarkdownTables: renderMarkdownTablesFx } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/ui/markdown-render.js').replace(/\\/g, '/')
 );
 const { renderSkillMarkdown: renderSkillMarkdownFx } = await import(
@@ -12878,6 +12878,37 @@ test('ATX headings render as semantic headings and preserve inline Markdown', ()
   assert.equal(renderMarkdownHeadings('## C#\nText'), '<h2>C#</h2>Text');
 });
 
+test('GFM tables render as table markup with per-cell inline formatting', () => {
+  const source = [
+    'Nhu cầu:',
+    '| TT | Chức danh | Số lượng |',
+    '|----|:---------:|---------:|',
+    '| 1 | **Trưởng phòng** NOC | 1 |',
+    '| 2 | Phó phòng A\\|B |',
+    'Tổng: 7 vị trí.',
+  ].join('\n');
+  const emitted = [];
+  const out = renderMarkdownTables(source, {
+    renderCell: (cell) => cell.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'),
+    emit: (html) => { emitted.push(html); return '__TABLE_0__'; },
+  });
+  // The block collapses to its placeholder; surrounding prose keeps its own lines.
+  assert.equal(out, 'Nhu cầu:__TABLE_0__Tổng: 7 vị trí.');
+  assert.equal(emitted.length, 1);
+  const table = emitted[0];
+  assert.match(table, /^<div class="md-table-wrap"><table class="md-table"><thead><tr><th>TT<\/th>/);
+  // Separator alignments land on every cell of their column.
+  assert.match(table, /<th style="text-align:center">Chức danh<\/th><th style="text-align:right">Số lượng<\/th>/);
+  assert.match(table, /<td style="text-align:center"><strong>Trưởng phòng<\/strong> NOC<\/td>/);
+  // A short row pads to the header's column count, and \| stays a literal pipe.
+  assert.match(table, /<td style="text-align:center">Phó phòng A\|B<\/td><td style="text-align:right"><\/td>/);
+  assert.ok(!table.includes('\n'), 'table markup must stay newline-free for the <br> pass');
+
+  // Pipes in prose without a separator line are not a table.
+  const prose = 'a | b\nc | d';
+  assert.equal(renderMarkdownTables(prose), prose);
+});
+
 test('Chrome and Firefox Markdown rendering helpers stay in parity', () => {
   const samples = [
     ['const x = "<tag>";', 'javascript'],
@@ -12891,6 +12922,8 @@ test('Chrome and Firefox Markdown rendering helpers stay in parity', () => {
   const heading = '### **Option A**\nBody';
   assert.equal(renderMarkdownHeadingsFx(heading), renderMarkdownHeadings(heading));
   assert.equal(codeFenceLanguageFx('js title="example.js"'), codeFenceLanguage('js title="example.js"'));
+  const table = '| a | b |\n|---|---|\n| 1 | 2 |';
+  assert.equal(renderMarkdownTablesFx(table), renderMarkdownTables(table));
 });
 
 test('sidepanels wire highlighting and heading rendering into fenced Markdown', () => {
@@ -12900,10 +12933,17 @@ test('sidepanels wire highlighting and heading rendering into fenced Markdown', 
   ]) {
     const panel = fs.readFileSync(path.join(ROOT, panelRel), 'utf8');
     const css = fs.readFileSync(path.join(ROOT, cssRel), 'utf8');
-    assert.match(panel, /import \{ codeFenceLanguage, highlightCode, renderMarkdownHeadings \} from '\.\/markdown-render\.js';/, `${label}: renderer helpers should be imported`);
+    assert.match(panel, /import \{ codeFenceLanguage, highlightCode, renderMarkdownHeadings, renderMarkdownTables \} from '\.\/markdown-render\.js';/, `${label}: renderer helpers should be imported`);
     assert.match(panel, /const lang = codeFenceLanguage\(info\);/, `${label}: fenced code should tolerate metadata after its language token`);
     assert.match(panel, /const highlighted = enhance \? highlightCode\(block\.code, block\.lang\) : escapeHtml\(block\.code\);/, `${label}: completed fenced code should be highlighted by its language while live code stays lightweight`);
     assert.match(panel, /text = renderMarkdownHeadings\(text\);/, `${label}: ATX headings should be rendered`);
+    assert.match(panel, /text = renderMarkdownTables\(text, \{/, `${label}: GFM tables should be rendered`);
+    const tableRestore = panel.indexOf('__TABLE_${i}__');
+    const inlineRestore = panel.indexOf('__INLINE_${i}__');
+    assert.ok(tableRestore > 0 && inlineRestore > 0 && tableRestore < inlineRestore,
+      `${label}: tables must be restored before inline code so cell placeholders resolve`);
+    assert.match(css, /\.md-table-wrap \{[\s\S]*?overflow-x: auto;/, `${label}: wide tables should scroll instead of widening the chat`);
+    assert.match(css, /\.md-table th,\n\.md-table td \{/, `${label}: table cells should be styled`);
     assert.match(css, /\.syntax-keyword[\s\S]*?var\(--syntax-keyword\)/, `${label}: token colors should be styled`);
     assert.match(css, /\.syntax-variable \{ color: var\(--syntax-variable\); \}/, `${label}: variables should use their dedicated theme color`);
     assert.match(css, /\.message-content h3 \{ font-size: 14px; \}/, `${label}: level-three headings should be visually distinct`);

@@ -3225,6 +3225,36 @@ html[data-standalone="true"] #mode-toggle {
   border-color: var(--success);
 }
 
+/* Markdown tables (GFM) in chat messages */
+.md-table-wrap {
+  margin: 6px 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.md-table th,
+.md-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  background: var(--overlay-bg-strong);
+  font-weight: 600;
+}
+
+.md-table tbody tr:nth-child(even) {
+  background: var(--tint-soft);
+}
+
 /* Message-level copy button */
 .msg-copy-btn {
   display: block;

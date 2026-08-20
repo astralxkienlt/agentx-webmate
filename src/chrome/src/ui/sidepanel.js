@@ -6,7 +6,7 @@
 import { t, getLocale, setLocale, LANGUAGES, applyDOMTranslations } from './i18n.js';
 import { CAPABILITY_LABEL } from '../agent/permission-gate.js';
 import { sanitizeMarkdownLinks } from './markdown-link.js';
-import { codeFenceLanguage, highlightCode, renderMarkdownHeadings } from './markdown-render.js';
+import { codeFenceLanguage, highlightCode, renderMarkdownHeadings, renderMarkdownTables } from './markdown-render.js';
 import { applyMode, loadMode, watch } from './theme.js';
 import { buildRecommendedActions, shouldShowRecommendedActions } from './recommended-actions.js';
 import { createContextMenuPromptHandler } from './context-menu-prompts.js';
@@ -11222,6 +11222,23 @@ function formatMarkdown(text, options = {}) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
+  // 3b. Tables, built from the escaped source lines and stashed like code
+  // blocks so the emphasis/link/newline passes below cannot reach into the
+  // markup. Cells get the same inline treatment applied per cell instead,
+  // which keeps a `*` in one cell from pairing with a `*` in the next.
+  const tables = [];
+  text = renderMarkdownTables(text, {
+    renderCell: (cell) => sanitizeMarkdownLinks(
+      cell
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    ),
+    emit: (html) => {
+      tables.push(html);
+      return `__TABLE_${tables.length - 1}__`;
+    },
+  });
+
   // 4. Block headings, inline formatting, markdown link sanitization, then
   // newline → <br>. Code and inline-code placeholders were extracted above,
   // so Markdown-looking source inside them is not interpreted here.
@@ -11231,6 +11248,13 @@ function formatMarkdown(text, options = {}) {
     .replace(/\*(.+?)\*/g, '<em>$1</em>');
   text = sanitizeMarkdownLinks(text);
   text = text.replace(/\n/g, '<br>');
+
+  // 4b. Restore tables before inline code: a cell may hold an __INLINE_n__
+  // placeholder, which the restore below can only find once the table markup
+  // is back in the text.
+  tables.forEach((html, i) => {
+    text = text.replace(`__TABLE_${i}__`, () => html);
+  });
 
   // 5. Restore inline code
   inlineCodes.forEach((code, i) => {
