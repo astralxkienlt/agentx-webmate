@@ -72610,10 +72610,17 @@ test('sidepanel: pending attachments are tab-scoped and send-gated while loading
       /await store\.put\(\{[\s\S]*?origin: 'user_upload',[\s\S]*?state: 'pending',[\s\S]*?\}, buffer\);/,
       `${label} should persist chip bytes once into the attachment store`,
     );
+    // The picker must not restrict file types: drag-drop/paste already take
+    // any file, and unknown formats ride the reference lane (read_attachment /
+    // upload_file) instead of being rejected.
     assert.match(
       html,
-      /accept="[^"]*application\/json[^"]*text\/plain[^"]*text\/csv[^"]*\.json[^"]*\.txt[^"]*\.csv[^"]*\.docx[^"]*"/,
-      `${label} file picker should advertise JSON, TXT, CSV, and DOCX attachments`,
+      /<input type="file" id="file-attach-input" multiple hidden>/,
+      `${label} file picker should accept every file type (no accept filter)`,
+    );
+    assert.ok(
+      !/id="file-attach-input"[^>]*\baccept=/.test(html),
+      `${label} file picker must not carry an accept filter`,
     );
     assert.ok(!source.includes('let pendingAttachments = []'), `${label} should not keep one global pending attachment list`);
     if (label === 'chrome') {

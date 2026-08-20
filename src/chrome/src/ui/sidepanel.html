@@ -357,7 +357,10 @@
       <div id="queued-messages" class="queued-messages hidden" role="list" aria-live="polite"></div>
       <div id="slash-command-menu" class="slash-command-menu hidden" role="listbox" data-i18n-aria-label="sp.slash.commands_label"></div>
       <div id="attachment-preview-list" class="attachment-preview-list hidden"></div>
-      <input type="file" id="file-attach-input" accept="image/*,application/pdf,application/json,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.json,.txt,.csv,.docx" multiple hidden>
+      <!-- No accept filter: drag-drop and paste already take any file type, and
+           ingestFiles routes unknown formats to the reference lane (read_attachment /
+           upload_file) instead of rejecting them. -->
+      <input type="file" id="file-attach-input" multiple hidden>
       <div id="input-wrapper">
         <button id="btn-attach" data-i18n-title="sp.btn.attach">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
