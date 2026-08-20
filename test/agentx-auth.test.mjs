@@ -853,6 +853,51 @@ test('invalid_grant clears auth session but never deletes cached model key', asy
   assert.equal(fake.values[AGENTX_CREDENTIAL_STORAGE_KEY].records[0].key, cached.key);
 });
 
+test('a session the wrapper gave no refresh token outlives its token expiry', async () => {
+  const cached = credential();
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session({
+      refreshToken: '',
+      expiresAt: NOW - 60_000,
+      lastActiveAt: NOW - 60_000,
+    }),
+    [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [cached] },
+  });
+  // A thrown fetch proves the grace branch never even attempts a refresh.
+  const svc = service(fake.api, async () => { throw new Error('refresh must not be attempted'); });
+  const restored = await svc.restoreSession();
+  assert.equal(restored.outcome, 'stored');
+  assert.equal(restored.session.user.subject, 'user-123');
+  assert.equal((await svc.publicStatus()).signedIn, true);
+  // The session survives in storage for the next panel document too.
+  assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].user.subject, 'user-123');
+});
+
+test('a refresh-less session still signs out at the idle deadline', async () => {
+  const clock = { now: NOW };
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session({
+      refreshToken: '',
+      expiresAt: NOW + 10 * 60_000,
+      lastActiveAt: NOW,
+    }),
+  });
+  const svc = createAgentXCloudService({
+    api: fake.api,
+    config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
+    fetchImpl: async () => { throw new Error('no network expected'); },
+    cryptoImpl: webcrypto,
+    now: () => clock.now,
+  });
+  // Twenty minutes past the token's exp but inside the idle window: still in.
+  clock.now = NOW + IDLE_MS - 1;
+  assert.equal((await svc.publicStatus()).signedIn, true);
+  clock.now = NOW + IDLE_MS;
+  const expired = await svc.publicStatus();
+  assert.equal(expired.signedIn, false);
+  assert.equal(expired.outcome, 'idle-expired');
+});
+
 test('explicit sign-out clears only the current account credential', async () => {
   const current = credential();
   const other = credential({

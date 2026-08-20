@@ -869,6 +869,18 @@ export function createAgentXCloudService(options = {}) {
     if (now() < (Number(session.expiresAt) - REFRESH_AHEAD_MS)) {
       return { session, outcome: 'stored' };
     }
+    // The Viettel SSO wrapper returns no refresh token, so a session from it
+    // used to die right here at the ID token's one-hour exp — locking the user
+    // out of a panel whose chat never presents that token at all: chat runs on
+    // the provisioned LiteLLM key, which does not expire. A session with
+    // nothing to refresh is therefore held instead of cleared. What still ends
+    // it: the idle window above, sign-out, and the backend rejecting the stale
+    // bearer the next time provisioning actually needs it (401 invalid_token).
+    // Sessions that do carry a refresh token keep the strict path below, where
+    // invalid_grant means sign in again.
+    if (!session.refreshToken) {
+      return { session, outcome: 'stored' };
+    }
     try {
       return await refreshSession(session);
     } catch (error) {
