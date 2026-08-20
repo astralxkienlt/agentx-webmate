@@ -90,7 +90,7 @@ src/chrome/
     "sidePanel", "activeTab", "contextMenus", "tabs", "tabGroups",
     "scripting", "storage", "webNavigation", "webRequest",
     "debugger", "downloads", "alarms", "unlimitedStorage",
-    "offscreen", "privateNetworkAccess", "tabCapture",
+    "offscreen", "tabCapture",
     "clipboardWrite", "clipboardRead"
   ],
   "host_permissions": ["<all_urls>", "http://localhost/*", "http://127.0.0.1/*", "http://*/*"]
@@ -104,7 +104,6 @@ src/chrome/
 | `alarms` | Scheduled tasks and scheduled resumes across browser sessions. |
 | `unlimitedStorage` | Optional trace recorder persists agent runs (LLM I/O + screenshots) into IndexedDB. A multi-step run can be 1–10 MB; the default ~10 MB origin cap fills after a few runs. |
 | `offscreen` | Hosts the localhost/PNA fetch proxy, tab recorder, validated download staging, and the cloud bridge. Chrome MV3 service workers cannot provide those document APIs directly. |
-| `privateNetworkAccess` | Same motivation — allow calling `http://localhost:8080` from the extension. |
 | `tabCapture` | Optional "Record this tab" feature in the sidepanel. Pulls a MediaStream of the active tab's video+audio via `chrome.tabCapture.getMediaStreamId()`, hands it to the offscreen document which runs the MediaRecorder. |
 
 ---

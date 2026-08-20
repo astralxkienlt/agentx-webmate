@@ -113,11 +113,11 @@ Notable absences vs Chrome: no `cdp/`, no `offscreen/`, no `recorder/`, no `prov
 }
 ```
 
-Notably **missing** vs Chrome: `debugger`, `sidePanel`, `scripting`, `offscreen`, `privateNetworkAccess`, `tabCapture`.
+Notably **missing** vs Chrome: `debugger`, `sidePanel`, `scripting`, `offscreen`, `tabCapture`.
 
 - No `debugger` → no CDP, no trusted events
 - No `offscreen` → no HTTP fetch proxy; direct fetch from background page only
-- No `privateNetworkAccess` → localhost LLM servers must send CORS headers themselves
+- No `offscreen` fetch proxy → localhost LLM servers must send CORS headers themselves
 - `webRequest` is used for the same opt-in in-memory API shortcut observer as Chrome. The setting is off by default.
 - Uses `sidebar_action` (MV2) instead of `side_panel` (MV3)
 - Uses `browser.tabs.executeScript()` / `browser.tabs.sendMessage()` instead of `chrome.scripting.executeScript()`
