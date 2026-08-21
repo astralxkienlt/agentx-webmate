@@ -12,16 +12,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import WebSocket from "ws";
 
-process.env.WEBBRAIN_BRIDGE_PORT = process.env.WEBBRAIN_BRIDGE_PORT || "17399";
-process.env.WEBBRAIN_COMMAND_TIMEOUT_MS = "2000";
-process.env.WEBBRAIN_POLL_INTERVAL_MS = "20";
+process.env.WEBMATE_BRIDGE_PORT = process.env.WEBMATE_BRIDGE_PORT || "17399";
+process.env.WEBMATE_COMMAND_TIMEOUT_MS = "2000";
+process.env.WEBMATE_POLL_INTERVAL_MS = "20";
 
-const { WebBrainBridge, BridgeError, TERMINAL_STATUSES } = await import("../dist/bridge.js");
+const { WebMateBridge, BridgeError, TERMINAL_STATUSES, EXTENSION_CLIENT_ID } = await import("../dist/bridge.js");
 const { bridgeUrl } = await import("../dist/config.js");
 const { awaitSettled, describeSnapshot } = await import("../dist/runs.js");
 
-/** Minimal stand-in for the extension's offscreen bridge client. */
-function fakeExtension(url, handler, { client = "webbrain-extension" } = {}) {
+/**
+ * Minimal stand-in for the extension's offscreen bridge client. The `client`
+ * token is the upstream wire identifier the AgentX WebMate build still sends.
+ */
+function fakeExtension(url, handler, { client = EXTENSION_CLIENT_ID } = {}) {
   const socket = new WebSocket(url);
   socket.on("open", () => {
     socket.send(
@@ -44,7 +47,7 @@ function fakeExtension(url, handler, { client = "webbrain-extension" } = {}) {
 }
 
 test("handshake, command correlation, and payload shape", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const seen = [];
@@ -77,7 +80,7 @@ test("handshake, command correlation, and payload shape", async () => {
 });
 
 test("concurrent commands resolve to their own replies", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const ext = fakeExtension(bridgeUrl(), async (msg) => {
@@ -100,7 +103,7 @@ test("concurrent commands resolve to their own replies", async () => {
 });
 
 test("extension errors surface as BridgeError with status", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const ext = fakeExtension(bridgeUrl(), () => ({
@@ -125,14 +128,14 @@ test("extension errors surface as BridgeError with status", async () => {
 });
 
 test("no extension attached produces an actionable message", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   await assert.rejects(
     () => bridge.request("cloud_status", {}),
     (error) => {
       assert.ok(error instanceof BridgeError);
-      assert.match(error.message, /No WebBrain extension is connected/);
+      assert.match(error.message, /No AgentX WebMate extension is connected/);
       assert.match(error.message, /Cloud bridge/);
       return true;
     },
@@ -142,7 +145,7 @@ test("no extension attached produces an actionable message", async () => {
 });
 
 test("a client that is not the extension is rejected", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const rogue = fakeExtension(bridgeUrl(), () => ({ ok: true, result: {} }), {
@@ -156,7 +159,7 @@ test("a client that is not the extension is rejected", async () => {
 });
 
 test("a web-page origin cannot replace the connected extension", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const extension = fakeExtension(bridgeUrl(), (msg) => ({
@@ -188,7 +191,7 @@ test("a web-page origin cannot replace the connected extension", async () => {
 });
 
 test("a new socket cannot inherit an earlier extension handshake", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const extension = fakeExtension(bridgeUrl(), () => ({ ok: true, result: {} }));
@@ -206,7 +209,7 @@ test("a new socket cannot inherit an earlier extension handshake", async () => {
   assert.equal(bridge.isConnected(), false, "the replacement socket has not sent hello");
   await assert.rejects(
     () => bridge.request("cloud_run", { task: "private task", mode: "ask" }),
-    /No WebBrain extension is connected/,
+    /No AgentX WebMate extension is connected/,
   );
   assert.equal(receivedCommands, 0, "an unverified socket must not receive task frames");
 
@@ -216,7 +219,7 @@ test("a new socket cannot inherit an earlier extension handshake", async () => {
 });
 
 test("disconnect mid-command rejects rather than hanging", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const ext = fakeExtension(bridgeUrl(), async () => {
@@ -240,7 +243,7 @@ test("disconnect mid-command rejects rather than hanging", async () => {
 });
 
 test("awaitSettled polls to a terminal status", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   let polls = 0;
@@ -271,7 +274,7 @@ test("awaitSettled polls to a terminal status", async () => {
 });
 
 test("awaitSettled stops on needs_user_input and surfaces clarify_id", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const ext = fakeExtension(bridgeUrl(), (msg) => {
@@ -300,7 +303,7 @@ test("awaitSettled stops on needs_user_input and surfaces clarify_id", async () 
 });
 
 test("awaitSettled reports a timeout without aborting the run", async () => {
-  const bridge = new WebBrainBridge();
+  const bridge = new WebMateBridge();
   await bridge.start();
 
   const actions = [];

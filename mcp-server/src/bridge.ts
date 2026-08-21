@@ -1,5 +1,5 @@
 /**
- * Bridge server — the local endpoint the WebBrain extension connects OUT to.
+ * Bridge server — the local endpoint the AgentX WebMate extension connects OUT to.
  *
  * Direction matters: a Manifest V3 extension cannot listen on a socket, so
  * `src/chrome/src/offscreen/cloud-bridge.js` dials out from an offscreen
@@ -19,6 +19,14 @@
 
 import { WebSocketServer, type WebSocket } from "ws";
 import { config } from "./config.js";
+
+/**
+ * The `client` value the extension puts in its hello frame. This is a wire
+ * identifier inherited from upstream WebBrain — the brand build deliberately
+ * preserves protocol tokens, so the AgentX WebMate build still sends exactly
+ * this string. Do not "rebrand" it or every handshake is rejected.
+ */
+export const EXTENSION_CLIENT_ID = "webbrain-extension";
 
 /** Actions already present in the extension's ALLOWED_BRIDGE_ACTIONS set. */
 export type BridgeAction =
@@ -77,7 +85,7 @@ export class BridgeError extends Error {
 
 /** Log to stderr only — stdout is the MCP stdio transport and must stay clean. */
 function log(...args: unknown[]): void {
-  console.error("[webbrain-mcp]", ...args);
+  console.error("[agentx-webmate-mcp]", ...args);
 }
 
 function isAllowedBridgeOrigin(origin: string | string[] | undefined): boolean {
@@ -91,7 +99,15 @@ function isAllowedBridgeOrigin(origin: string | string[] | undefined): boolean {
   }
 }
 
-export class WebBrainBridge {
+/** Human-readable instructions for attaching the extension, reused in every "not connected" message. */
+export function connectInstructions(): string {
+  return (
+    "Open the browser, then set AgentX WebMate → Settings → General → Advanced → " +
+    `Cloud bridge to ws://127.0.0.1:${config.bridgePort}${config.bridgePath} and enable it.`
+  );
+}
+
+export class WebMateBridge {
   private wss: WebSocketServer | null = null;
   private socket: WebSocket | null = null;
   private pending = new Map<number, Pending>();
@@ -137,7 +153,7 @@ export class WebBrainBridge {
       if (this.socket) {
         this.failAllPending(
           new BridgeError(
-            "WebBrain extension connection was superseded mid-command.",
+            "AgentX WebMate extension connection was superseded mid-command.",
             undefined,
             "COMMAND_INTERRUPTED",
           ),
@@ -166,7 +182,7 @@ export class WebBrainBridge {
         log("extension disconnected");
         this.failAllPending(
           new BridgeError(
-            "WebBrain extension disconnected mid-command.",
+            "AgentX WebMate extension disconnected mid-command.",
             undefined,
             "COMMAND_INTERRUPTED",
           ),
@@ -194,7 +210,7 @@ export class WebBrainBridge {
 
     // Handshake frame — no id, nothing to correlate.
     if (msg.type === "hello") {
-      if (msg.client !== "webbrain-extension") {
+      if (msg.client !== EXTENSION_CLIENT_ID) {
         log(`rejecting unknown bridge client: ${String(msg.client)}`);
         socket.close(1008, "Unknown client");
         if (this.socket === socket) {
@@ -279,9 +295,7 @@ export class WebBrainBridge {
     const socket = this.socket;
     if (!socket || !this.isConnected()) {
       throw new BridgeError(
-        "No WebBrain extension is connected. Open the browser, then set " +
-          "WebBrain → Settings → General → Advanced → Cloud bridge to " +
-          `ws://127.0.0.1:${config.bridgePort}${config.bridgePath} and enable it.`,
+        `No AgentX WebMate extension is connected. ${connectInstructions()}`,
       );
     }
 
@@ -294,7 +308,7 @@ export class WebBrainBridge {
         this.pending.delete(id);
         reject(
           new BridgeError(
-            `WebBrain did not answer '${action}' within ${responseTimeoutMs}ms.`,
+            `AgentX WebMate did not answer '${action}' within ${responseTimeoutMs}ms.`,
             undefined,
             "COMMAND_TIMEOUT",
           ),

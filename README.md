@@ -225,7 +225,7 @@ configuration. Bug reports and feature requests belong in
 src/chrome/     Manifest V3 build — service worker, chrome.scripting, sidePanel
 src/firefox/    Manifest V2 build — background page, executeScript, sidebar_action
 docs/           Design and reference docs (en, zh-CN, fr)
-mcp-server/     MCP server — delegate browser tasks from Claude Code, Codex, Cursor
+mcp-server/     MCP server (agentx-webmate-mcp) — delegate browser tasks from AgentX Workmate, Claude Code, Codex, Cursor
 lmstudio-plugin/  Web tools + browser delegation as a standalone LM Studio plugin
 web/            Landing site and docs site
 test/           Node test suite, LLM scenario benchmarks, security corpora
@@ -268,15 +268,20 @@ into — cookies present, SSO already passed. A headless framework starts logged
 out and stalls at the first login wall; this does not.
 
 ```bash
-claude mcp add --transport stdio webbrain -- npx -y @webbrain/mcp-server
+# AgentX Workmate — installs from the bundled MCP catalog
+agentx mcp install official/webmate
+
+# Claude Code — point at a built checkout
+cd mcp-server && npm ci && npm run build
+claude mcp add --transport stdio webmate -- node "$PWD/dist/index.js"
 ```
 
-Claude Code launches the server automatically when it starts an MCP session.
+The MCP client launches the server automatically when it starts an MCP session.
 To launch it yourself instead, run the following command and leave that terminal
 open (press `Ctrl+C` to stop it):
 
 ```bash
-npx -y @webbrain/mcp-server
+node mcp-server/dist/index.js
 ```
 
 Once the server is running, open **WebBrain → Settings → General → Advanced →
@@ -291,11 +296,11 @@ port `17374`, and leave its process running. See the
 listener check and the other bridge ports.
 
 ```
-webbrain_run(task: "open the Stripe dashboard and list last week's failed
-             payments with amounts and customer emails", mode: "ask")
+webmate_run(task: "open the Stripe dashboard and list last week's failed
+            payments with amounts and customer emails", mode: "ask")
 ```
 
-Use `webbrain_extract` with a JSON Schema when the caller needs predictable
+Use `webmate_extract` with a JSON Schema when the caller needs predictable
 structured output instead of a prose summary. The server exposes six task-level
 tools: run, structured extraction, status, clarification response, abort, and
 connection diagnostics.
