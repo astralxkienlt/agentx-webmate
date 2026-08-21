@@ -12,6 +12,14 @@
  * driving the side panel. This server deliberately does NOT expose the
  * individual browser primitives — `executeTool()` has no gate of its own, and
  * calling it directly would move the trust boundary out of the browser.
+ *
+ * Permission prompts ride the same clarify channel as free-text questions
+ * (`agent._promptPermission`): the extension emits `pendingInput` with
+ * `permission: {capability, host}` and `options: ['once','always','deny']`,
+ * and its parser accepts EXACTLY those tokens — anything else fails closed to
+ * deny. A calling agent that forwards the user's "yes" verbatim would therefore
+ * deny its own request, so this module (a) prints the accepted answers in every
+ * status text and (b) refuses to forward an answer that does not match.
  */
 
 import { BridgeError, TERMINAL_STATUSES, WebMateBridge, type CloudSnapshot } from "./bridge.js";
@@ -30,7 +38,88 @@ export interface AwaitOptions {
   timeoutMs: number;
 }
 
+/** What a paused run is waiting for, normalised from the extension's `pendingInput`. */
+export interface PendingInputInfo {
+  clarifyId: string;
+  question: string;
+  /** Accepted answers. Empty for free-text questions. */
+  options: string[];
+  /** Set when the pause is a capability × host permission request. */
+  permission: { capability: string; host: string } | null;
+}
+
+export type AnswerVerdict =
+  | { ok: true; answer: string }
+  | { ok: false; message: string };
+
+/** Capability → verb, mirroring CAPABILITY_LABEL in the extension's permission gate. */
+const CAPABILITY_VERB: Record<string, string> = {
+  navigate: "navigate to",
+  click: "click / submit on",
+  type: "type into",
+  execute_js: "run JavaScript on",
+  dev_patch: "temporarily modify the page on",
+  network_write: "make a network request to",
+  download: "download files from",
+  upload: "upload a file to",
+  window: "resize the browser window for",
+  schedule: "schedule future work for",
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function describePendingInput(pendingInput: unknown): PendingInputInfo | null {
+  if (!pendingInput || typeof pendingInput !== "object") return null;
+  const raw = pendingInput as Record<string, unknown>;
+  const clarifyId = String(raw.clarifyId || raw.clarify_id || "").trim();
+  const question = typeof raw.question === "string" ? raw.question : "";
+  const options = Array.isArray(raw.options)
+    ? raw.options.filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+    : [];
+  let permission: PendingInputInfo["permission"] = null;
+  if (raw.permission && typeof raw.permission === "object") {
+    const p = raw.permission as Record<string, unknown>;
+    permission = {
+      capability: String(p.capability || "").trim(),
+      host: String(p.host || "").trim(),
+    };
+  }
+  return { clarifyId, question, options, permission };
+}
+
+function permissionSentence(permission: { capability: string; host: string }): string {
+  const verb = CAPABILITY_VERB[permission.capability] || `use '${permission.capability || "?"}' on`;
+  return `AgentX WebMate wants to ${verb} ${permission.host || "this site"}.`;
+}
+
+/**
+ * Check an answer against the pending input before it is sent to the browser.
+ * Exact option matches are accepted case-insensitively and normalised to the
+ * option's canonical spelling. Natural language is never mapped — translating
+ * the user's decision into a token is the calling agent's job, and guessing
+ * here would turn this server into a permission-granting heuristic.
+ */
+export function validateAnswer(pendingInput: unknown, answer: string): AnswerVerdict {
+  const trimmed = String(answer ?? "").trim();
+  if (!trimmed) return { ok: false, message: "webmate_respond requires a non-empty answer." };
+  const info = describePendingInput(pendingInput);
+  if (!info || info.options.length === 0) return { ok: true, answer: trimmed };
+
+  const match = info.options.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+  if (match) return { ok: true, answer: match };
+
+  const accepted = info.options.join(" | ");
+  const head = info.permission
+    ? `This run is waiting on a permission request — ${permissionSentence(info.permission)}`
+    : `This run is waiting on a choice${info.question ? `: ${info.question}` : "."}`;
+  return {
+    ok: false,
+    message:
+      `${head} The answer must be EXACTLY one of: ${accepted} — not "${trimmed}". ` +
+      "The browser treats anything else as deny, so the answer was not sent. Translate the " +
+      "user's decision into one of those values and call webmate_respond again.",
+  };
+}
 
 export async function startRun(
   bridge: WebMateBridge,
@@ -66,6 +155,11 @@ export async function getStatus(
   );
 }
 
+/**
+ * Answer a paused run. Reads the run first so an answer that the browser's
+ * permission parser would misread as deny is refused here, with the accepted
+ * tokens spelled out, instead of silently denying the user's own request.
+ */
 export async function respond(
   bridge: WebMateBridge,
   runId: string,
@@ -73,9 +167,17 @@ export async function respond(
   answer: string,
   timeoutMs?: number,
 ): Promise<CloudSnapshot> {
+  const current = await getStatus(bridge, runId, timeoutMs);
+  const snapshot = (current as { runs?: CloudSnapshot[] }).runs ? null : (current as CloudSnapshot);
+  let outgoing = String(answer ?? "").trim();
+  if (snapshot?.pendingInput) {
+    const verdict = validateAnswer(snapshot.pendingInput, answer);
+    if (!verdict.ok) throw new BridgeError(verdict.message, 400);
+    outgoing = verdict.answer;
+  }
   return await bridge.request<CloudSnapshot>(
     "cloud_respond",
-    { runId, clarifyId, answer },
+    { runId, clarifyId, answer: outgoing },
     timeoutMs,
   );
 }
@@ -143,12 +245,29 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
   if (snapshot.finalUrl) lines.push(`final_url: ${snapshot.finalUrl}`);
 
   if (snapshot.status === "needs_user_input" && snapshot.pendingInput) {
-    const clarifyId = snapshot.pendingInput.clarifyId || snapshot.pendingInput.clarify_id || "";
-    const question = snapshot.pendingInput.question || "(no question text supplied)";
+    const info = describePendingInput(snapshot.pendingInput);
+    const question = info?.question || "(no question text supplied)";
     lines.push("");
-    lines.push("AgentX WebMate is waiting on a human decision before it continues.");
-    lines.push(`question: ${question}`);
-    lines.push(`clarify_id: ${clarifyId}`);
+    if (info?.permission) {
+      const host = info.permission.host || "this site";
+      lines.push(`PERMISSION REQUEST — ${permissionSentence(info.permission)}`);
+      lines.push(
+        "Reply with webmate_respond(run_id, clarify_id, answer) where answer is EXACTLY one of: " +
+          `${info.options.length ? info.options.join(" | ") : "once | always | deny"}.`,
+      );
+      lines.push(`once = allow this time only · always = remember for ${host} · deny = refuse.`);
+      lines.push(
+        "The browser treats any other text (yes, ok, có, sure…) as deny — ask the user, then " +
+          "translate their decision into one of these tokens. Never forward their words verbatim.",
+      );
+    } else {
+      lines.push("AgentX WebMate is waiting on a human decision before it continues.");
+      lines.push(`question: ${question}`);
+      if (info?.options.length) {
+        lines.push(`accepted answers (send one of these exactly): ${info.options.join(" | ")}`);
+      }
+    }
+    lines.push(`clarify_id: ${info?.clarifyId || ""}`);
     lines.push(
       "Relay this to the user and send their answer with webmate_respond. " +
         "Do not invent an answer on their behalf.",

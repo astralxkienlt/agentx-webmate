@@ -110,12 +110,23 @@ without starting a chat session.
 | `webmate_run` | Delegate a task. `mode='ask'` is read-only; `mode='act'` can click and type, gated by in-browser approval. |
 | `webmate_extract` | Read authenticated page data into a caller-supplied JSON Schema. Always runs in read-only Ask mode. |
 | `webmate_status` | Poll a run, or list every run. |
-| `webmate_respond` | Answer a run sitting at `needs_user_input`. |
+| `webmate_respond` | Answer a run sitting at `needs_user_input`. Permission requests accept exactly `once`, `always` or `deny`; anything else is rejected before it reaches the browser. |
 | `webmate_abort` | Stop a run. Actions already taken are not undone. |
 | `webmate_connection` | Report whether the extension is attached, and how to fix it if not. |
 
 Hosts namespace these by server: in Workmate and Claude Code they appear as
 `mcp__webmate__webmate_run` and friends.
+
+### Permission requests
+
+In Act mode, the first consequential action on a host (navigate, click, type,
+download, …) pauses the run as `needs_user_input`. The status text reads
+`PERMISSION REQUEST — AgentX WebMate wants to navigate to youtube.com` and
+lists the accepted answers: `once` (this time), `always` (remember for that
+host), `deny`. Send one of those exactly with `webmate_respond`. The server
+refuses free text such as "yes" or "có" because the browser's gate fails closed
+and would read it as deny. If the WebMate side panel is open on that tab, the
+same request is shown there and can be answered in either place.
 
 ### Example
 
@@ -185,7 +196,7 @@ set, `WEBMATE_*` wins.
 - Connections from HTTP(S) pages and other non-extension browser origins are rejected before they can replace the extension socket. Accepted connections must also present the extension's `hello` frame with `client: "webbrain-extension"` (the wire identifier inherited from upstream; the brand build keeps protocol tokens unchanged); anything else is closed. This is **not** authentication. The shipping extension sends no shared secret, so a local process could impersonate it. Treat the port as trusted-local, and see [`docs/security-model.md`](../docs/security-model.md).
 - A `webmate_run` timeout does **not** abort the run. A task that already submitted a form should not be silently killed — the browser keeps going and `webmate_status` picks it back up.
 - `allow_api_mutations` lifts the UI-first rule and is off by default. It is accepted only with `mode: "act"`; Ask runs remain read-only. The UI path is visible and stoppable; direct API mutations are neither.
-- Approval prompts for consequential Act-mode actions are shown in the browser side panel, not relayed over MCP. Only clarification questions (`needs_user_input`) round-trip through `webmate_status` / `webmate_respond`. If you drive the browser from another device, pre-approve the hosts you expect the agent to touch or keep the browser within reach.
+- Act-mode permission requests pause the run as `needs_user_input` and are answered with exactly `once`, `always` or `deny`. The extension's gate fails closed — any other text is a denial — so `webmate_respond` refuses non-matching answers before they reach the browser. `always` persists a grant for that host; prefer `once` unless the user asked for more.
 
 ## Tests
 

@@ -46,7 +46,9 @@ const server = new McpServer(
       "structured data; use mode='act' only when the task must click, type or submit. If a " +
       "tool reports that no extension is connected, call webmate_connection and relay its " +
       "instructions to the user instead of retrying. When a run stops at " +
-      "'needs_user_input', ask the user and answer with webmate_respond — never guess.",
+      "'needs_user_input', ask the user and answer with webmate_respond — never guess. Permission " +
+      "requests list their accepted answers (once | always | deny); send one of those exactly, " +
+      "translating the user's words — the browser treats anything else as deny.",
   },
 );
 
@@ -73,11 +75,14 @@ server.registerTool(
       "the caller cannot reach: an authenticated dashboard, a webmail account, an admin " +
       "panel, a SaaS report behind SSO. Describe the goal in plain language, the way you " +
       "would to a colleague sharing the screen.\n\n" +
-      "mode='ask' is read-only: it reads, extracts and summarises, and cannot click, type " +
-      "or submit. mode='act' allows interaction, and the user is prompted in-browser to " +
-      "approve consequential actions. Prefer 'ask' whenever you only need to read.\n\n" +
+      "mode='ask' is read-only: it reads, extracts and summarises the page that is already " +
+      "open, and cannot navigate, click, type or submit. Use mode='act' whenever the task " +
+      "involves going somewhere or doing something — opening a site, searching on it, " +
+      "playing, clicking, typing, submitting; each consequential action is gated by a " +
+      "per-host permission request. Use 'ask' only when nothing but reading is needed.\n\n" +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
-      "answer with webmate_respond — never guess on their behalf.",
+      "answer with webmate_respond — never guess on their behalf. Permission requests list " +
+      "their accepted answers (once | always | deny); send one of those exactly.",
     inputSchema: {
       task: z
         .string()
@@ -90,8 +95,9 @@ server.registerTool(
         .enum(["ask", "act"])
         .default("ask")
         .describe(
-          "'ask' is read-only and cannot modify the page. 'act' permits clicking, typing " +
-            "and navigation, gated by in-browser approval. Default 'ask'.",
+          "'ask' is read-only: it reads the page that is already open and cannot navigate, " +
+            "click, type or submit. 'act' permits navigation, clicking and typing, each gated by " +
+            "a per-host permission request. Default 'ask'.",
         ),
       tab_id: z
         .number()
@@ -184,7 +190,8 @@ server.registerTool(
       "account details and other page data that should come back as predictable JSON rather " +
       "than a prose summary. Use webmate_run instead when the task needs interaction.\n\n" +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
-      "answer with webmate_respond — never guess on their behalf.",
+      "answer with webmate_respond — never guess on their behalf. If it lists accepted " +
+      "answers, send one of those exactly.",
     inputSchema: {
       task: z
         .string()
@@ -308,11 +315,20 @@ server.registerTool(
     description:
       "Supply the user's answer to a run sitting at status 'needs_user_input', then keep " +
       "waiting for it to settle. The answer must come from the user — AgentX WebMate pauses " +
-      "precisely because a human decision is required.",
+      "precisely because a human decision is required.\n\n" +
+      "Permission requests accept EXACTLY once, always or deny (the status text shows which " +
+      "is pending). Translate the user's decision into one of those tokens; free text such " +
+      "as 'yes' is rejected here because the browser would treat it as deny.",
     inputSchema: {
       run_id: z.string().describe("The run that is waiting."),
       clarify_id: z.string().describe("The clarify_id reported alongside the question."),
-      answer: z.string().min(1).describe("The user's answer, passed through verbatim."),
+      answer: z
+        .string()
+        .min(1)
+        .describe(
+          "The user's answer. Free-text questions: pass their words through verbatim. " +
+            "Permission requests: exactly 'once', 'always' or 'deny'.",
+        ),
       timeout_seconds: z
         .number()
         .int()
