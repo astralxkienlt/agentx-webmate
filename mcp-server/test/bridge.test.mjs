@@ -18,7 +18,7 @@ process.env.WEBMATE_POLL_INTERVAL_MS = "20";
 
 const { WebMateBridge, BridgeError, TERMINAL_STATUSES, EXTENSION_CLIENT_ID } = await import("../dist/bridge.js");
 const { bridgeUrl } = await import("../dist/config.js");
-const { awaitSettled, describeSnapshot } = await import("../dist/runs.js");
+const { awaitSettled, describeSnapshot, respond } = await import("../dist/runs.js");
 
 /**
  * Minimal stand-in for the extension's offscreen bridge client. The `client`
@@ -318,6 +318,66 @@ test("awaitSettled reports a timeout without aborting the run", async () => {
   assert.equal(snapshot.status, "running");
   assert.ok(!actions.includes("cloud_abort"), "a timeout must never abort the user's run");
   assert.match(describeSnapshot(snapshot, true), /still running/);
+
+  ext.close();
+  await bridge.stop();
+});
+
+test("a permission prompt lists its tokens, refuses free text, and forwards an exact option", async () => {
+  const bridge = new WebMateBridge();
+  await bridge.start();
+
+  const seen = [];
+  const ext = fakeExtension(bridgeUrl(), (msg) => {
+    seen.push(msg);
+    if (msg.action === "cloud_status") {
+      return {
+        ok: true,
+        result: {
+          runId: "r",
+          status: "needs_user_input",
+          pendingInput: {
+            clarifyId: "perm_1",
+            permission: { capability: "navigate", host: "youtube.com" },
+            question: "AgentX WebMate wants to navigate to youtube.com. Allow it?",
+            options: ["once", "always", "deny"],
+          },
+        },
+      };
+    }
+    if (msg.action === "cloud_respond") {
+      return { ok: true, result: { runId: "r", status: "running" } };
+    }
+    return { ok: true, result: {} };
+  });
+  await bridge.waitForExtension(3000);
+
+  // The status text must teach the caller the exact tokens.
+  const { snapshot } = await awaitSettled(bridge, "r", { timeoutMs: 2000 });
+  const text = describeSnapshot(snapshot);
+  assert.match(text, /PERMISSION REQUEST/);
+  assert.match(text, /navigate to youtube\.com/);
+  assert.match(text, /once \| always \| deny/);
+  assert.match(text, /clarify_id: perm_1/);
+
+  // "Có" (Vietnamese "yes") would be read as deny by the browser — refuse it before it is sent.
+  await assert.rejects(
+    () => respond(bridge, "r", "perm_1", "Có"),
+    (error) => {
+      assert.ok(error instanceof BridgeError);
+      assert.equal(error.status, 400);
+      assert.match(error.message, /once \| always \| deny/);
+      assert.match(error.message, /navigate to youtube\.com/);
+      return true;
+    },
+  );
+  assert.ok(!seen.some((m) => m.action === "cloud_respond"), "a rejected answer must never reach the browser");
+
+  // An exact option, in any case, is normalised and forwarded.
+  await respond(bridge, "r", "perm_1", "Once");
+  const sent = seen.find((m) => m.action === "cloud_respond");
+  assert.ok(sent, "cloud_respond was not sent");
+  assert.deepEqual(sent.payload, { runId: "r", clarifyId: "perm_1", answer: "once" });
 
   ext.close();
   await bridge.stop();
