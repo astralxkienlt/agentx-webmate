@@ -14,7 +14,7 @@
  * calling it directly would move the trust boundary out of the browser.
  */
 
-import { BridgeError, TERMINAL_STATUSES, WebBrainBridge, type CloudSnapshot } from "./bridge.js";
+import { BridgeError, TERMINAL_STATUSES, WebMateBridge, type CloudSnapshot } from "./bridge.js";
 import { config } from "./config.js";
 
 export interface StartRunOptions {
@@ -33,7 +33,7 @@ export interface AwaitOptions {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function startRun(
-  bridge: WebBrainBridge,
+  bridge: WebMateBridge,
   options: StartRunOptions,
   timeoutMs?: number,
 ): Promise<CloudSnapshot> {
@@ -54,7 +54,7 @@ export async function startRun(
 }
 
 export async function getStatus(
-  bridge: WebBrainBridge,
+  bridge: WebMateBridge,
   runId?: string,
   timeoutMs?: number,
 ): Promise<CloudSnapshot | { runs: CloudSnapshot[] }> {
@@ -67,7 +67,7 @@ export async function getStatus(
 }
 
 export async function respond(
-  bridge: WebBrainBridge,
+  bridge: WebMateBridge,
   runId: string,
   clarifyId: string,
   answer: string,
@@ -80,7 +80,7 @@ export async function respond(
   );
 }
 
-export async function abort(bridge: WebBrainBridge, runId: string): Promise<CloudSnapshot> {
+export async function abort(bridge: WebMateBridge, runId: string): Promise<CloudSnapshot> {
   return await bridge.request<CloudSnapshot>("cloud_abort", { runId });
 }
 
@@ -88,12 +88,12 @@ export async function abort(bridge: WebBrainBridge, runId: string): Promise<Clou
  * Poll until the run finishes, needs the user, or we run out of patience.
  *
  * A timeout here does NOT abort the run — the browser keeps working and the
- * caller can resume with `webbrain_status`. Silently killing a half-finished
+ * caller can resume with `webmate_status`. Silently killing a half-finished
  * task that may have already submitted a form would be worse than reporting
  * that it is still going.
  */
 export async function awaitSettled(
-  bridge: WebBrainBridge,
+  bridge: WebMateBridge,
   runId: string,
   { timeoutMs }: AwaitOptions,
 ): Promise<{ snapshot: CloudSnapshot; timedOut: boolean }> {
@@ -134,11 +134,11 @@ export async function awaitSettled(
   return { snapshot: last, timedOut: true };
 }
 
-/** Render a snapshot as the text an calling agent actually needs to read. */
+/** Render a snapshot as the text a calling agent actually needs to read. */
 export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): string {
   const lines: string[] = [];
   lines.push(`run_id: ${snapshot.runId}`);
-  lines.push(`status: ${snapshot.status}${timedOut ? " (still running — poll webbrain_status)" : ""}`);
+  lines.push(`status: ${snapshot.status}${timedOut ? " (still running — poll webmate_status)" : ""}`);
   if (snapshot.mode) lines.push(`mode: ${snapshot.mode}`);
   if (snapshot.finalUrl) lines.push(`final_url: ${snapshot.finalUrl}`);
 
@@ -146,11 +146,11 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
     const clarifyId = snapshot.pendingInput.clarifyId || snapshot.pendingInput.clarify_id || "";
     const question = snapshot.pendingInput.question || "(no question text supplied)";
     lines.push("");
-    lines.push("WebBrain is waiting on a human decision before it continues.");
+    lines.push("AgentX WebMate is waiting on a human decision before it continues.");
     lines.push(`question: ${question}`);
     lines.push(`clarify_id: ${clarifyId}`);
     lines.push(
-      "Relay this to the user and send their answer with webbrain_respond. " +
+      "Relay this to the user and send their answer with webmate_respond. " +
         "Do not invent an answer on their behalf.",
     );
   }

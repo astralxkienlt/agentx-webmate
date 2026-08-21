@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-process.env.WEBBRAIN_POLL_INTERVAL_MS = "5";
+process.env.WEBMATE_POLL_INTERVAL_MS = "5";
 
 const { awaitSettled, startRun } = await import("../dist/runs.js");
 const { BridgeError } = await import("../dist/bridge.js");

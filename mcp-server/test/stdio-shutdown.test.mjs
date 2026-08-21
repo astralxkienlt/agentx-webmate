@@ -40,7 +40,7 @@ test("closing MCP stdin stops the bridge process", async () => {
   const port = await freePort();
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: packageDir,
-    env: { ...process.env, WEBBRAIN_BRIDGE_PORT: String(port) },
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
     stdio: ["pipe", "ignore", "pipe"],
   });
 

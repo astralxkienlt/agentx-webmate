@@ -3,7 +3,7 @@ import test from "node:test";
 
 // Load runs.ts with a poll interval much longer than the requested run timeout.
 // Before the deadline cap, this 20ms timeout blocked for the full 500ms poll.
-process.env.WEBBRAIN_POLL_INTERVAL_MS = "500";
+process.env.WEBMATE_POLL_INTERVAL_MS = "500";
 
 const { awaitSettled } = await import("../dist/runs.js");
 
