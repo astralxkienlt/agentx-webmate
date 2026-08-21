@@ -1613,7 +1613,236 @@ export class Agent extends LoopDetector {
     return /Subscribe for more usage:\s*https?:\/\/\S+/i.test(String(err?.message || ''));
   }
 
+<<<<<<< HEAD
   async _chat(provider, messages, options, requestContext = null) {
+=======
+  _usageTokenCounts(usage) {
+    const positiveNumber = (value) => {
+      const number = Number(value ?? 0);
+      return Number.isFinite(number) && number > 0 ? number : 0;
+    };
+    const inputTokens = positiveNumber(
+      usage?.prompt_tokens ??
+      usage?.input_tokens ??
+      usage?.promptTokens ??
+      usage?.inputTokens ??
+      0
+    );
+    const outputTokens = positiveNumber(
+      usage?.completion_tokens ??
+      usage?.output_tokens ??
+      usage?.completionTokens ??
+      usage?.outputTokens ??
+      0
+    );
+    // OpenAI includes cache reads and writes in its input total. Anthropic and
+    // Bedrock report cache reads and writes separately from regular input.
+    let includedCacheReadTokens = positiveNumber(
+      usage?.prompt_tokens_details?.cached_tokens ??
+      usage?.input_tokens_details?.cached_tokens ??
+      usage?.promptTokensDetails?.cachedTokens ??
+      usage?.inputTokensDetails?.cachedTokens ??
+      0
+    );
+    let includedCacheWriteTokens = positiveNumber(
+      usage?.prompt_tokens_details?.cache_write_tokens ??
+      usage?.input_tokens_details?.cache_write_tokens ??
+      usage?.promptTokensDetails?.cacheWriteTokens ??
+      usage?.inputTokensDetails?.cacheWriteTokens ??
+      0
+    );
+    // Nested OpenAI detail counts are subsets of the input total.
+    includedCacheReadTokens = Math.min(includedCacheReadTokens, inputTokens);
+    includedCacheWriteTokens = Math.min(
+      includedCacheWriteTokens,
+      Math.max(0, inputTokens - includedCacheReadTokens)
+    );
+    const cacheReadTokens = positiveNumber(
+      usage?.cache_read_input_tokens ??
+      usage?.cacheReadInputTokens ??
+      0
+    );
+    const cacheDetails = Array.isArray(usage?.cacheDetails)
+      ? usage.cacheDetails
+      : (Array.isArray(usage?.cache_details) ? usage.cache_details : []);
+    const bedrockCacheWriteTokens = (ttl) => cacheDetails.reduce((sum, detail) => {
+      if (detail?.ttl !== ttl) return sum;
+      return sum + positiveNumber(detail?.inputTokens ?? detail?.input_tokens);
+    }, 0);
+    const cacheWrite5mTokens = Math.max(positiveNumber(
+      usage?.cache_creation?.ephemeral_5m_input_tokens ??
+      usage?.cacheCreation?.ephemeral5mInputTokens ??
+      0
+    ), bedrockCacheWriteTokens('5m'));
+    const cacheWrite1hTokens = Math.max(positiveNumber(
+      usage?.cache_creation?.ephemeral_1h_input_tokens ??
+      usage?.cacheCreation?.ephemeral1hInputTokens ??
+      0
+    ), bedrockCacheWriteTokens('1h'));
+    const reportedCacheWriteTokens = positiveNumber(
+      usage?.cache_creation_input_tokens ??
+      usage?.cache_write_input_tokens ??
+      usage?.cacheCreationInputTokens ??
+      usage?.cacheWriteInputTokens ??
+      0
+    );
+    return {
+      inputTokens,
+      outputTokens,
+      includedCacheReadTokens,
+      includedCacheWriteTokens,
+      cacheReadTokens,
+      cacheWriteTokens: Math.max(reportedCacheWriteTokens, cacheWrite5mTokens + cacheWrite1hTokens),
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
+    };
+  }
+
+  _estimateUsageCostUsd(provider, usage) {
+    const config = provider?.config || {};
+    const inputRate = this._normalizeCostRate(config.inputCostPerMillionUsd) ?? DEFAULT_INPUT_COST_PER_MILLION_USD;
+    const outputRate = this._normalizeCostRate(config.outputCostPerMillionUsd) ?? DEFAULT_OUTPUT_COST_PER_MILLION_USD;
+    const cacheReadRate = this._normalizeCostRate(config.cacheReadCostPerMillionUsd) ?? inputRate;
+    const cacheWriteRate = this._normalizeCostRate(config.cacheWriteCostPerMillionUsd) ?? inputRate;
+    const cacheWrite1hRate = this._normalizeCostRate(config.cacheWrite1hCostPerMillionUsd) ?? cacheWriteRate;
+    const {
+      inputTokens,
+      outputTokens,
+      includedCacheReadTokens,
+      includedCacheWriteTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
+    } = this._usageTokenCounts(usage);
+    const uncachedInputTokens = inputTokens - includedCacheReadTokens - includedCacheWriteTokens;
+    const unspecifiedCacheWriteTokens = Math.max(0, cacheWriteTokens - cacheWrite5mTokens - cacheWrite1hTokens);
+    if (
+      !uncachedInputTokens &&
+      !outputTokens &&
+      !includedCacheReadTokens &&
+      !includedCacheWriteTokens &&
+      !cacheReadTokens &&
+      !cacheWriteTokens
+    ) return 0;
+    return (
+      (uncachedInputTokens * inputRate) +
+      ((includedCacheReadTokens + cacheReadTokens) * cacheReadRate) +
+      ((unspecifiedCacheWriteTokens + cacheWrite5mTokens + includedCacheWriteTokens) * cacheWriteRate) +
+      (cacheWrite1hTokens * cacheWrite1hRate) +
+      (outputTokens * outputRate)
+    ) / TOKENS_PER_MILLION;
+  }
+
+  _extractUsageCostUsd(provider, usage) {
+    if (!usage || typeof usage !== 'object') return 0;
+    const raw = usage.cost_usd ?? usage.costUsd ?? usage.total_cost_usd ?? usage.total_cost ?? usage.totalCost ?? usage.cost;
+    if (raw != null && raw !== '') {
+      const n = typeof raw === 'string' ? Number.parseFloat(raw) : Number(raw);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+    return this._estimateUsageCostUsd(provider, usage);
+  }
+
+  _newCostRunState() {
+    return { spentUsd: 0 };
+  }
+
+  async _getCostAllowanceState() {
+    try {
+      const stored = await chrome.storage.local.get([
+        COST_ALLOWANCE_SESSION_KEY,
+        COST_ALLOWANCE_TOTAL_KEY,
+        CLOUD_COST_SPENT_KEY,
+      ]);
+      this.costAllowanceSessionUsd = this._normalizeCostLimit(stored[COST_ALLOWANCE_SESSION_KEY]);
+      this.costAllowanceTotalUsd = this._normalizeCostLimit(stored[COST_ALLOWANCE_TOTAL_KEY]);
+      this.meteredProviderCostSpentUsd = this._normalizeCostSpent(stored[CLOUD_COST_SPENT_KEY]);
+    } catch { /* keep in-memory defaults */ }
+    return {
+      sessionLimitUsd: this.costAllowanceSessionUsd,
+      totalLimitUsd: this.costAllowanceTotalUsd,
+      totalSpentUsd: this.meteredProviderCostSpentUsd,
+    };
+  }
+
+  _costAllowanceMessage(scope, spentUsd, limitUsd) {
+    const scopeText = scope === 'session' ? 'this session' : 'total cloud/router usage';
+    return `Cloud cost allowance reached: ${scopeText} is ${this._formatUsd(spentUsd)} against the ${this._formatUsd(limitUsd)} limit. Stopping before further cloud/router model calls. Increase or reset the allowance in Settings.`;
+  }
+
+  _checkCostAllowanceState(state, costState) {
+    const sessionSpent = this._normalizeCostSpent(costState?.spentUsd);
+    if (sessionSpent + COST_EPSILON >= state.sessionLimitUsd) {
+      return this._costAllowanceMessage('session', sessionSpent, state.sessionLimitUsd);
+    }
+    if (state.totalSpentUsd + COST_EPSILON >= state.totalLimitUsd) {
+      return this._costAllowanceMessage('total', state.totalSpentUsd, state.totalLimitUsd);
+    }
+    return null;
+  }
+
+  async _checkCostAllowance(provider, costState) {
+    if (!this._isCostMeteredProvider(provider)) return null;
+    const state = await this._getCostAllowanceState();
+    return this._checkCostAllowanceState(state, costState);
+  }
+
+  async _recordCostUsage(provider, usage, costState) {
+    if (!this._isCostMeteredProvider(provider)) return null;
+    const costUsd = this._extractUsageCostUsd(provider, usage);
+    if (!costUsd) return null;
+    return this._enqueueCostUpdate(async () => {
+      const state = await this._getCostAllowanceState();
+      const nextTotal = state.totalSpentUsd + costUsd;
+      if (costState) costState.spentUsd = this._normalizeCostSpent(costState.spentUsd) + costUsd;
+      this.meteredProviderCostSpentUsd = nextTotal;
+      try { await chrome.storage.local.set({ [CLOUD_COST_SPENT_KEY]: nextTotal }); } catch {}
+      return this._checkCostAllowanceState({ ...state, totalSpentUsd: nextTotal }, costState);
+    });
+  }
+
+  _enqueueCostUpdate(fn) {
+    const run = this._costUpdateQueue.then(fn, fn);
+    this._costUpdateQueue = run.catch(() => {});
+    return run;
+  }
+
+  _costAllowanceError(message) {
+    const err = new Error(message);
+    err.code = 'WB_COST_ALLOWANCE';
+    return err;
+  }
+
+  _isCostAllowanceError(err) {
+    // WebBrain Cloud's quota 402s are also allowance terminals, but they
+    // originate in the provider rather than _costAllowanceError(). Treat them
+    // like the local cost cap so the agent does not retry it and then emit a
+    // second generic error card beside the actionable Subscribe prompt.
+    return err?.code === 'WB_COST_ALLOWANCE'
+      || /^webbrain_cloud_(?:free|paid|plus)_tier_exceeded$/i.test(String(err?.code || ''))
+      || /(?:Subscribe for more usage|Upgrade to WebBrain Plus):\s*https?:\/\/\S+/i.test(String(err?.message || ''));
+  }
+
+  // Classify a provider failure for the trace record. Trace-only: used at
+  // recordError/step_end call sites so the log carries a stable code; agent
+  // behavior never routes on the result.
+  _traceErrorCodeFor(error) {
+    if (this._isCostAllowanceError(error)) return 'COST_LIMIT';
+    const message = String(error?.message || '').toLowerCase();
+    const status = Number(error?.status);
+    if (status === 401 || status === 403 || /invalid.*credential|api\s*key|unauthorized/i.test(message)) return 'INVALID_CREDENTIAL';
+    if (status === 429 || /rate\s*limit|quota/i.test(message)) return 'RATE_LIMIT';
+    if (/context|too long|max.*token|token\s*limit/i.test(message)) return 'CONTEXT_WINDOW_EXCEEDED';
+    if (/empty|no response|could not|invalid.*output/i.test(message)) return 'EMPTY_RESPONSE';
+    return 'TRANSPORT';
+  }
+
+  async _chatWithCostAllowance(provider, messages, options, costState, requestContext = null) {
+    const before = await this._checkCostAllowance(provider, costState);
+    if (before) throw this._costAllowanceError(before);
+    this._throwIfAborted(options?.signal);
+>>>>>>> 3163505a (feat(trace): turn/step boundary events with structured failure codes)
     const result = await provider.chat(messages, requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
       : options);
@@ -25326,6 +25555,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     let finalResponse = '';
     let messageCompletion = null;
     let _traceStatus = 'done'; // updated on early exits
+    let lastTraceStep = 0; // step counter for turn_end, readable outside the loop
     let askStreamingTraceWrite = Promise.resolve();
     let shouldOrderInteractiveAskTrace = false;
     const queueAskStreamingTraceWrite = (write) => {
@@ -25635,6 +25865,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return finalResponse;
     }
 
+    if (runId) trace.recordTurnStart(runId, 0, { mode });
+
     while (steps < this.maxSteps) {
       // Check for abort before each step
       if (this._checkAbort(tabId)) {
@@ -25676,7 +25908,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
 
       steps++;
+      lastTraceStep = steps;
       onUpdate('thinking', { step: steps });
+      if (runId) trace.recordStepStart(runId, steps, {});
 
       let result;
       try {
@@ -25720,11 +25954,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (shouldOrderInteractiveAskTrace) await queueAskStreamingTraceWrite(writeResponseTrace);
           else writeResponseTrace();
         }
+        if (runId) trace.recordStepEnd(runId, steps, { ok: true });
       } catch (e) {
         this._logDebug({ type: 'llm_error', step: steps, error: e.message });
         if (this._isUsageLimitError(e)) {
           finalResponse = e.message;
           _traceStatus = 'cost_limit';
+          if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'COST_LIMIT' });
           messages.push({ role: 'assistant', content: finalResponse });
           onUpdate('warning', { message: finalResponse });
           break;
@@ -25732,6 +25968,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         // If context overflow, trim aggressively and retry once
         if (this._isContextOverflow(e.message)) {
           onUpdate('thinking', { step: steps, note: 'Context too large, trimming...' });
+          if (runId) trace.recordNote(runId, steps, 'llm_retry', { attempt: 1, delayMs: 0, code: 'CONTEXT_WINDOW_EXCEEDED' });
           emergencyTrimMessagesForRun();
           try {
             const useTools = provider.supportsTools && tools.length > 0;
@@ -25740,15 +25977,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             this._logDebug({ type: 'llm_request_retry', step: steps, provider: provider.constructor.name, messages: prunedMessages, options: chatOpts });
             result = await chatMainTurn(prunedMessages, chatOpts, { tabId, generationName: 'main' });
             this._logDebug({ type: 'llm_response_retry', step: steps, content: result.content, toolCalls: result.toolCalls });
+            if (runId) trace.recordStepEnd(runId, steps, { ok: true, retried: true });
           } catch (e2) {
             this._logDebug({ type: 'llm_error_retry', step: steps, error: e2.message });
             if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
+              if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'COST_LIMIT' });
               messages.push({ role: 'assistant', content: finalResponse });
               onUpdate('warning', { message: finalResponse });
               break;
             }
+            if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'CONTEXT_WINDOW_EXCEEDED' });
             onUpdate('error', { message: `Context still too large after trimming: ${e2.message}` });
             finalResponse = 'The conversation got too long. Please start a new conversation (click the + button).';
             messages.push({ role: 'assistant', content: finalResponse });
@@ -25756,6 +25996,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
         } else {
           if (e?.isAskStreamTerminalError === true) {
+<<<<<<< HEAD
+=======
+            if (this._isWebgpuGenerationBudgetError(e)
+                && this._isStandaloneWebgpuRun(runOptions)
+                && !standaloneWebgpuBudgetRecoveryAttempted
+                && this._compactStandaloneWebgpuRagPrompt(enriched)) {
+              standaloneWebgpuBudgetRecoveryAttempted = true;
+              onUpdate('warning', { message: 'The on-device model ran out of reasoning budget; retrying with a shorter prompt.' });
+              this._persist(tabId);
+              continue;
+            }
+            if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: this._traceErrorCodeFor(e) });
+>>>>>>> 3163505a (feat(trace): turn/step boundary events with structured failure codes)
             onUpdate('error', { message: e.message });
             finalResponse = `Error communicating with LLM: ${e.message}`;
             messages.push({ role: 'assistant', content: finalResponse });
@@ -25763,21 +26016,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
           // Retry once after a short delay for transient errors (rate limits, network).
           this._logDebug({ type: 'llm_error_retrying', step: steps, error: e.message });
+          if (runId) trace.recordNote(runId, steps, 'llm_retry', { attempt: 1, delayMs: 2000, code: this._traceErrorCodeFor(e) });
           await new Promise(r => setTimeout(r, 2000));
           try {
             const useTools2 = provider.supportsTools && tools.length > 0;
             const chatOpts2 = { tools: useTools2 ? tools : undefined, temperature: plannerTemperature, maxTokens: 4096 };
             result = await chatMainTurn(this._pruneOldImages(modelMessagesForRun(), provider), chatOpts2, { tabId, generationName: 'main' });
             this._logDebug({ type: 'llm_response_after_retry', step: steps, content: result.content, toolCalls: result.toolCalls });
+            if (runId) trace.recordStepEnd(runId, steps, { ok: true, retried: true });
           } catch (e2) {
             this._logDebug({ type: 'llm_error_final', step: steps, error: e2.message });
             if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
+              if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'COST_LIMIT' });
               messages.push({ role: 'assistant', content: finalResponse });
               onUpdate('warning', { message: finalResponse });
               break;
             }
+            if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: this._traceErrorCodeFor(e2) });
             onUpdate('error', { message: e2.message });
             finalResponse = `Error communicating with LLM: ${e2.message}`;
             messages.push({ role: 'assistant', content: finalResponse });
@@ -26062,13 +26319,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       _traceStatus = 'error';
       finalResponse = `Error: ${message}`;
       if (runId) {
-        const writeErrorTrace = () => trace.recordError(runId, null, 'agent', message);
+        const writeErrorTrace = () => trace.recordError(runId, null, 'agent', message, this._traceErrorCodeFor(error));
         if (shouldOrderInteractiveAskTrace) await queueAskStreamingTraceWrite(writeErrorTrace);
         else writeErrorTrace();
       }
       throw error;
     } finally {
       await askStreamingTraceWrite;
+      if (runId) trace.recordTurnEnd(runId, lastTraceStep, { status: _traceStatus });
       this._endTraceRun(tabId, runId, _traceStatus, finalResponse);
     }
   }
@@ -26247,8 +26505,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
     let runId = null;
     let finalResponse = '';
+    let lastTraceStep = 0; // step counter for turn_end, readable outside the loop
     let _traceStatus = 'done';
     const finish = (response, status = _traceStatus) => {
+      // Single exit point for every loop outcome: record the turn boundary
+      // here so every status transition (done/cancelled/cost_limit/error/…)
+      // lands exactly one turn_end event, before the run record is closed.
+      if (runId) trace.recordTurnEnd(runId, lastTraceStep, { status });
       finalResponse = response || '';
       _traceStatus = status;
       return response;
@@ -26393,7 +26656,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
 
       steps++;
+      lastTraceStep = steps;
       onUpdate('thinking', { step: steps });
+      if (runId) trace.recordStepStart(runId, steps, {});
 
       try {
         let fullText = '';
@@ -26504,6 +26769,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (batchResult.action === 'abort') {
             return finish(batchResult.value, 'cancelled');
           }
+          if (runId) trace.recordStepEnd(runId, steps, { ok: true });
           continue;
         }
 
@@ -26531,6 +26797,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           messages.push({ role: 'assistant', content: failMsg });
           onUpdate('warning', { message: failMsg });
           this._persist(tabId);
+          if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'EMPTY_RESPONSE' });
           return finish(failMsg, 'empty_output');
         }
         if (this._isActionMode(mode) && this._isCompressionPlaceholderResponse(fullText)) {
@@ -26645,6 +26912,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         messages.push(this._withResponseItems({ role: 'assistant', content: fullText }, responseItems, reasoningContent, provider));
         this._persist(tabId);
+        if (runId) trace.recordStepEnd(runId, steps, { ok: true });
         return finish(fullText);
 
       } catch (e) {
@@ -26661,6 +26929,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const errMsg = `Error: ${caughtMessage}`;
         messages.push({ role: 'assistant', content: errMsg });
         this._persist(tabId);
+        if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: this._traceErrorCodeFor(e) });
         return finish(errMsg, 'error');
       }
     }
@@ -26678,7 +26947,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const message = formatErrorMessage(error);
       _traceStatus = 'error';
       finalResponse = `Error: ${message}`;
-      if (runId) trace.recordError(runId, null, 'agent', message);
+      if (runId) {
+        trace.recordTurnEnd(runId, lastTraceStep, { status: 'error' });
+        trace.recordError(runId, null, 'agent', message, this._traceErrorCodeFor(error));
+      }
       throw error;
     } finally {
       this._endTraceRun(tabId, runId, _traceStatus, finalResponse);
