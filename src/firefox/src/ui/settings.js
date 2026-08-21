@@ -98,6 +98,7 @@ const planReviewConfidenceRow = document.getElementById('row-plan-review-confide
 const notifySoundToggle = document.getElementById('toggle-notify-sound');
 const completionConfettiToggle = document.getElementById('toggle-completion-confetti');
 const tracingToggle = document.getElementById('toggle-tracing');
+const losslessTracingToggle = document.getElementById('toggle-lossless-tracing');
 const strictSecretToggle = document.getElementById('toggle-strict-secret');
 const allowLocalNetworkToggle = document.getElementById('toggle-allow-local-network');
 const scheduledTasksToggle = document.getElementById('toggle-scheduled-tasks');
@@ -394,7 +395,7 @@ async function init() {
   browser.storage.local.remove(['authToken', 'authEmail', 'authDefaultModel']).catch(() => {});
 
   // Load display settings
-  const stored = await browser.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'strictSecretMode', 'agentAllowLocalNetwork', 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension', ATTACHMENT_RETENTION_KEY]);
+  const stored = await browser.storage.local.get(['verboseMode', 'selectionShortcutEnabled', AUTO_GROUP_TABS_KEY, 'screenshotFallback', 'maxAgentSteps', 'autoScreenshot', 'useSiteAdapters', 'voiceInputEnabled', 'alwaysAllowApiMutations', 'apiMutationObserverEnabled', 'openaiAskStreamingEnabled', 'planBeforeActMode', 'planBeforeAct', 'planReviewMode', 'planReviewConfidenceThreshold', DOWNLOAD_DIRECTORY_STORAGE_KEY, 'notifySound', 'completionConfetti', 'tracingEnabled', 'losslessTrace', 'strictSecretMode', 'agentAllowLocalNetwork', 'scheduledTasksEnabled', 'scheduledRequireConsequentialConfirmation', 'providerFilter', 'requestTimeoutMs', 'clarifyTimeoutSec', 'clarifyTimeoutSemanticsV2', 'screenshotRedaction', 'imageDetail', 'maxScreenshotsPerTurn', 'maxImageDimension', ATTACHMENT_RETENTION_KEY]);
   if (typeof stored.providerFilter === 'string' && ['all','active','local','cloud','router'].includes(stored.providerFilter)) {
     providerFilter = stored.providerFilter;
   }
@@ -462,6 +463,10 @@ async function init() {
   if (notifySoundToggle) notifySoundToggle.checked = stored.notifySound ?? true;
   if (completionConfettiToggle) completionConfettiToggle.checked = stored.completionConfetti ?? true;
   if (tracingToggle) tracingToggle.checked = stored.tracingEnabled === true;
+  if (losslessTracingToggle) {
+    losslessTracingToggle.checked = stored.losslessTrace === true;
+    losslessTracingToggle.disabled = tracingToggle?.checked !== true;
+  }
   if (strictSecretToggle) strictSecretToggle.checked = stored.strictSecretMode === true; // off by default
   if (allowLocalNetworkToggle) allowLocalNetworkToggle.checked = stored.agentAllowLocalNetwork === true;
   if (scheduledTasksToggle) scheduledTasksToggle.checked = stored.scheduledTasksEnabled !== false;
@@ -1163,6 +1168,17 @@ completionConfettiToggle?.addEventListener('change', async () => {
 
 tracingToggle?.addEventListener('change', async () => {
   await browser.storage.local.set({ tracingEnabled: tracingToggle.checked }).catch(() => {});
+  if (losslessTracingToggle) {
+    losslessTracingToggle.disabled = tracingToggle.checked !== true;
+    if (!tracingToggle.checked) {
+      losslessTracingToggle.checked = false;
+      await browser.storage.local.set({ losslessTrace: false }).catch(() => {});
+    }
+  }
+});
+
+losslessTracingToggle?.addEventListener('change', async () => {
+  await browser.storage.local.set({ losslessTrace: losslessTracingToggle.checked }).catch(() => {});
 });
 
 strictSecretToggle?.addEventListener('change', async () => {
