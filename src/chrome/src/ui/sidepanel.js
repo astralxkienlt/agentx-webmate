@@ -8394,6 +8394,7 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
     } finally {
       setConversationClearInProgress(tabId, false);
       if (shouldRecoverActiveRun) await recoverActiveRunAfterFailedConversationClear(tabId);
+      else if (backgroundClearSucceeded) await drainQueuedPromptsAfterRunSettles(tabId);
     }
     return '';
   }
