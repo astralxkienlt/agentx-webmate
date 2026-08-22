@@ -5074,10 +5074,6 @@ async function recoverActiveRunAfterFailedConversationClear(tabId) {
 
   const runUi = state.runUi && typeof state.runUi === 'object' ? state.runUi : null;
   const requestId = String(runUi?.requestId || '');
-  if (runUi?.status === 'awaiting_plan') {
-    finishFailedConversationClearRecovery(numericTabId, { processing: true });
-    return true;
-  }
   const oldFollowerStillSettling = !requestId
     || conversationClearFollowerCancellationRequestIds.has(requestId)
     || localRunFollowers.has(numericTabId)
@@ -5085,6 +5081,10 @@ async function recoverActiveRunAfterFailedConversationClear(tabId) {
   if (oldFollowerStillSettling) {
     scheduleFailedConversationClearRecoveryRetry(numericTabId);
     return false;
+  }
+  if (runUi?.status === 'awaiting_plan') {
+    finishFailedConversationClearRecovery(numericTabId, { processing: true });
+    return true;
   }
 
   void adoptRestoredRunState(numericTabId, state);
