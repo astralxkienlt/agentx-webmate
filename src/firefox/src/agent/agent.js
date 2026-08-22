@@ -12095,10 +12095,31 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     } catch (e) { /* ignore */ }
   }
 
+  clearLastTypeFieldIdent(tabId) {
+    this._lastTypeFieldIdent?.delete(tabId);
+    if (!this._lastTypeFieldEpoch) this._lastTypeFieldEpoch = new Map();
+    const nextEpoch = (this._lastTypeFieldEpoch.get(tabId) || 0) + 1;
+    this._lastTypeFieldEpoch.set(tabId, nextEpoch);
+  }
+
+  _captureLastTypeFieldEpoch(tabId) {
+    return this._lastTypeFieldEpoch?.get(tabId) || 0;
+  }
+
+  _rememberLastTypeFieldIdent(tabId, fieldIdent, epoch) {
+    if (this._captureLastTypeFieldEpoch(tabId) !== epoch) return false;
+    const repeated = this._lastTypeFieldIdent?.get(tabId) === fieldIdent;
+    if (!this._lastTypeFieldIdent) this._lastTypeFieldIdent = new Map();
+    this._lastTypeFieldIdent.set(tabId, fieldIdent);
+    return repeated;
+  }
+
   _cleanupTab(tabId, { preserveRunGuard = false } = {}) {
     this._cancelPendingPlans(tabId, 'tab closed');
     this._clarificationAuthorizationGuards.delete(tabId);
     this._isPdfTabCache.delete(tabId);
+    this._lastTypeFieldIdent?.delete(tabId);
+    this._lastTypeFieldEpoch?.delete(tabId);
     this.progressPageScopes.delete(tabId);
     this.progressSessions.delete(tabId);
     this.selectionGroundingScopes.delete(tabId);
