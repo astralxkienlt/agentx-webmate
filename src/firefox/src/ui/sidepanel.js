@@ -3072,7 +3072,7 @@ function drainQueuedComposerMessageForCurrentTab() {
   return true;
 }
 
-async function renderClearedConversationForTab(tabId) {
+async function renderClearedConversationForTab(tabId, { allowCacheClearFailure = false } = {}) {
   dismissSelectionAskAction();
   setSelectionGroundedForTab(tabId, false);
   // The background conversation is already cleared before this helper runs.
@@ -3080,9 +3080,15 @@ async function renderClearedConversationForTab(tabId) {
   // its follower no longer owns the tab and cannot settle these flags itself.
   setTabProcessing(tabId, false);
   setTabAbortRequested(tabId, false);
-  const clearResult = await clearCachedTabChat(tabId);
-  if (!clearResult?.ok || clearResult?.skipped) {
-    throw new Error(clearResult?.error || 'Unable to clear tab chat.');
+  let clearResult = null;
+  let cacheClearError = null;
+  try {
+    clearResult = await clearCachedTabChat(tabId);
+  } catch (error) {
+    cacheClearError = error;
+  }
+  if ((!clearResult?.ok || clearResult?.skipped) && !allowCacheClearFailure) {
+    throw cacheClearError || new Error(clearResult?.error || 'Unable to clear tab chat.');
   }
   resetComposerHistoryNavigation(tabId);
   saveInputDraftForTab(tabId, '');
@@ -8034,16 +8040,28 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
 
   if (command.value === '/reset') {
     const clearingRequestId = localRunRequestIdForTab(tabId);
+    let backgroundClearSucceeded = false;
     let shouldDrainQueuedPrompts = false;
     setConversationClearInProgress(tabId, true);
     try {
       if (isTabProcessing(tabId)) await abortRunForConversationClear(tabId, clearingRequestId);
       await sendToBackground('clear_conversation', { tabId });
+      backgroundClearSucceeded = true;
       suppressRunUpdatesForClearedConversation(tabId, clearingRequestId);
       await renderClearedConversationForTab(tabId);
     } catch (error) {
-      shouldDrainQueuedPrompts = true;
-      showComposerToast(error?.message || 'Unable to clear the conversation.', { duration: 7000 });
+      if (backgroundClearSucceeded) {
+        try {
+          // The authoritative conversation is already empty. Retry the cache
+          // handoff, then finish the local reset even if that retry still fails.
+          await renderClearedConversationForTab(tabId, { allowCacheClearFailure: true });
+        } catch (localError) {
+          showComposerToast(localError?.message || 'Unable to finish clearing the conversation.', { duration: 7000 });
+        }
+      } else {
+        shouldDrainQueuedPrompts = true;
+        showComposerToast(error?.message || 'Unable to clear the conversation.', { duration: 7000 });
+      }
     } finally {
       setConversationClearInProgress(tabId, false);
       if (shouldDrainQueuedPrompts) await drainQueuedPromptsAfterRunSettles(tabId);
@@ -13432,11 +13450,13 @@ async function startNewConversationForTab(tabId) {
   if (!await requestNewConversationConfirmation(tabId)) return false;
   if (!sameTabId(currentTabId, tabId)) return false;
   const clearingRequestId = localRunRequestIdForTab(tabId);
+  let backgroundClearSucceeded = false;
   let shouldDrainQueuedPrompts = false;
   setConversationClearInProgress(tabId, true);
   try {
     if (isTabProcessing(tabId)) await abortRunForConversationClear(tabId, clearingRequestId);
     await sendToBackground('clear_conversation', { tabId });
+    backgroundClearSucceeded = true;
     await sendToBackground('clear_context_menu_prompt', { tabId }).catch(() => {});
     suppressRunUpdatesForClearedConversation(tabId, clearingRequestId);
     clearQueuedComposerMessagesForTab(tabId);
@@ -13444,6 +13464,15 @@ async function startNewConversationForTab(tabId) {
     await renderClearedConversationForTab(tabId);
     return true;
   } catch (error) {
+    if (backgroundClearSucceeded) {
+      try {
+        await renderClearedConversationForTab(tabId, { allowCacheClearFailure: true });
+        return true;
+      } catch (localError) {
+        showComposerToast(localError?.message || 'Unable to finish clearing the conversation.', { duration: 7000 });
+        return false;
+      }
+    }
     shouldDrainQueuedPrompts = true;
     showComposerToast(error?.message || 'Unable to clear the conversation.', { duration: 7000 });
     return false;
