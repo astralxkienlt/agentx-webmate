@@ -26,6 +26,7 @@ const DB_VERSION = 2;
 // opt-in debugging tier from exhausting IndexedDB on a single long run.
 const LOSSILESS_RESULT_CAP = 200_000;
 const LOSSILESS_REQUEST_CAP = 500_000;
+const LOSSILESS_RUN_CAP = 5_000_000;
 
 let _dbPromise = null;
 function openDB() {
@@ -139,6 +140,20 @@ async function _peekSeq(db, runId) {
   return result;
 }
 
+<<<<<<< HEAD
+=======
+// Restore per-run flags after worker eviction from the durable run record so
+// the lossless tier decision survives a worker restart mid-run.
+async function peekRunFlags(db, runId) {
+  try {
+    const record = await promisifyReq(
+      tx(db, ['runs'], 'readonly').objectStore('runs').get(runId),
+    );
+    return { lossless: record?.lossless === true, losslessBytes: record?.losslessBytes || 0 };
+  } catch { return { lossless: false, losslessBytes: 0 }; }
+}
+
+>>>>>>> 9bc5c048 (fix(trace): redact lossless JSON exports and serialize recovery)
 const _runStateLoads = new Map();
 
 async function _ensureRunState(runId, db = null) {
@@ -152,7 +167,11 @@ async function _ensureRunState(runId, db = null) {
       const resolvedDb = db || await openDB();
       const seq = await _peekSeq(resolvedDb, runId);
       const flags = await peekRunFlags(resolvedDb, runId);
+<<<<<<< HEAD
       const state = { seq, forced: flags.forced, lossless: flags.lossless };
+=======
+      const state = { seq, lossless: flags.lossless, losslessBytes: Number(flags.losslessBytes) || 0 };
+>>>>>>> 9bc5c048 (fix(trace): redact lossless JSON exports and serialize recovery)
       _runState.set(runId, state);
       return state;
     } catch { return null; }
@@ -248,14 +267,14 @@ export async function startRun(meta) {
       tabTitle: meta.tabTitle || '',
       mode: meta.mode || 'act',
       attachments: normalizeTraceAttachments(meta.attachments),
-      ...(lossless ? { lossless: true } : {}),
+      ...(lossless ? { lossless: true, losslessBytes: 0 } : {}),
       stepCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       finalContent: null,
     };
     await promisifyReq(tx(db, ['runs']).objectStore('runs').put(record));
-    _runState.set(runId, { seq: 0, model: record.model, providerId: record.providerId, lossless });
+    _runState.set(runId, { seq: 0, model: record.model, providerId: record.providerId, lossless, losslessBytes: 0 });
     return runId;
   } catch (e) {
     console.warn('[trace] startRun failed:', e);
@@ -267,9 +286,10 @@ async function _appendEventNow(runId, kind, data) {
   if (!(await tracingEnabled())) return;
   try {
     const db = await openDB();
-    await _ensureRunState(runId, db);
+    const state = await _ensureRunState(runId, db);
+    const resolvedData = typeof data === 'function' ? data(state) : data;
     const seq = _newSeq(runId);
-    const ev = makeEvent(runId, seq, kind, data);
+    const ev = makeEvent(runId, seq, kind, resolvedData);
     if (!ev) {
       // Unknown kind or unserializable data: skip the write and surface the
       // bug at recording time instead of storing a ghost event.
@@ -277,6 +297,16 @@ async function _appendEventNow(runId, kind, data) {
       return null;
     }
     await promisifyReq(tx(db, ['events']).objectStore('events').put(ev));
+    if (state?.lossless === true && (kind === 'llm_request' || kind === 'tool')) {
+      let bytes = 0;
+      try { bytes = JSON.stringify(resolvedData).length; } catch {}
+      state.losslessBytes = (state.losslessBytes || 0) + bytes;
+      const run = await promisifyReq(tx(db, ['runs']).objectStore('runs').get(runId));
+      if (run?.lossless === true) {
+        run.losslessBytes = state.losslessBytes;
+        await promisifyReq(tx(db, ['runs']).objectStore('runs').put(run));
+      }
+    }
     return seq;
   } catch (e) {
     console.warn('[trace] appendEvent failed:', e);
@@ -289,37 +319,24 @@ function _appendEvent(runId, kind, data) {
 
 export function recordLLMRequest(runId, step, payload, provenanceInput = null) {
   // Lossless tier (opt-in): persist the request's full message/tool shape for
-  // deep debugging and request reconstruction. Clamped so one oversized
-  // request cannot exhaust IndexedDB; the marker mirrors the tool-result
-  // truncation convention ({ _truncated, length, head }).
-  const state = await _ensureRunState(runId);
-  if (state?.lossless === true && provenanceInput) {
-    const { messages, tools } = clampLosslessRequest(provenanceInput.messages || null, provenanceInput.tools || null);
-    return _appendEvent(runId, 'llm_request', {
-      step,
-      ...payload,
-      lossless: true,
-      messages,
-      tools,
-    });
-  }
-  // Default tier: never persist full prompts, message text, tool schemas, or
-  // tool names here. The optional fourth argument is reduced to content-free
-  // provenance only.
-  let promptProvenance = null;
-  if (provenanceInput) {
-    try {
-      promptProvenance = buildPromptTraceProvenance(
-        provenanceInput.messages,
-        provenanceInput.tools,
-        provenanceInput.runtimeMode,
-      );
-    } catch { /* provenance must never break a model request */ }
-  }
-  return _appendEvent(runId, 'llm_request', {
-    step,
-    ...payload,
-    ...(promptProvenance ? { promptProvenance } : {}),
+  // deep debugging and request reconstruction. Clamp oversized requests so
+  // one request cannot exhaust IndexedDB.
+  return _appendEvent(runId, 'llm_request', (state) => {
+    if (state?.lossless === true && provenanceInput) {
+      if ((state.losslessBytes || 0) >= LOSSILESS_RUN_CAP) {
+        return { step, ...payload, lossless: true, messages: { _truncated: true, length: 0, head: '(per-run lossless budget reached)', toolNames: [] }, tools: null };
+      }
+      const { messages, tools } = clampLosslessRequest(provenanceInput.messages || null, provenanceInput.tools || null);
+      return { step, ...payload, lossless: true, messages, tools };
+    }
+    // Default tier: never persist full prompts, message text, tool schemas, or
+    // tool names here.
+    // The optional fourth argument is reduced to content-free provenance only.
+    let promptProvenance = null;
+    if (provenanceInput) {
+      try { promptProvenance = buildPromptTraceProvenance(provenanceInput.messages, provenanceInput.tools, provenanceInput.runtimeMode); } catch {}
+    }
+    return { step, ...payload, ...(promptProvenance ? { promptProvenance } : {}) };
   });
 }
 
@@ -343,25 +360,21 @@ export function recordLLMResponse(runId, step, { content, toolCalls, usage, late
   });
 }
 
-export async function recordToolCall(runId, step, { name, args, result, latencyMs }) {
+export function recordToolCall(runId, step, { name, args, result, latencyMs }) {
   // Truncate very large tool results (a11y trees can be huge). Keep the first
   // 20KB verbatim by default — plenty for debugging flow — and 200KB in the
   // opt-in lossless tier; note the truncation either way.
-  const state = await _ensureRunState(runId);
-  const cap = state?.lossless === true ? LOSSILESS_RESULT_CAP : 20_000;
-  let shortResult = result;
-  try {
-    const s = typeof result === 'string' ? result : JSON.stringify(result);
-    if (s && s.length > cap) {
-      shortResult = { _truncated: true, length: s.length, head: s.slice(0, cap) };
+  return _appendEvent(runId, 'tool', (state) => {
+    if (state?.lossless === true && (state.losslessBytes || 0) >= LOSSILESS_RUN_CAP) {
+      return { step, name, args: args || null, result: { _truncated: true, length: 0, head: '(per-run lossless budget reached)' }, latencyMs: latencyMs || null };
     }
-  } catch {}
-  return _appendEvent(runId, 'tool', {
-    step,
-    name,
-    args: args || null,
-    result: shortResult,
-    latencyMs: latencyMs || null,
+    const cap = state?.lossless === true ? LOSSILESS_RESULT_CAP : 20_000;
+    let shortResult = result;
+    try {
+      const s = typeof result === 'string' ? result : JSON.stringify(result);
+      if (s && s.length > cap) shortResult = { _truncated: true, length: s.length, head: s.slice(0, cap) };
+    } catch {}
+    return { step, name, args: args || null, result: shortResult, latencyMs: latencyMs || null };
   });
 }
 
