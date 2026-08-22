@@ -225,7 +225,7 @@ configuration. Bug reports and feature requests belong in
 src/chrome/     Manifest V3 build — service worker, chrome.scripting, sidePanel
 src/firefox/    Manifest V2 build — background page, executeScript, sidebar_action
 docs/           Design and reference docs (en, zh-CN, fr)
-mcp-server/     MCP server (netmind-mcp) — delegate browser tasks from Claude Code, AgentX Workmate, Codex, Cursor
+mcp-server/     MCP server (netmind-mcp) — delegate browser tasks from Claude Code, Hermes, Codex, Cursor
 lmstudio-plugin/  Web tools + browser delegation as a standalone LM Studio plugin
 web/            Landing site and docs site
 test/           Node test suite, LLM scenario benchmarks, security corpora

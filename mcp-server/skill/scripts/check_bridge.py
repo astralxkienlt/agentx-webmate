@@ -5,7 +5,7 @@ Answers the questions that explain nearly every "the browser tools don't work"
 report, without needing a chat session:
 
 1. Is the bundled server on disk, and is Node.js >= 20 available?
-2. Which hosts have the server registered — AgentX Workmate / Hermes
+2. Which hosts have the server registered — Hermes
    (``mcp_servers.<name>`` in a profile's config.yaml) and Claude Code
    (``claude mcp get <name>``)?
 3. Is anything listening on the bridge port right now? (Informational: the
@@ -15,7 +15,7 @@ report, without needing a chat session:
 Usage:
     python3 check_bridge.py                 # human-readable report
     python3 check_bridge.py --json
-    python3 check_bridge.py --home PATH     # a specific Workmate profile
+    python3 check_bridge.py --home PATH     # a specific Hermes profile
     python3 check_bridge.py --port 17374
 
 Exit status 0 when the build and node checks pass and at least one host has
@@ -68,15 +68,17 @@ EXPECTED_TOOLS = tuple(f"{TOOL_PREFIX}_{t}" for t in ("connection", "run", "extr
 # ─── environment ─────────────────────────────────────────────────────────────
 
 
-def agentx_home() -> Path:
-    override = os.environ.get("AGENTX_HOME", "").strip()
+def hermes_home() -> Path:
+    override = os.environ.get("HERMES_HOME", "").strip() or os.environ.get("AGENTX_HOME", "").strip()
     if override:
         return Path(override).expanduser()
     if os.name == "nt":
         local = os.environ.get("LOCALAPPDATA", "").strip()
         if local:
-            return Path(local) / "agentx"
-    return Path.home() / ".agentx"
+            return Path(local) / "hermes"
+    if (Path.home() / ".agentx").is_dir() and not (Path.home() / ".hermes").is_dir():
+        return Path.home() / ".agentx"
+    return Path.home() / ".hermes"
 
 
 def node_version(command: str) -> Optional[str]:
@@ -204,26 +206,26 @@ def configured_port(entry: Optional[Dict[str, Any]], override: Optional[int]) ->
 # ─── per-host registration checks ───────────────────────────────────────────
 
 
-def check_workmate(home: Path, bundle: Path) -> Dict[str, Any]:
-    """Registration state in a Workmate profile; `present` is None when no profile exists."""
+def check_hermes(home: Path, bundle: Path) -> Dict[str, Any]:
+    """Registration state in a Hermes profile; `present` is None when no profile exists."""
     config = home / "config.yaml"
     if not config.is_file():
-        return {"host": "workmate", "present": None, "detail": f"no config.yaml at {home}", "entry": None}
+        return {"host": "hermes", "present": None, "detail": f"no config.yaml at {home}", "entry": None}
     try:
         data = load_config(config)
     except Exception as exc:  # noqa: BLE001
-        return {"host": "workmate", "present": False, "detail": f"{config}: {exc}", "entry": None}
+        return {"host": "hermes", "present": False, "detail": f"{config}: {exc}", "entry": None}
     servers = data.get("mcp_servers") or {}
     entry = servers.get(SERVER_NAME) if isinstance(servers, dict) else None
     if not isinstance(entry, dict):
-        return {"host": "workmate", "present": False, "detail": f"mcp_servers.{SERVER_NAME} missing in {config}", "entry": None}
+        return {"host": "hermes", "present": False, "detail": f"mcp_servers.{SERVER_NAME} missing in {config}", "entry": None}
     if not entry_enabled(entry):
-        return {"host": "workmate", "present": False, "detail": f"mcp_servers.{SERVER_NAME} is disabled in {config}", "entry": entry}
+        return {"host": "hermes", "present": False, "detail": f"mcp_servers.{SERVER_NAME} is disabled in {config}", "entry": entry}
     args = [os.path.expandvars(str(a)) for a in entry.get("args") or []]
     target = next((a for a in args if a.endswith(".mjs") or a.endswith("index.js")), "")
     stale = bool(target) and Path(target).expanduser().resolve() != bundle.resolve() and not Path(target).expanduser().is_file()
     detail = f"{entry.get('command', 'node')} {target}" + (" (path does not exist — re-run setup.py)" if stale else "")
-    return {"host": "workmate", "present": not stale, "detail": detail, "entry": entry}
+    return {"host": "hermes", "present": not stale, "detail": detail, "entry": entry}
 
 
 def check_claude(bundle: Path) -> Dict[str, Any]:
@@ -248,7 +250,7 @@ def check_claude(bundle: Path) -> Dict[str, Any]:
 def run_checks(home: Optional[Path] = None, port: Optional[int] = None) -> Dict[str, Any]:
     skill_dir = Path(__file__).resolve().parent.parent
     bundle = skill_dir / "scripts" / str(BRAND["bundleFile"])
-    profile = (home or agentx_home()).expanduser()
+    profile = (home or hermes_home()).expanduser()
     report: Dict[str, Any] = {"skill": str(skill_dir), "checks": [], "hosts": [], "next_steps": [], "ok": False}
     checks: List[Dict[str, Any]] = report["checks"]
     steps: List[str] = report["next_steps"]
@@ -271,11 +273,11 @@ def run_checks(home: Optional[Path] = None, port: Optional[int] = None) -> Dict[
     else:
         checks.append({"name": "node", "ok": True, "detail": f"{resolved} {version}"})
 
-    hosts = [check_workmate(profile, bundle), check_claude(bundle)]
+    hosts = [check_hermes(profile, bundle), check_claude(bundle)]
     report["hosts"] = hosts
     registered = [h for h in hosts if h["present"]]
     if not registered:
-        steps.append("Register the server: `python3 scripts/setup.py` (auto-detects AgentX Workmate and Claude Code; "
+        steps.append("Register the server: `python3 scripts/setup.py` (auto-detects Hermes and Claude Code; "
                      "`--host`, `--home PROFILE_DIR`, `--project DIR` for other cases).")
 
     wm_entry = hosts[0].get("entry")
@@ -322,7 +324,7 @@ def format_report(report: Dict[str, Any]) -> str:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--home", type=Path, default=None, help="Workmate profile to inspect (default: $AGENTX_HOME or ~/.agentx)")
+    parser.add_argument("--home", type=Path, default=None, help="Hermes profile to inspect (default: $HERMES_HOME or ~/.hermes)")
     parser.add_argument("--port", type=int, default=None, help="bridge port to probe (default: from config, else 17374)")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
     args = parser.parse_args(argv)

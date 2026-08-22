@@ -4,8 +4,8 @@
 This skill ships its MCP server as one file (scripts/<brand>-mcp.mjs), so every
 host only needs to know how to launch it. Hosts this script understands:
 
-  workmate   AgentX Workmate / Hermes — writes mcp_servers.<name> into the profile's
-             config.yaml (Workmate Python API → `agentx` CLI → backed-up direct edit)
+  hermes     Hermes — writes mcp_servers.<name> into the profile's
+             config.yaml (Hermes Python API → `hermes` CLI → backed-up direct edit)
   claude     Claude Code — `claude mcp add --transport stdio --scope user <name> -- node <bundle>`
   mcp-json   anything that reads an mcpServers JSON file — writes/merges DIR/.mcp.json
 
@@ -15,7 +15,7 @@ mcpServers JSON for any other host (Codex, Cursor, ...).
 Usage:
     python3 setup.py                                  # auto-detect hosts
     python3 setup.py --host claude                    # one host only
-    python3 setup.py --host workmate --home PATH      # a specific Workmate profile
+    python3 setup.py --host hermes --home PATH        # a specific Hermes profile
     python3 setup.py --project DIR                    # also write DIR/.mcp.json
     python3 setup.py --node /path/to/node             # pin the launcher path
     python3 setup.py --dry-run
@@ -37,14 +37,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 MIN_NODE_MAJOR = 20
-HOSTS = ("workmate", "claude", "mcp-json")
+HOSTS = ("hermes", "claude", "mcp-json")
 
 
 # ─── brand ───────────────────────────────────────────────────────────────────
 
 
 def load_brand() -> Dict[str, object]:
-    """Brand facts written next to this script at package-build time (AgentX defaults)."""
+    """Brand facts written next to this script at package-build time (defaults)."""
     defaults: Dict[str, object] = {
         "productName": "AgentX WebMate",
         "registrationName": "webmate",
@@ -74,14 +74,16 @@ BRIDGE_URL = f"ws://127.0.0.1:{BRAND['bridgePort']}/extension"
 
 
 def default_home() -> Path:
-    override = os.environ.get("AGENTX_HOME", "").strip()
+    override = os.environ.get("HERMES_HOME", "").strip() or os.environ.get("AGENTX_HOME", "").strip()
     if override:
         return Path(override).expanduser()
     if os.name == "nt":
         local = os.environ.get("LOCALAPPDATA", "").strip()
         if local:
-            return Path(local) / "agentx"
-    return Path.home() / ".agentx"
+            return Path(local) / "hermes"
+    if (Path.home() / ".agentx").is_dir() and not (Path.home() / ".hermes").is_dir():
+        return Path.home() / ".agentx"
+    return Path.home() / ".hermes"
 
 
 def install_root(home: Path) -> Path:
@@ -100,6 +102,7 @@ def find_node(explicit: Optional[str]) -> Optional[str]:
         "/opt/homebrew/bin/node",
         "/usr/local/bin/node",
         "/usr/bin/node",
+        str(Path.home() / ".hermes" / "node" / "bin" / "node"),
         str(Path.home() / ".agentx" / "node" / "bin" / "node"),
     ]
     for candidate in candidates:
@@ -117,25 +120,35 @@ def node_major(node: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-def find_agentx_cli(home: Path, explicit: Optional[str]) -> Optional[str]:
+def find_hermes_cli(home: Path, explicit: Optional[str]) -> Optional[str]:
     candidates: List[Path] = []
     if explicit:
         candidates.append(Path(explicit).expanduser())
-    env_cli = os.environ.get("AGENTX_CLI", "").strip()
+    env_cli = os.environ.get("HERMES_CLI", "").strip() or os.environ.get("AGENTX_CLI", "").strip()
     if env_cli:
         candidates.append(Path(env_cli).expanduser())
-    found = shutil.which("agentx")
-    if found:
-        candidates.append(Path(found))
+    for name in ("hermes", "agentx"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
     exe_dir = Path(sys.executable).resolve().parent
-    candidates.append(exe_dir / ("agentx.exe" if os.name == "nt" else "agentx"))
+    for name in ("hermes", "hermes.exe", "agentx", "agentx.exe"):
+        candidates.append(exe_dir / name)
     root = install_root(home)
     if os.name == "nt":
-        candidates += [root / "agentx-agent" / "venv" / "Scripts" / "agentx.exe", root / "bin" / "agentx.exe"]
+        candidates += [
+            root / "hermes-agent" / "venv" / "Scripts" / "hermes.exe",
+            root / "agentx-agent" / "venv" / "Scripts" / "agentx.exe",
+            root / "bin" / "hermes.exe",
+            root / "bin" / "agentx.exe",
+        ]
     else:
         candidates += [
+            root / "hermes-agent" / "venv" / "bin" / "hermes",
+            root / "hermes-agent" / ".venv" / "bin" / "hermes",
             root / "agentx-agent" / "venv" / "bin" / "agentx",
             root / "agentx-agent" / ".venv" / "bin" / "agentx",
+            root / "bin" / "hermes",
             root / "bin" / "agentx",
         ]
     for candidate in candidates:
@@ -195,17 +208,17 @@ def entry_present(home: Path) -> bool:
     return re.search(rf"^mcp_servers:[^\n]*\n(?:[ \t]+[^\n]*\n|\s*\n)*?[ \t]{{2,}}{NAME}:", text, re.M) is not None
 
 
-# ─── Workmate writers, most-integrated first ─────────────────────────────────
+# ─── Hermes writers, most-integrated first ───────────────────────────────────
 
 
 def register_via_api(home: Path, entry: Dict[str, object]) -> Optional[bool]:
-    """Use Workmate's own config writer when this interpreter can import it.
+    """Use Hermes's own config writer when this interpreter can import it.
 
     `hermes_cli` is an installed package, but its modules import top-level repo
     modules (`branding`, `hermes_constants`) that only resolve with the repo
     root on sys.path — so put the package's parent there first.
     """
-    os.environ["AGENTX_HOME"] = str(home)
+    os.environ["HERMES_HOME"] = str(home)
     try:
         import hermes_cli  # type: ignore
     except Exception:
@@ -220,16 +233,16 @@ def register_via_api(home: Path, entry: Dict[str, object]) -> Optional[bool]:
     try:
         return bool(_save_mcp_server(NAME, dict(entry)))
     except Exception as exc:  # noqa: BLE001
-        print(f"    Workmate API write failed: {exc}")
+        print(f"    Hermes API write failed: {exc}")
         return False
 
 
-def register_via_cli(agentx: str, home: Path, entry: Dict[str, object]) -> bool:
-    env = dict(os.environ, AGENTX_HOME=str(home))
+def register_via_cli(hermes: str, home: Path, entry: Dict[str, object]) -> bool:
+    env = dict(os.environ, HERMES_HOME=str(home), AGENTX_HOME=str(home))
     # `mcp add` refuses to overwrite without a TTY (its prompt defaults to "no"),
     # while `mcp remove` proceeds (defaults to "yes") — so drop a stale entry first.
-    subprocess.run([agentx, "mcp", "remove", NAME], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-    cmd = [agentx, "mcp", "add", NAME, "--command", str(entry["command"]), "--args", *map(str, entry["args"])]  # type: ignore[arg-type]
+    subprocess.run([hermes, "mcp", "remove", NAME], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+    cmd = [hermes, "mcp", "add", NAME, "--command", str(entry["command"]), "--args", *map(str, entry["args"])]  # type: ignore[arg-type]
     # `mcp add` probes the server and then asks "Enable all N tools? [Y/n/select]".
     proc = subprocess.run(cmd, env=env, input="y\n", capture_output=True, text=True, check=False)
     for line in (proc.stdout + proc.stderr).strip().splitlines()[-3:]:
@@ -295,23 +308,23 @@ def register_via_text(home: Path, entry: Dict[str, object]) -> bool:
     return entry_present(home)
 
 
-def register_workmate(home: Path, entry: Dict[str, object], agentx_explicit: Optional[str]) -> bool:
-    print(f"  [workmate] profile {home}")
+def register_hermes(home: Path, entry: Dict[str, object], hermes_explicit: Optional[str]) -> bool:
+    print(f"  [hermes] profile {home}")
     written = register_via_api(home, entry)
-    method = "Workmate Python API"
+    method = "Hermes Python API"
     if not written:
-        agentx = find_agentx_cli(home, agentx_explicit)
-        if agentx:
-            method = f"agentx CLI ({agentx})"
-            written = register_via_cli(agentx, home, entry)
+        hermes = find_hermes_cli(home, hermes_explicit)
+        if hermes:
+            method = f"hermes CLI ({hermes})"
+            written = register_via_cli(hermes, home, entry)
     if not written:
         method = f"direct edit of config.yaml (backup: config.yaml.bak-{NAME})"
         written = register_via_text(home, entry)
     if written:
-        print(f"  [workmate] ✓ mcp_servers.{NAME} written via {method}")
-        print(f"  [workmate]   next: new AgentX session or /reload-mcp → tools mcp__{NAME}__{TOOL_PREFIX}_*")
+        print(f"  [hermes] ✓ mcp_servers.{NAME} written via {method}")
+        print(f"  [hermes]   next: new Hermes session or /reload-mcp → tools mcp__{NAME}__{TOOL_PREFIX}_*")
     else:
-        print(f"  [workmate] ✗ could not write config; add this to {home / 'config.yaml'}:")
+        print(f"  [hermes] ✗ could not write config; add this to {home / 'config.yaml'}:")
         for line in yaml_snippet(entry).splitlines():
             print(f"      {line}")
     return bool(written)
@@ -365,9 +378,10 @@ def register_project(project: Path, entry: Dict[str, object]) -> bool:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--host", choices=("auto", *HOSTS), default="auto", help="which host to register with (default: every host found)")
-    parser.add_argument("--home", type=Path, default=None, help="Workmate profile (AGENTX_HOME) to write into; default $AGENTX_HOME or ~/.agentx")
-    parser.add_argument("--agentx", default=None, help="path to the agentx CLI")
+    parser.add_argument("--host", choices=("auto", "hermes", "workmate", *HOSTS), default="auto", help="which host to register with (default: every host found)")
+    parser.add_argument("--home", type=Path, default=None, help="Hermes profile (HERMES_HOME) to write into; default $HERMES_HOME or ~/.hermes")
+    parser.add_argument("--hermes", default=None, help="path to the hermes CLI")
+    parser.add_argument("--agentx", default=None, help="path to the hermes / agentx CLI (alias)")
     parser.add_argument("--claude", default=None, help="path to the claude CLI")
     parser.add_argument("--project", type=Path, default=None, help="also write DIR/.mcp.json (project scope for Claude Code and other mcpServers readers)")
     parser.add_argument("--node", default=None, help="path to node to pin (default: bare `node` on PATH)")
@@ -398,24 +412,26 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     home = (args.home or default_home()).expanduser().resolve()
     claude = find_claude(args.claude)
-    workmate_detected = bool(
-        args.home or args.agentx or os.environ.get("AGENTX_HOME")
-        or (home / "config.yaml").is_file() or hermes_importable() or find_agentx_cli(home, None)
+    hermes_cli_explicit = args.hermes or args.agentx
+    hermes_detected = bool(
+        args.home or hermes_cli_explicit or os.environ.get("HERMES_HOME") or os.environ.get("AGENTX_HOME")
+        or (home / "config.yaml").is_file() or hermes_importable() or find_hermes_cli(home, None)
     )
-    wanted = list(HOSTS) if args.host == "auto" else [args.host]
+    wanted_host = "hermes" if args.host == "workmate" else args.host
+    wanted = list(HOSTS) if wanted_host == "auto" else [wanted_host]
     if args.project is not None and "mcp-json" not in wanted:
         wanted.append("mcp-json")
 
     plan: List[str] = []
-    if "workmate" in wanted and (workmate_detected or args.host == "workmate"):
-        plan.append("workmate")
-    if "claude" in wanted and (claude or args.host == "claude"):
+    if "hermes" in wanted and (hermes_detected or wanted_host == "hermes"):
+        plan.append("hermes")
+    if "claude" in wanted and (claude or wanted_host == "claude"):
         plan.append("claude")
     if "mcp-json" in wanted and args.project is not None:
         plan.append("mcp-json")
     print("  hosts:  " + (", ".join(plan) if plan else "none detected"))
-    if "workmate" not in plan and "workmate" in wanted and home.is_dir():
-        print(f"          (AgentX dir {home} exists but no config.yaml — pass --host workmate --home PROFILE_DIR)")
+    if "hermes" not in plan and "hermes" in wanted and home.is_dir():
+        print(f"          (Hermes dir {home} exists but no config.yaml — pass --host hermes --home PROFILE_DIR)")
 
     if args.dry_run:
         print("  dry run — nothing written. Generic mcpServers entry:")
@@ -423,8 +439,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     results: Dict[str, bool] = {}
-    if "workmate" in plan:
-        results["workmate"] = register_workmate(home, entry, args.agentx)
+    if "hermes" in plan:
+        results["hermes"] = register_hermes(home, entry, hermes_cli_explicit)
     if "claude" in plan:
         if claude:
             results["claude"] = register_claude(claude, entry)

@@ -1,26 +1,26 @@
 # AgentX WebMate MCP Server
 
-Give [AgentX Workmate](https://github.com/TrungKiencding/AgentX-Workmate) — or any other MCP client (Claude Code, Codex, Cursor) — the ability to run tasks in **your real browser session**: already signed in, cookies present, MFA already passed.
+Give [Hermes](https://github.com/TrungKiencding/AgentX-Workmate) — or any other MCP client (Claude Code, Codex, Cursor) — the ability to run tasks in **your real browser session**: already signed in, cookies present, MFA already passed.
 
 That session is the whole point. A headless automation framework starts logged out of everything and hits a login wall on the first useful page. AgentX WebMate is already inside the browser you use.
 
 ```
-AgentX Workmate ──stdio──▶ agentx-webmate-mcp ──ws://127.0.0.1:17374──▶ AgentX WebMate extension ──▶ your tabs
+Hermes ──stdio──▶ agentx-webmate-mcp ──ws://127.0.0.1:17374──▶ AgentX WebMate extension ──▶ your tabs
 ```
 
 ## Install
 
-### AgentX Workmate (recommended)
+### Hermes (recommended)
 
-The server ships in Workmate's MCP catalog:
+The server ships in Hermes's MCP catalog:
 
 ```bash
-agentx mcp install official/webmate
+hermes mcp install official/webmate
 ```
 
-This clones the WebMate repository into `~/.agentx/mcp-installs/webmate`, builds
+This clones the WebMate repository into `~/.hermes/mcp-installs/webmate`, builds
 `mcp-server/`, and writes an `mcp_servers.webmate` block into
-`~/.agentx/config.yaml`. Start a new session (or run `/reload-mcp`) and the six
+`~/.hermes/config.yaml`. Start a new session (or run `/reload-mcp`) and the six
 tools appear as `mcp__webmate__webmate_run`, `mcp__webmate__webmate_extract`, and
 so on. The bundled `webmate` skill teaches the agent when to reach for them
 instead of its own headless `browser_*` tools.
@@ -29,10 +29,10 @@ instead of its own headless `browser_*` tools.
 
 ```bash
 cd mcp-server && npm ci && npm run build
-agentx mcp add webmate --command node --args "$PWD/dist/index.js"
+hermes mcp add webmate --command node --args "$PWD/dist/index.js"
 ```
 
-### Drop-in skill package (Workmate, Claude Code, and other MCP hosts)
+### Drop-in skill package (Hermes, Claude Code, and other MCP hosts)
 
 `npm run build:skill` produces **one** host-neutral package with this server
 bundled into **one file** (`scripts/<brand>-mcp.mjs`, ~400 KB, needs only
@@ -41,11 +41,11 @@ Node.js ≥ 20 — no clone, no npm):
 - `release/<slug>-skill-<version>.zip` — unzip into your agent's skills directory
   and run `scripts/setup.py` once.
 
-**AgentX Workmate / Hermes**
+**Hermes**
 
 ```bash
-unzip agentx-webmate-skill-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
-python3 "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/webmate/scripts/setup.py"
+unzip agentx-webmate-skill-1.0.0.zip -d "${HERMES_HOME:-$HOME/.hermes}/skills/autonomous-ai-agents/"
+python3 "${HERMES_HOME:-$HOME/.hermes}/skills/autonomous-ai-agents/webmate/scripts/setup.py"
 ```
 
 **Claude Code**
@@ -56,17 +56,17 @@ python3 ~/.claude/skills/webmate/scripts/setup.py
 ```
 
 `setup.py` auto-detects every MCP host on the machine and registers with each one
-it finds — Workmate (`mcp_servers.<name>` in the profile's `config.yaml` via the
-Workmate Python API, the `agentx` CLI, or a backed-up direct edit), Claude Code
+it finds — Hermes (`mcp_servers.<name>` in the profile's `config.yaml` via the
+Hermes Python API, the `hermes` CLI, or a backed-up direct edit), Claude Code
 (`claude mcp add --transport stdio --scope user …`), and optionally any host that
 reads `mcpServers` JSON (`--project DIR` writes `DIR/.mcp.json`). It also prints
 a generic `mcpServers` block for Codex, Cursor, and other clients. Use
-`--host workmate|claude|mcp-json` to target one host, `--home PROFILE_DIR` for a
-specific Workmate profile, and `--dry-run` to preview. Reload: Workmate
+`--host hermes|claude|mcp-json` to target one host, `--home PROFILE_DIR` for a
+specific Hermes profile, and `--dry-run` to preview. Reload: Hermes
 `/reload-mcp` or a new session; Claude Code restart or `/mcp`. Health check:
 `python3 scripts/check_bridge.py`.
 
-The skill folder is trusted by Workmate's skill loader; only registry installs
+The skill folder is trusted by Hermes's skill loader; only registry installs
 are scanned, and a 400 KB bundle would trip that scanner's size limit — so ship
 the zip, not a registry listing.
 
@@ -131,14 +131,14 @@ lsof -nP -iTCP:17374 -sTCP:LISTEN
 ```
 
 No output means the MCP server is not listening. Remember that an MCP host only
-starts the server for the duration of a session: with Workmate, the listener
-exists while a Workmate session (CLI, TUI, gateway) is running. If it is
+starts the server for the duration of a session: with Hermes, the listener
+exists while a Hermes session (CLI, TUI, gateway) is running. If it is
 listening but the extension does not connect, make sure another bridge
 destination is not selected: WebMate Cloud uses `17373`, this MCP server uses
 `17374`, and the LM Studio plugin uses `17375`. Only one can be selected at a
 time. The bridge is available in Chromium browsers only, not Firefox.
 
-Inside Workmate, `agentx mcp test webmate` spawns the server and lists its tools
+Inside Hermes, `hermes mcp test webmate` spawns the server and lists its tools
 without starting a chat session.
 
 ## Branding
@@ -170,7 +170,7 @@ rest (`serverName`, `envPrefix`, `skillName`, `packageName`).
 | `webmate_abort` | Stop a run. Actions already taken are not undone. |
 | `webmate_connection` | Report whether the extension is attached, and how to fix it if not. |
 
-Hosts namespace these by server: in Workmate and Claude Code they appear as
+Hosts namespace these by server: in Hermes and Claude Code they appear as
 `mcp__webmate__webmate_run` and friends.
 
 ### Permission requests

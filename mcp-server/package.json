@@ -1,7 +1,7 @@
 {
   "name": "netmind-mcp",
   "displayName": "netMind MCP Server",
-  "description": "Model Context Protocol server that lets Claude Code, AgentX Workmate, Codex or Cursor delegate browser tasks to a running netMind Extension, in the user's real, already-authenticated browser session.",
+  "description": "Model Context Protocol server that lets Claude Code, Hermes, Codex or Cursor delegate browser tasks to a running netMind Extension, in the user's real, already-authenticated browser session.",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -34,7 +34,8 @@
     "browser-agent",
     "browser-automation",
     "claude-code",
-    "agentx-workmate",
+    "hermes",
+    "hermes-agent",
     "codex",
     "cursor"
   ],

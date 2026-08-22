@@ -2,7 +2,7 @@
 /**
  * Branded MCP server for the browser extension (AgentX WebMate, netMind, …).
  *
- * Gives AgentX Workmate — or any other MCP client (Claude Code, Codex, Cursor)
+ * Gives Hermes — or any other MCP client (Claude Code, Codex, Cursor)
  * — the ability to delegate a browser task to the user's REAL browser session:
  * already logged in, cookies present, MFA already passed. That session is the
  * thing a headless automation framework cannot reproduce, and it is the only

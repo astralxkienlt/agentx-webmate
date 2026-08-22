@@ -7,7 +7,7 @@ metadata:
   author: AstralX Technology
   hermes:
     tags: [Browser, {{shortName}}, MCP, Delegation, Signed-In-Session, SSO, Webmail, Dashboards]
-    related_skills: [agentx-agent, computer-use]
+    related_skills: [hermes-agent, computer-use]
 ---
 
 # {{productName}} — browser delegation
@@ -22,9 +22,9 @@ do that.
 
 The skill is host-neutral: it ships the MCP server itself
 (`scripts/{{bundleFile}}`, one file, Node.js ≥ 20 only) and works in any agent
-that loads agentskills.io skills and speaks MCP — AgentX Workmate (Hermes),
+that loads agentskills.io skills and speaks MCP — Hermes,
 Claude Code, and others. Hosts show the tools under their own prefix, e.g.
-`{{hostTool:run}}` in both Workmate and Claude Code.
+`{{hostTool:run}}` in both Hermes and Claude Code.
 
 ## When to Use
 
@@ -45,20 +45,20 @@ API call, or when the user is on Firefox (no bridge there).
 1. **Node.js ≥ 20** on `PATH`.
 2. **Put this folder where your agent loads skills** (folder name must stay
    `{{skillName}}`):
-   - AgentX Workmate / Hermes: `$AGENTX_HOME/skills/autonomous-ai-agents/{{skillName}}/`
+   - Hermes: `$HERMES_HOME/skills/autonomous-ai-agents/{{skillName}}/`
    - Claude Code: `~/.claude/skills/{{skillName}}/` (or `.claude/skills/` inside a project)
    - any other agentskills.io-compatible agent: its skills directory
 3. **Register the bundled server once** (idempotent; re-run after moving the folder):
    ```bash
    python3 scripts/setup.py
    ```
-   It registers with every MCP host it finds — AgentX Workmate (`mcp_servers.{{skillName}}`
+   It registers with every MCP host it finds — Hermes (`mcp_servers.{{skillName}}`
    in the profile's `config.yaml`) and Claude Code (`claude mcp add --transport stdio
    --scope user {{skillName}} -- node …/{{bundleFile}}`) — and prints a generic
    `mcpServers` JSON block for any other host (Codex, Cursor, …). Options:
-   `--host workmate|claude|mcp-json`, `--project DIR` (write `DIR/.mcp.json`),
-   `--home PATH` (another Workmate profile), `--dry-run`.
-   Then reload: Workmate `/reload-mcp` or a new session; Claude Code restart or `/mcp`.
+   `--host hermes|claude|mcp-json`, `--project DIR` (write `DIR/.mcp.json`),
+   `--home PATH` (another Hermes profile), `--dry-run`.
+   Then reload: Hermes `/reload-mcp` or a new session; Claude Code restart or `/mcp`.
 4. **Extension attached.** In a Chromium browser with {{productName}} installed:
    **Settings → General → Advanced → Cloud bridge**, URL
    `ws://127.0.0.1:17374/extension`, toggle on. The status line reads
@@ -122,7 +122,7 @@ Statuses: `running`, `needs_user_input`, `completed`, `failed`, `aborted`.
    - `needs_user_input`, **permission request** — the text starts with
      `PERMISSION REQUEST — {{productName}} wants to navigate to youtube.com` and
      lists `accepted answers: once | always | deny`. Ask the user — with your
-     host's question tool (`clarify` in AgentX Workmate, AskUserQuestion in
+     host's question tool (`clarify` in Hermes, AskUserQuestion in
      Claude Code) or in plain chat — then call `{{tool:respond}}` with
      **exactly one token**: "có / ừ / ok / đồng ý / yes / cho phép" → `once`;
      "luôn luôn / always allow / remember" → `always`; "không / no / từ chối"
