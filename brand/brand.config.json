@@ -8,6 +8,15 @@
     "firefoxId": "agentx-webmate@example.com"
   },
 
+  "mcp": {
+    "_why": "Names the MCP server in mcp-server/ derives at build time (scripts/brand.mjs). Every value here equals what product.* would derive on its own; it is spelled out so a brand branch sees exactly which knobs exist. Tools become <toolPrefix>_run/_extract/_status/_respond/_abort/_connection, hosts show them as mcp__<skillName>__<toolPrefix>_*.",
+    "serverName": "agentx-webmate",
+    "toolPrefix": "webmate",
+    "envPrefix": "WEBMATE_",
+    "skillName": "webmate",
+    "packageName": "agentx-webmate-mcp"
+  },
+
   "services": {
     "secondBrainBaseUrl": "https://brain.dev-server.cloud/",
     "litellmBaseUrl": "https://aigw.dev-server.cloud/",

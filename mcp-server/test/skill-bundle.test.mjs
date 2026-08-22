@@ -18,6 +18,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { build } from "esbuild";
 
 import { BUNDLE_OPTIONS } from "../scripts/build-skill.mjs";
+import { loadBrand } from "../scripts/brand.mjs";
+
+const BRAND = loadBrand();
+const tool = (name) => `${BRAND.toolPrefix}_${name}`;
 
 async function freePort() {
   const server = createServer();
@@ -46,13 +50,13 @@ test("the single-file skill bundle serves the same catalog as the tsc build", as
   const client = new Client({ name: "skill-bundle-test", version: "1.0.0" });
   try {
     await client.connect(transport);
-    assert.equal(client.getServerVersion()?.name, "agentx-webmate");
+    assert.equal(client.getServerVersion()?.name, BRAND.serverName);
     const { tools } = await client.listTools();
     assert.deepEqual(
-      tools.map((tool) => tool.name),
-      ["webmate_run", "webmate_extract", "webmate_status", "webmate_respond", "webmate_abort", "webmate_connection"],
+      tools.map((t) => t.name),
+      ["run", "extract", "status", "respond", "abort", "connection"].map(tool),
     );
-    const result = await client.callTool({ name: "webmate_connection", arguments: {} });
+    const result = await client.callTool({ name: tool("connection"), arguments: {} });
     assert.match(result.content.map((c) => c.text).join("\n"), new RegExp(`ws://127\\.0\\.0\\.1:${port}/extension`));
   } finally {
     await client.close().catch(() => {});

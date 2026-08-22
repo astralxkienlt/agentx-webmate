@@ -17,6 +17,9 @@ process.env.WEBMATE_COMMAND_TIMEOUT_MS = "2000";
 process.env.WEBMATE_POLL_INTERVAL_MS = "20";
 
 const { WebMateBridge, BridgeError, TERMINAL_STATUSES, EXTENSION_CLIENT_ID } = await import("../dist/bridge.js");
+const { BRAND } = await import("../dist/brand.generated.js");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const NOT_CONNECTED = new RegExp(`No ${escapeRe(BRAND.productName)} extension is connected`);
 const { bridgeUrl } = await import("../dist/config.js");
 const { awaitSettled, describeSnapshot, respond } = await import("../dist/runs.js");
 
@@ -135,7 +138,7 @@ test("no extension attached produces an actionable message", async () => {
     () => bridge.request("cloud_status", {}),
     (error) => {
       assert.ok(error instanceof BridgeError);
-      assert.match(error.message, /No AgentX WebMate extension is connected/);
+      assert.match(error.message, NOT_CONNECTED);
       assert.match(error.message, /Cloud bridge/);
       return true;
     },
@@ -209,7 +212,7 @@ test("a new socket cannot inherit an earlier extension handshake", async () => {
   assert.equal(bridge.isConnected(), false, "the replacement socket has not sent hello");
   await assert.rejects(
     () => bridge.request("cloud_run", { task: "private task", mode: "ask" }),
-    /No AgentX WebMate extension is connected/,
+    NOT_CONNECTED,
   );
   assert.equal(receivedCommands, 0, "an unverified socket must not receive task frames");
 
@@ -339,7 +342,7 @@ test("a permission prompt lists its tokens, refuses free text, and forwards an e
           pendingInput: {
             clarifyId: "perm_1",
             permission: { capability: "navigate", host: "youtube.com" },
-            question: "AgentX WebMate wants to navigate to youtube.com. Allow it?",
+            question: `${BRAND.productName} wants to navigate to youtube.com. Allow it?`,
             options: ["once", "always", "deny"],
           },
         },

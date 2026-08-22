@@ -8,6 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
+const { BRAND, tool } = await import("../dist/brand.generated.js");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 async function freePort() {
   const server = createServer();
@@ -20,72 +22,62 @@ async function freePort() {
   return port;
 }
 
-test("MCP catalog exposes structured extraction alongside run controls", async () => {
-  const port = await freePort();
-  const transport = new StdioClientTransport({
+function spawnServer(port) {
+  return new StdioClientTransport({
     command: process.execPath,
     args: ["dist/index.js"],
     cwd: packageDir,
     env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
     stderr: "pipe",
   });
-  const client = new Client({ name: "agentx-webmate-catalog-test", version: "1.0.0" });
+}
+
+test("MCP catalog exposes structured extraction alongside run controls, under the configured brand", async () => {
+  const port = await freePort();
+  const client = new Client({ name: `${BRAND.serverName}-catalog-test`, version: "1.0.0" });
 
   try {
-    await client.connect(transport);
+    await client.connect(spawnServer(port));
 
-    // The server identifies itself under the AgentX brand, and ships guidance
-    // for hosts (Claude Code, Workmate) that surface server instructions.
-    assert.equal(client.getServerVersion()?.name, "agentx-webmate");
+    // The server identifies itself under the brand, and ships guidance for
+    // hosts (Claude Code) that surface server instructions.
+    assert.equal(client.getServerVersion()?.name, BRAND.serverName);
     assert.match(client.getInstructions() ?? "", /signed-in browser/);
+    assert.match(client.getInstructions() ?? "", new RegExp(escapeRe(BRAND.productName)));
 
     const { tools } = await client.listTools();
     assert.deepEqual(
-      tools.map((tool) => tool.name),
-      [
-        "webmate_run",
-        "webmate_extract",
-        "webmate_status",
-        "webmate_respond",
-        "webmate_abort",
-        "webmate_connection",
-      ],
+      tools.map((t) => t.name),
+      ["run", "extract", "status", "respond", "abort", "connection"].map(tool),
     );
 
-    // Nothing user-visible may still carry the upstream brand — the MCP host
-    // shows these names and descriptions verbatim to the model and the user.
-    for (const tool of tools) {
-      assert.doesNotMatch(`${tool.name} ${tool.title ?? ""} ${tool.description}`, /webbrain/i, tool.name);
+    // Nothing user-visible may carry the upstream brand — the MCP host shows
+    // these names and descriptions verbatim to the model and the user.
+    for (const t of tools) {
+      assert.doesNotMatch(`${t.name} ${t.title ?? ""} ${t.description}`, /webbrain/i, t.name);
     }
 
-    const extract = tools.find((tool) => tool.name === "webmate_extract");
+    const extract = tools.find((t) => t.name === tool("extract"));
     assert.ok(extract, "structured extraction tool is missing");
     assert.deepEqual(extract.inputSchema.required, ["task", "output_schema"]);
     assert.equal(extract.inputSchema.properties.output_schema.type, "object");
-    assert.match(extract.description, /always uses AgentX WebMate Ask mode/i);
+    assert.match(extract.description, new RegExp(`always uses ${escapeRe(BRAND.productName)} Ask mode`, "i"));
   } finally {
     await client.close().catch(() => {});
   }
 });
 
-test("webmate_connection explains how to attach the extension when nothing is connected", async () => {
+test("the connection tool explains how to attach the extension when nothing is connected", async () => {
   const port = await freePort();
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ["dist/index.js"],
-    cwd: packageDir,
-    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
-    stderr: "pipe",
-  });
-  const client = new Client({ name: "agentx-webmate-connection-test", version: "1.0.0" });
+  const client = new Client({ name: `${BRAND.serverName}-connection-test`, version: "1.0.0" });
 
   try {
-    await client.connect(transport);
-    const result = await client.callTool({ name: "webmate_connection", arguments: {} });
+    await client.connect(spawnServer(port));
+    const result = await client.callTool({ name: tool("connection"), arguments: {} });
     const text = result.content.map((c) => c.text).join("\n");
     assert.match(text, /Not connected/);
     assert.match(text, new RegExp(`ws://127\\.0\\.0\\.1:${port}/extension`));
-    assert.match(text, /AgentX WebMate → Settings → General → Advanced → Cloud bridge/);
+    assert.match(text, new RegExp(`${escapeRe(BRAND.productName)} → Settings → General → Advanced → Cloud bridge`));
     assert.doesNotMatch(text, /webbrain/i);
   } finally {
     await client.close().catch(() => {});

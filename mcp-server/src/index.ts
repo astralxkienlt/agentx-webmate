@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * AgentX WebMate MCP server.
+ * Branded MCP server for the browser extension (AgentX WebMate, netMind, …).
  *
  * Gives AgentX Workmate — or any other MCP client (Claude Code, Codex, Cursor)
  * — the ability to delegate a browser task to the user's REAL browser session:
@@ -12,11 +12,13 @@
  * low-level browser primitives, because:
  *   1. the permission gate lives in the extension's agent loop, not in
  *      `executeTool()`, so per-primitive access would bypass every safety
- *      property AgentX WebMate advertises; and
+ *      property the extension advertises; and
  *   2. driving 50 primitives over a socket costs a round trip and a pile of
  *      tokens per click. Delegation is both safer and cheaper.
  *
- * stdout belongs to the MCP stdio transport. All logging goes to stderr.
+ * Every user-visible name comes from brand/brand.config.json via
+ * src/brand.generated.ts (see scripts/brand.mjs), so a brand branch differs in
+ * config only. stdout belongs to the MCP stdio transport; logging goes to stderr.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -24,12 +26,23 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import { BRAND, tool } from "./brand.generated.js";
 import { BridgeError, WebMateBridge, connectInstructions, type CloudSnapshot } from "./bridge.js";
 import { bridgeUrl, config } from "./config.js";
 import { abort, awaitSettled, describeSnapshot, getStatus, respond, startRun } from "./runs.js";
 
-export const SERVER_NAME = "agentx-webmate";
+export const SERVER_NAME = BRAND.serverName;
 export const SERVER_VERSION = "1.0.0";
+
+const PRODUCT = BRAND.productName;
+const T = {
+  run: tool("run"),
+  extract: tool("extract"),
+  status: tool("status"),
+  respond: tool("respond"),
+  abort: tool("abort"),
+  connection: tool("connection"),
+};
 
 const bridge = new WebMateBridge();
 
@@ -40,13 +53,13 @@ const server = new McpServer(
   },
   {
     instructions:
-      "These tools run inside the user's own signed-in browser through the AgentX WebMate " +
+      `These tools run inside the user's own signed-in browser through the ${PRODUCT} ` +
       "extension. Use them for pages that need the user's login (SSO dashboards, webmail, " +
-      "admin panels, internal tools). Prefer mode='ask' (read-only) and webmate_extract for " +
-      "structured data; use mode='act' only when the task must click, type or submit. If a " +
-      "tool reports that no extension is connected, call webmate_connection and relay its " +
-      "instructions to the user instead of retrying. When a run stops at " +
-      "'needs_user_input', ask the user and answer with webmate_respond — never guess. Permission " +
+      `admin panels, internal tools). Prefer mode='ask' (read-only) and ${T.extract} for ` +
+      "structured data; use mode='act' whenever the task opens a site, navigates, clicks, types " +
+      `or submits. If a tool reports that no extension is connected, call ${T.connection} and ` +
+      "relay its instructions to the user instead of retrying. When a run stops at " +
+      `'needs_user_input', ask the user and answer with ${T.respond} — never guess. Permission ` +
       "requests list their accepted answers (once | always | deny); send one of those exactly, " +
       "translating the user's words — the browser treats anything else as deny.",
   },
@@ -66,11 +79,11 @@ function toolError(error: unknown): TextResult {
 }
 
 server.registerTool(
-  "webmate_run",
+  T.run,
   {
     title: "Run a browser task in the user's real session",
     description:
-      "Delegate a web task to AgentX WebMate running in the user's actual browser — already " +
+      `Delegate a web task to ${PRODUCT} running in the user's actual browser — already ` +
       "signed in, with existing cookies and sessions. Use this when a task needs a page " +
       "the caller cannot reach: an authenticated dashboard, a webmail account, an admin " +
       "panel, a SaaS report behind SSO. Describe the goal in plain language, the way you " +
@@ -81,7 +94,7 @@ server.registerTool(
       "playing, clicking, typing, submitting; each consequential action is gated by a " +
       "per-host permission request. Use 'ask' only when nothing but reading is needed.\n\n" +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
-      "answer with webmate_respond — never guess on their behalf. Permission requests list " +
+      `answer with ${T.respond} — never guess on their behalf. Permission requests list ` +
       "their accepted answers (once | always | deny); send one of those exactly.",
     inputSchema: {
       task: z
@@ -111,7 +124,7 @@ server.registerTool(
         .boolean()
         .default(false)
         .describe(
-          "Lift AgentX WebMate's UI-first rule so the agent may issue mutating HTTP requests " +
+          `Lift ${PRODUCT}'s UI-first rule so the agent may issue mutating HTTP requests ` +
             "directly instead of clicking through the interface. Off by default and rarely " +
             "correct — the UI path is visible and stoppable. Only valid when mode is 'act'.",
         ),
@@ -123,7 +136,7 @@ server.registerTool(
         .optional()
         .describe(
           "How long to wait before returning control. The run keeps going in the browser " +
-            "past this point; poll webmate_status to pick it back up.",
+            `past this point; poll ${T.status} to pick it back up.`,
         ),
       wait: z
         .boolean()
@@ -165,7 +178,7 @@ server.registerTool(
       if (!wait) {
         return ok(
           `Started in the background.\n${describeSnapshot(started)}\n\n` +
-            "Poll webmate_status with this run_id for progress.",
+            `Poll ${T.status} with this run_id for progress.`,
         );
       }
 
@@ -180,17 +193,17 @@ server.registerTool(
 );
 
 server.registerTool(
-  "webmate_extract",
+  T.extract,
   {
     title: "Extract structured data from the user's real browser",
     description:
       "Read a page in the user's actual signed-in browser and return data that matches a " +
-      "caller-supplied JSON Schema. This tool always uses AgentX WebMate Ask mode, so it " +
+      `caller-supplied JSON Schema. This tool always uses ${PRODUCT} Ask mode, so it ` +
       "cannot click, type, navigate or submit. Use it for authenticated reports, tables, " +
       "account details and other page data that should come back as predictable JSON rather " +
-      "than a prose summary. Use webmate_run instead when the task needs interaction.\n\n" +
+      `than a prose summary. Use ${T.run} instead when the task needs interaction.\n\n` +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
-      "answer with webmate_respond — never guess on their behalf. If it lists accepted " +
+      `answer with ${T.respond} — never guess on their behalf. If it lists accepted ` +
       "answers, send one of those exactly.",
     inputSchema: {
       task: z
@@ -219,7 +232,7 @@ server.registerTool(
         .optional()
         .describe(
           "How long to wait before returning control. The extraction keeps running past " +
-            "this point; poll webmate_status with its run_id.",
+            `this point; poll ${T.status} with its run_id.`,
         ),
       wait: z
         .boolean()
@@ -261,7 +274,7 @@ server.registerTool(
       if (!wait) {
         return ok(
           `Structured extraction started in the background.\n${describeSnapshot(started)}\n\n` +
-            "Poll webmate_status with this run_id for progress.",
+            `Poll ${T.status} with this run_id for progress.`,
         );
       }
 
@@ -276,11 +289,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "webmate_status",
+  T.status,
   {
     title: "Check a browser run",
     description:
-      "Fetch the current state of an AgentX WebMate run, including its result once finished. " +
+      `Fetch the current state of a browser run in ${PRODUCT}, including its result once finished. ` +
       "Omit run_id to list every run this browser knows about.",
     inputSchema: {
       run_id: z
@@ -294,7 +307,7 @@ server.registerTool(
       const result = await getStatus(bridge, run_id);
       const runs = (result as { runs?: CloudSnapshot[] }).runs;
       if (runs) {
-        if (!runs.length) return ok("No AgentX WebMate runs on record.");
+        if (!runs.length) return ok(`No ${PRODUCT} runs on record.`);
         return ok(
           runs
             .map((run) => `${run.runId}  ${run.status.padEnd(16)}  ${run.task ?? ""}`)
@@ -309,12 +322,12 @@ server.registerTool(
 );
 
 server.registerTool(
-  "webmate_respond",
+  T.respond,
   {
     title: "Answer a question from a browser run",
     description:
       "Supply the user's answer to a run sitting at status 'needs_user_input', then keep " +
-      "waiting for it to settle. The answer must come from the user — AgentX WebMate pauses " +
+      `waiting for it to settle. The answer must come from the user — ${PRODUCT} pauses ` +
       "precisely because a human decision is required.\n\n" +
       "Permission requests accept EXACTLY once, always or deny (the status text shows which " +
       "is pending). Translate the user's decision into one of those tokens; free text such " +
@@ -370,7 +383,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "webmate_abort",
+  T.abort,
   {
     title: "Stop a browser run",
     description:
@@ -391,11 +404,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "webmate_connection",
+  T.connection,
   {
-    title: "Check the AgentX WebMate browser connection",
+    title: `Check the ${PRODUCT} browser connection`,
     description:
-      "Report whether an AgentX WebMate extension is currently attached. Call this first " +
+      `Report whether the ${PRODUCT} extension is currently attached. Call this first ` +
       "when a browser tool fails, so you can tell the user what to fix instead of retrying " +
       "blindly.",
     inputSchema: {},
@@ -410,10 +423,10 @@ server.registerTool(
     }
     return ok(
       `Not connected. Listening on ${bridgeUrl()}, but no extension has dialled in.\n\n` +
-        "To connect: open a Chromium browser (Chrome, Edge, Brave) with the AgentX WebMate " +
+        `To connect: open a Chromium browser (Chrome, Edge, Brave) with the ${PRODUCT} ` +
         `extension installed. ${connectInstructions()}\n` +
         "The extension holds one bridge socket at a time, so this cannot run at the same " +
-        "time as the WebMate Cloud bridge on port 17373 or the LM Studio plugin on 17375.\n\n" +
+        "time as the Cloud bridge on port 17373 or the LM Studio plugin on 17375.\n\n" +
         "Firefox cannot host the bridge — that build has no offscreen document. If the " +
         "user is on Firefox, say so rather than suggesting settings changes.",
     );
@@ -430,7 +443,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[agentx-webmate-mcp] ready on stdio");
+  console.error(`[${SERVER_NAME}-mcp] ready on stdio`);
 }
 
 let shuttingDown = false;
@@ -438,7 +451,7 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   await bridge.stop().catch((error) => {
-    console.error("[agentx-webmate-mcp] shutdown error:", error);
+    console.error(`[${SERVER_NAME}-mcp] shutdown error:`, error);
   });
   process.exit(0);
 }
@@ -452,6 +465,6 @@ process.stdin.once("end", () => void shutdown());
 process.stdin.once("close", () => void shutdown());
 
 main().catch((error) => {
-  console.error("[agentx-webmate-mcp] fatal:", error);
+  console.error(`[${SERVER_NAME}-mcp] fatal:`, error);
   process.exit(1);
 });

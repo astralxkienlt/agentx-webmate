@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Register the bundled AgentX WebMate MCP server with AgentX Workmate.
+"""Register the bundled browser-extension MCP server with AgentX Workmate.
 
-This skill ships the MCP server as a single file (scripts/agentx-webmate-mcp.mjs),
-so all AgentX needs is one config entry:
+This skill ships the MCP server as a single file (scripts/<brand>-mcp.mjs), so
+all AgentX needs is one config entry:
 
     mcp_servers:
-      webmate:
+      <name>:
         command: node
-        args: ["<this skill>/scripts/agentx-webmate-mcp.mjs"]
+        args: ["<this skill>/scripts/<brand>-mcp.mjs"]
         enabled: true
 
 Steps:
   1. Locate the bundle next to this script and check Node.js >= 20.
-  2. Write mcp_servers.webmate into the target profile's config.yaml through the
+  2. Write mcp_servers.<name> into the target profile's config.yaml through the
      first method that works:
        a. the Workmate Python API   (this interpreter can import hermes_cli)
        b. the `agentx` CLI          (--agentx, $AGENTX_CLI, PATH, managed venv)
@@ -42,10 +42,35 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-SERVER_NAME = "webmate"
-BUNDLE_NAME = "agentx-webmate-mcp.mjs"
 MIN_NODE_MAJOR = 20
-BRIDGE_URL = "ws://127.0.0.1:17374/extension"
+
+
+def load_brand() -> Dict[str, object]:
+    """Brand facts written next to this script at package-build time (AgentX defaults)."""
+    defaults: Dict[str, object] = {
+        "productName": "AgentX WebMate",
+        "registrationName": "webmate",
+        "toolPrefix": "webmate",
+        "bundleFile": "agentx-webmate-mcp.mjs",
+        "bridgePort": 17374,
+    }
+    path = Path(__file__).resolve().parent / "brand.json"
+    try:
+        import json
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            defaults.update({k: v for k, v in loaded.items() if v not in (None, "")})
+    except (OSError, ValueError):
+        pass
+    return defaults
+
+
+BRAND = load_brand()
+PRODUCT = str(BRAND["productName"])
+SERVER_NAME = str(BRAND["registrationName"])
+TOOL_PREFIX = str(BRAND["toolPrefix"])
+BUNDLE_NAME = str(BRAND["bundleFile"])
+BRIDGE_URL = f"ws://127.0.0.1:{BRAND['bridgePort']}/extension"
 
 
 # ─── locations ──────────────────────────────────────────────────────────────
@@ -139,7 +164,7 @@ def build_entry(bundle: Path, node: str, pin_node: bool) -> Dict[str, object]:
 
 
 def entry_block(entry: Dict[str, object], indent: int = 2) -> str:
-    """The `webmate:` subtree as block-style YAML at the given indent."""
+    """The `<name>:` subtree as block-style YAML at the given indent."""
     pad = " " * indent
     lines = [f"{pad}{SERVER_NAME}:", f"{pad}  command: {entry['command']}", f"{pad}  args:"]
     lines += [f"{pad}    - \"{a}\"" for a in entry["args"]]  # type: ignore[index]
@@ -208,7 +233,7 @@ def register_via_text(home: Path, entry: Dict[str, object]) -> bool:
     """Edit config.yaml directly (block-style YAML), keeping a backup.
 
     Handles: no config yet; no `mcp_servers:` key; an existing `mcp_servers:`
-    block (the entry is inserted right under it, replacing a stale `webmate:`
+    block (the entry is inserted right under it, replacing a stale `<name>:`
     subtree); and an empty `mcp_servers: {}` placeholder.
     """
     config = home / "config.yaml"
@@ -237,7 +262,7 @@ def register_via_text(home: Path, entry: Dict[str, object]) -> bool:
     else:
         end = next((i for i in range(start + 1, len(lines)) if is_top_level(lines[i])), len(lines))
         body = lines[start + 1:end]
-        # Drop an existing webmate: subtree (a 2-space key and everything deeper).
+        # Drop an existing <name>: subtree (a 2-space key and everything deeper).
         kept: List[str] = []
         skipping = False
         for line in body:
@@ -252,7 +277,7 @@ def register_via_text(home: Path, entry: Dict[str, object]) -> bool:
         lines[start + 1:end] = block.split("\n") + kept
 
     text = "\n".join(lines)
-    backup = config.with_name(config.name + ".bak-webmate")
+    backup = config.with_name(f"{config.name}.bak-{SERVER_NAME}")
     shutil.copyfile(config, backup)
     config.write_text(text, encoding="utf-8")
 
@@ -285,13 +310,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     bundle = skill_dir / "scripts" / BUNDLE_NAME
     home = (args.home or default_home()).expanduser().resolve()
 
-    print("AgentX WebMate skill setup")
+    print(f"{PRODUCT} skill setup")
     print(f"  skill:   {skill_dir}")
     print(f"  profile: {home}")
 
     if not bundle.is_file():
         print(f"  ✗ bundled server missing: {bundle}")
-        print("    Rebuild the package with `npm run build:skill` in agentx-webmate/mcp-server.")
+        print("    Rebuild the package with `npm run build:skill` in the extension repo's mcp-server/.")
         return 1
 
     node = find_node(args.node)
@@ -322,7 +347,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             method = f"agentx CLI ({agentx})"
             written = register_via_cli(agentx, home, entry)
     if not written:
-        method = f"direct edit of {home / 'config.yaml'} (backup: config.yaml.bak-webmate)"
+        method = f"direct edit of {home / 'config.yaml'} (backup: config.yaml.bak-{SERVER_NAME})"
         written = register_via_text(home, entry)
 
     if not written:
@@ -335,10 +360,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"  ✓ mcp_servers.{SERVER_NAME} written via {method}")
     print("Next:")
-    print("  1. Start a new AgentX session (or /reload-mcp). Tools appear as mcp__webmate__webmate_*.")
-    print("  2. Chrome → AgentX WebMate → Settings → General → Advanced → Cloud bridge →")
+    print(f"  1. Start a new AgentX session (or /reload-mcp). Tools appear as mcp__{SERVER_NAME}__{TOOL_PREFIX}_*.")
+    print(f"  2. Chrome → {PRODUCT} → Settings → General → Advanced → Cloud bridge →")
     print(f"     {BRIDGE_URL} → enable. Status should read Connected while a session runs.")
-    print("  3. Ask AgentX to call mcp__webmate__webmate_connection.")
+    print(f"  3. Ask AgentX to call mcp__{SERVER_NAME}__{TOOL_PREFIX}_connection.")
     print(f"  Health check: python3 \"{skill_dir / 'scripts' / 'check_bridge.py'}\"")
     return 0
 
