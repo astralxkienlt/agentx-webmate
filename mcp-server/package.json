@@ -1,13 +1,13 @@
 {
-  "name": "agentx-webmate-mcp",
-  "displayName": "AgentX WebMate MCP Server",
-  "description": "Model Context Protocol server that lets AgentX Workmate \u2014 or any MCP client (Claude Code, Codex, Cursor) \u2014 delegate browser tasks to a running AgentX WebMate extension, in the user's real, already-authenticated browser session.",
+  "name": "netmind-mcp",
+  "displayName": "netMind MCP Server",
+  "description": "Model Context Protocol server that lets Claude Code, AgentX Workmate, Codex or Cursor delegate browser tasks to a running netMind Extension, in the user's real, already-authenticated browser session.",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "agentx-webmate-mcp": "dist/index.js"
+    "netmind-mcp": "dist/index.js"
   },
   "license": "MIT",
   "homepage": "https://github.com/astralxkienlt/agentx-webmate/tree/main/mcp-server",
@@ -30,12 +30,11 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "agentx",
-    "webmate",
-    "agentx-workmate",
+    "netmind",
     "browser-agent",
     "browser-automation",
     "claude-code",
+    "agentx-workmate",
     "codex",
     "cursor"
   ],

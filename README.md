@@ -225,7 +225,7 @@ configuration. Bug reports and feature requests belong in
 src/chrome/     Manifest V3 build — service worker, chrome.scripting, sidePanel
 src/firefox/    Manifest V2 build — background page, executeScript, sidebar_action
 docs/           Design and reference docs (en, zh-CN, fr)
-mcp-server/     MCP server (agentx-webmate-mcp) — delegate browser tasks from AgentX Workmate, Claude Code, Codex, Cursor
+mcp-server/     MCP server (netmind-mcp) — delegate browser tasks from Claude Code, AgentX Workmate, Codex, Cursor
 lmstudio-plugin/  Web tools + browser delegation as a standalone LM Studio plugin
 web/            Landing site and docs site
 test/           Node test suite, LLM scenario benchmarks, security corpora
@@ -268,12 +268,9 @@ into — cookies present, SSO already passed. A headless framework starts logged
 out and stalls at the first login wall; this does not.
 
 ```bash
-# AgentX Workmate — installs from the bundled MCP catalog
-agentx mcp install official/webmate
-
-# Claude Code — point at a built checkout
+# Claude Code — point at a built checkout (or use the drop-in skill: npm run build:skill)
 cd mcp-server && npm ci && npm run build
-claude mcp add --transport stdio webmate -- node "$PWD/dist/index.js"
+claude mcp add --transport stdio --scope user netmind -- node "$PWD/dist/index.js"
 ```
 
 The MCP client launches the server automatically when it starts an MCP session.
@@ -296,11 +293,11 @@ port `17374`, and leave its process running. See the
 listener check and the other bridge ports.
 
 ```
-webmate_run(task: "open the Stripe dashboard and list last week's failed
+netmind_run(task: "open the Stripe dashboard and list last week's failed
             payments with amounts and customer emails", mode: "ask")
 ```
 
-Use `webmate_extract` with a JSON Schema when the caller needs predictable
+Use `netmind_extract` with a JSON Schema when the caller needs predictable
 structured output instead of a prose summary. The server exposes six task-level
 tools: run, structured extraction, status, clarification response, abort, and
 connection diagnostics.
