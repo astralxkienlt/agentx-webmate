@@ -5,7 +5,7 @@
 
 import {
   listRuns, getRun, getRunEvents, getScreenshot,
-  deleteRun, clearAllRuns,
+  deleteRun, clearAllRuns, repairStaleRuns,
 } from '../trace/recorder.js';
 import { isKnownKind, isIgnorableKind } from '../trace/event-model.js';
 import { sanitizeTraceExport } from '../agent/trace-export.js';
@@ -68,6 +68,7 @@ function formatCost(value) {
 
 async function refresh() {
   const requestId = ++traceRefreshRequestId;
+  if (typeof repairStaleRuns === 'function') await repairStaleRuns().catch(() => []);
   const runs = await listRuns({ limit: 500 });
   if (requestId !== traceRefreshRequestId) return;
   allRuns = runs;

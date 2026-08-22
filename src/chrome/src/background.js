@@ -109,6 +109,7 @@ import {
  */
 
 const providerManager = new ProviderManager();
+void workflowTrace.repairStaleRuns().catch(() => {});
 const agent = new Agent(providerManager);
 const ALWAYS_ALLOW_API_MUTATIONS_KEY = 'alwaysAllowApiMutations';
 const alwaysAllowApiMutationsReady = chrome.storage.local
