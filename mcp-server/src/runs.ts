@@ -22,6 +22,7 @@
  * status text and (b) refuses to forward an answer that does not match.
  */
 
+import { BRAND, tool } from "./brand.generated.js";
 import { BridgeError, TERMINAL_STATUSES, WebMateBridge, type CloudSnapshot } from "./bridge.js";
 import { config } from "./config.js";
 
@@ -89,7 +90,7 @@ export function describePendingInput(pendingInput: unknown): PendingInputInfo | 
 
 function permissionSentence(permission: { capability: string; host: string }): string {
   const verb = CAPABILITY_VERB[permission.capability] || `use '${permission.capability || "?"}' on`;
-  return `AgentX WebMate wants to ${verb} ${permission.host || "this site"}.`;
+  return `${BRAND.productName} wants to ${verb} ${permission.host || "this site"}.`;
 }
 
 /**
@@ -101,7 +102,7 @@ function permissionSentence(permission: { capability: string; host: string }): s
  */
 export function validateAnswer(pendingInput: unknown, answer: string): AnswerVerdict {
   const trimmed = String(answer ?? "").trim();
-  if (!trimmed) return { ok: false, message: "webmate_respond requires a non-empty answer." };
+  if (!trimmed) return { ok: false, message: `${tool("respond")} requires a non-empty answer.` };
   const info = describePendingInput(pendingInput);
   if (!info || info.options.length === 0) return { ok: true, answer: trimmed };
 
@@ -117,7 +118,7 @@ export function validateAnswer(pendingInput: unknown, answer: string): AnswerVer
     message:
       `${head} The answer must be EXACTLY one of: ${accepted} — not "${trimmed}". ` +
       "The browser treats anything else as deny, so the answer was not sent. Translate the " +
-      "user's decision into one of those values and call webmate_respond again.",
+      `user's decision into one of those values and call ${tool("respond")} again.`,
   };
 }
 
@@ -190,7 +191,7 @@ export async function abort(bridge: WebMateBridge, runId: string): Promise<Cloud
  * Poll until the run finishes, needs the user, or we run out of patience.
  *
  * A timeout here does NOT abort the run — the browser keeps working and the
- * caller can resume with `webmate_status`. Silently killing a half-finished
+ * caller can resume with the status tool. Silently killing a half-finished
  * task that may have already submitted a form would be worse than reporting
  * that it is still going.
  */
@@ -240,7 +241,7 @@ export async function awaitSettled(
 export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): string {
   const lines: string[] = [];
   lines.push(`run_id: ${snapshot.runId}`);
-  lines.push(`status: ${snapshot.status}${timedOut ? " (still running — poll webmate_status)" : ""}`);
+  lines.push(`status: ${snapshot.status}${timedOut ? ` (still running — poll ${tool("status")})` : ""}`);
   if (snapshot.mode) lines.push(`mode: ${snapshot.mode}`);
   if (snapshot.finalUrl) lines.push(`final_url: ${snapshot.finalUrl}`);
 
@@ -252,7 +253,7 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
       const host = info.permission.host || "this site";
       lines.push(`PERMISSION REQUEST — ${permissionSentence(info.permission)}`);
       lines.push(
-        "Reply with webmate_respond(run_id, clarify_id, answer) where answer is EXACTLY one of: " +
+        `Reply with ${tool("respond")}(run_id, clarify_id, answer) where answer is EXACTLY one of: ` +
           `${info.options.length ? info.options.join(" | ") : "once | always | deny"}.`,
       );
       lines.push(`once = allow this time only · always = remember for ${host} · deny = refuse.`);
@@ -261,7 +262,7 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
           "translate their decision into one of these tokens. Never forward their words verbatim.",
       );
     } else {
-      lines.push("AgentX WebMate is waiting on a human decision before it continues.");
+      lines.push(`${BRAND.productName} is waiting on a human decision before it continues.`);
       lines.push(`question: ${question}`);
       if (info?.options.length) {
         lines.push(`accepted answers (send one of these exactly): ${info.options.join(" | ")}`);
@@ -269,7 +270,7 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
     }
     lines.push(`clarify_id: ${info?.clarifyId || ""}`);
     lines.push(
-      "Relay this to the user and send their answer with webmate_respond. " +
+      `Relay this to the user and send their answer with ${tool("respond")}. ` +
         "Do not invent an answer on their behalf.",
     );
   }

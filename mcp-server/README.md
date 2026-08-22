@@ -32,15 +32,21 @@ cd mcp-server && npm ci && npm run build
 agentx mcp add webmate --command node --args "$PWD/dist/index.js"
 ```
 
-### Drop-in skill package (any AgentX Workmate, no catalog needed)
+### Drop-in skill packages (Workmate and Claude Code, no catalog needed)
 
-`npm run build:skill` produces `release/agentx-webmate-skill-<version>.zip`: the
-`webmate` skill with this server bundled into **one file**
-(`scripts/agentx-webmate-mcp.mjs`, ~400 KB, needs only Node.js ≥ 20 — no clone,
-no npm). It installs into an unmodified Workmate:
+`npm run build:skill` produces two packages, each with this server bundled into
+**one file** (`scripts/<brand>-mcp.mjs`, ~400 KB, needs only Node.js ≥ 20 — no
+clone, no npm):
+
+- `release/<slug>-skill-workmate-<version>.zip` — the AgentX Workmate skill. Unzip
+  into `$AGENTX_HOME/skills/autonomous-ai-agents/` and run `scripts/setup.py`.
+- `release/<slug>-skill-claude-<version>.zip` — the Claude Code skill. Unzip into
+  `~/.claude/skills/` and run `scripts/setup_claude.py` (it executes
+  `claude mcp add --transport stdio --scope user <name> -- node <bundle>`; use
+  `--project DIR` to write a project `.mcp.json` instead).
 
 ```bash
-unzip agentx-webmate-skill-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
+unzip agentx-webmate-skill-workmate-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
 python3 "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/webmate/scripts/setup.py"
 ```
 
@@ -123,6 +129,17 @@ time. The bridge is available in Chromium browsers only, not Firefox.
 
 Inside Workmate, `agentx mcp test webmate` spawns the server and lists its tools
 without starting a chat session.
+
+## Branding
+
+Every user-visible name — server name, tool prefix, product name in messages,
+`<PREFIX>_*` env vars, skill and bundle file names — is derived at build time
+from the repo's [`brand/brand.config.json`](../brand/brand.config.json) by
+[`scripts/brand.mjs`](scripts/brand.mjs) into the git-ignored
+`src/brand.generated.ts` (`npm run build` regenerates it). A brand branch such
+as `netmind-extension` therefore changes only its config: `product.shortName`
+gives the tool prefix (`netmind_*`), and an optional `mcp` block overrides the
+rest (`serverName`, `envPrefix`, `skillName`, `packageName`).
 
 ## Tools
 

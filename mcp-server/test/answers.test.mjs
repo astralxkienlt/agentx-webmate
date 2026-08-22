@@ -13,11 +13,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { describePendingInput, describeSnapshot, validateAnswer } = await import("../dist/runs.js");
+const { BRAND } = await import("../dist/brand.generated.js");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PRODUCT = escapeRe(BRAND.productName);
 
 const PERMISSION = {
   clarifyId: "perm_1",
   permission: { capability: "navigate", host: "youtube.com" },
-  question: "AgentX WebMate wants to navigate to youtube.com. Allow it?",
+  question: `${BRAND.productName} wants to navigate to youtube.com. Allow it?`,
   options: ["once", "always", "deny"],
 };
 
@@ -65,7 +68,7 @@ test("describePendingInput normalises both clarify id spellings and tolerates ju
 
 test("describeSnapshot spells out permission tokens and generic choices", () => {
   const permissionText = describeSnapshot({ runId: "r", status: "needs_user_input", pendingInput: PERMISSION });
-  assert.match(permissionText, /PERMISSION REQUEST — AgentX WebMate wants to navigate to youtube\.com\./);
+  assert.match(permissionText, new RegExp(`PERMISSION REQUEST — ${PRODUCT} wants to navigate to youtube\\.com\\.`));
   assert.match(permissionText, /EXACTLY one of: once \| always \| deny/);
   assert.match(permissionText, /remember for youtube\.com/);
   assert.match(permissionText, /Never forward their words verbatim/);

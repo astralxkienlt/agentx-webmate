@@ -116,6 +116,16 @@ test("non-positive durations are rejected", async () => {
   );
 });
 
+test("the brand prefix from brand.config.json is honoured and beats the fallbacks", async () => {
+  const { BRAND } = await import("../dist/brand.generated.js");
+  // Build the env so the brand key is applied last: on a brand whose prefix is
+  // WEBMATE_ itself (AgentX) it must simply override, elsewhere it must win by precedence.
+  const env = { ...CLEAN, WEBBRAIN_BRIDGE_PORT: "17400", WEBMATE_BRIDGE_PORT: "17401" };
+  env[`${BRAND.envPrefix}BRIDGE_PORT`] = "17402";
+  const branded = await loadConfig(env);
+  assert.equal(branded.config.bridgePort, 17402);
+});
+
 test("upstream WEBBRAIN_* names still work, and WEBMATE_* wins when both are set", async () => {
   const legacy = await loadConfig({
     ...CLEAN,
