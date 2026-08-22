@@ -32,32 +32,43 @@ cd mcp-server && npm ci && npm run build
 agentx mcp add webmate --command node --args "$PWD/dist/index.js"
 ```
 
-### Drop-in skill packages (Workmate and Claude Code, no catalog needed)
+### Drop-in skill package (Workmate, Claude Code, and other MCP hosts)
 
-`npm run build:skill` produces two packages, each with this server bundled into
-**one file** (`scripts/<brand>-mcp.mjs`, ~400 KB, needs only Node.js ≥ 20 — no
-clone, no npm):
+`npm run build:skill` produces **one** host-neutral package with this server
+bundled into **one file** (`scripts/<brand>-mcp.mjs`, ~400 KB, needs only
+Node.js ≥ 20 — no clone, no npm):
 
-- `release/<slug>-skill-workmate-<version>.zip` — the AgentX Workmate skill. Unzip
-  into `$AGENTX_HOME/skills/autonomous-ai-agents/` and run `scripts/setup.py`.
-- `release/<slug>-skill-claude-<version>.zip` — the Claude Code skill. Unzip into
-  `~/.claude/skills/` and run `scripts/setup_claude.py` (it executes
-  `claude mcp add --transport stdio --scope user <name> -- node <bundle>`; use
-  `--project DIR` to write a project `.mcp.json` instead).
+- `release/<slug>-skill-<version>.zip` — unzip into your agent's skills directory
+  and run `scripts/setup.py` once.
+
+**AgentX Workmate / Hermes**
 
 ```bash
-unzip agentx-webmate-skill-workmate-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
+unzip agentx-webmate-skill-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
 python3 "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/webmate/scripts/setup.py"
 ```
 
-`setup.py` writes `mcp_servers.webmate` through whichever is available — the
-Workmate Python API, the `agentx` CLI (`--agentx` to point at one), or a direct,
-backed-up edit of `config.yaml` — then prints the Cloud-bridge steps. Use
-`--home ~/.agentx/accounts/<slug>` to target an account profile, `--dry-run` to
-preview. Start a new session (or `/reload-mcp`) and the skill plus the six tools
-are live. The skill folder is trusted by Workmate's skill loader; only registry
-installs are scanned, and a 400 KB bundle would trip that scanner's size limit —
-so ship the zip, not a registry listing.
+**Claude Code**
+
+```bash
+unzip agentx-webmate-skill-1.0.0.zip -d ~/.claude/skills/
+python3 ~/.claude/skills/webmate/scripts/setup.py
+```
+
+`setup.py` auto-detects every MCP host on the machine and registers with each one
+it finds — Workmate (`mcp_servers.<name>` in the profile's `config.yaml` via the
+Workmate Python API, the `agentx` CLI, or a backed-up direct edit), Claude Code
+(`claude mcp add --transport stdio --scope user …`), and optionally any host that
+reads `mcpServers` JSON (`--project DIR` writes `DIR/.mcp.json`). It also prints
+a generic `mcpServers` block for Codex, Cursor, and other clients. Use
+`--host workmate|claude|mcp-json` to target one host, `--home PROFILE_DIR` for a
+specific Workmate profile, and `--dry-run` to preview. Reload: Workmate
+`/reload-mcp` or a new session; Claude Code restart or `/mcp`. Health check:
+`python3 scripts/check_bridge.py`.
+
+The skill folder is trusted by Workmate's skill loader; only registry installs
+are scanned, and a 400 KB bundle would trip that scanner's size limit — so ship
+the zip, not a registry listing.
 
 ### Other MCP clients
 
