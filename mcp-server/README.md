@@ -32,6 +32,27 @@ cd mcp-server && npm ci && npm run build
 agentx mcp add webmate --command node --args "$PWD/dist/index.js"
 ```
 
+### Drop-in skill package (any AgentX Workmate, no catalog needed)
+
+`npm run build:skill` produces `release/agentx-webmate-skill-<version>.zip`: the
+`webmate` skill with this server bundled into **one file**
+(`scripts/agentx-webmate-mcp.mjs`, ~400 KB, needs only Node.js ≥ 20 — no clone,
+no npm). It installs into an unmodified Workmate:
+
+```bash
+unzip agentx-webmate-skill-1.0.0.zip -d "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/"
+python3 "${AGENTX_HOME:-$HOME/.agentx}/skills/autonomous-ai-agents/webmate/scripts/setup.py"
+```
+
+`setup.py` writes `mcp_servers.webmate` through whichever is available — the
+Workmate Python API, the `agentx` CLI (`--agentx` to point at one), or a direct,
+backed-up edit of `config.yaml` — then prints the Cloud-bridge steps. Use
+`--home ~/.agentx/accounts/<slug>` to target an account profile, `--dry-run` to
+preview. Start a new session (or `/reload-mcp`) and the skill plus the six tools
+are live. The skill folder is trusted by Workmate's skill loader; only registry
+installs are scanned, and a 400 KB bundle would trip that scanner's size limit —
+so ship the zip, not a registry listing.
+
 ### Other MCP clients
 
 **Claude Code**
