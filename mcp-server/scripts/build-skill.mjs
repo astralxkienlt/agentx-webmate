@@ -86,7 +86,9 @@ export async function buildSkill(hosts = Object.keys(HOSTS)) {
         {
           host,
           productName: brand.productName,
+          extensionName: brand.extensionName,
           shortName: brand.shortName,
+          envPrefix: brand.envPrefix,
           registrationName: brand.skillName,
           serverName: brand.serverName,
           toolPrefix: brand.toolPrefix,

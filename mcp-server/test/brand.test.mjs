@@ -15,6 +15,7 @@ test("AgentX WebMate derives every name from product.* alone", () => {
   });
   assert.deepEqual(brand, {
     productName: "AgentX WebMate",
+    extensionName: "AgentX WebMate extension",
     shortName: "WebMate",
     slug: "agentx-webmate",
     homepage: "https://x",
@@ -33,6 +34,7 @@ test("netMind overrides only what it needs under the mcp key", () => {
     mcp: { serverName: "netmind", packageName: "netmind-mcp" },
   });
   assert.equal(brand.productName, "netMind Extension");
+  assert.equal(brand.extensionName, "netMind Extension");
   assert.equal(brand.serverName, "netmind");
   assert.equal(brand.toolPrefix, "netmind");
   assert.equal(brand.envPrefix, "NETMIND_");

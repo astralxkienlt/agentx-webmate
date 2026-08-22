@@ -36,8 +36,11 @@ export function deriveBrand(config) {
   const toolPrefix = ident(mcp.toolPrefix || shortName);
   if (!toolPrefix) throw new Error("brand: cannot derive a tool prefix from product.shortName");
   const serverName = mcp.serverName || slug;
+  const productName = product.name || shortName;
   return {
-    productName: product.name || shortName,
+    productName,
+    // "the AgentX WebMate extension" but "the netMind Extension" — never "Extension extension".
+    extensionName: /\bextension$/i.test(productName) ? productName : `${productName} extension`,
     shortName,
     slug,
     homepage: product.homepage || "",
