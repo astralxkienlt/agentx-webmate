@@ -1,6 +1,6 @@
 ---
 name: {{skillName}}
-description: Delegate browser tasks to the signed-in {{productName}} — read, extract or act on pages in the user's own Chrome through the `{{skillName}}` MCP server. Use when a task needs a page behind the user's login (SSO dashboards, webmail, admin panels, internal tools), or when the user says "in my browser", "my account", or "open <site>".
+description: Delegate browser tasks to the signed-in {{productName}} — read, extract or act on pages in the user's own Chrome through the `{{skillName}}` MCP server. Use when a task needs a page behind the user's login (SSO dashboards, webmail, admin panels, internal tools), or when the user says "in my browser", "my account", or "open a site for me".
 ---
 
 # {{productName}} — browser delegation for Claude Code
@@ -18,9 +18,9 @@ and per-host permission gate do that.
 1. Node.js ≥ 20 on `PATH`.
 2. Register the server at user scope (every project) by running
    `python3 scripts/setup_claude.py` from this skill folder — it executes
-   `claude mcp add --transport stdio --scope user {{skillName}} -- node <abs path>/scripts/{{bundleFile}}`.
-   For one project only: `python3 scripts/setup_claude.py --project <dir>`
-   writes/merges `<dir>/.mcp.json`.
+   `claude mcp add --transport stdio --scope user {{skillName}} -- node /absolute/path/to/{{skillName}}/scripts/{{bundleFile}}`.
+   For one project only: `python3 scripts/setup_claude.py --project DIR`
+   writes/merges `DIR/.mcp.json`.
 3. Restart Claude Code (or `/mcp` → reconnect). Tools appear as
    `{{hostTool:run}}`, `{{hostTool:extract}}`, `{{hostTool:status}}`,
    `{{hostTool:respond}}`, `{{hostTool:abort}}`, `{{hostTool:connection}}`.
@@ -29,7 +29,7 @@ and per-host permission gate do that.
    reads **Connected** while a Claude Code session is running (it hosts the server).
 
 Limits: same machine only (loopback on both ends — from a remote box, forward
-the port with `ssh -L 17374:127.0.0.1:17374 <host>`); Chromium only; one bridge
+the port with `ssh -L 17374:127.0.0.1:17374 REMOTE_HOST`); Chromium only; one bridge
 socket at a time (17373 Cloud / 17374 this server / 17375 LM Studio); the
 extension runs its own model, independent of Claude's.
 
@@ -76,7 +76,7 @@ Statuses: `running`, `needs_user_input`, `completed`, `failed`, `aborted`.
 5. **Handle the result by status.**
    - `completed` — read `--- result ---`; report `final_url` when useful.
    - `needs_user_input`, **permission request** — the text starts with
-     `PERMISSION REQUEST — {{productName}} wants to navigate to <host>` and
+     `PERMISSION REQUEST — {{productName}} wants to navigate to youtube.com` and
      lists `once | always | deny`. Ask the user (AskUserQuestion with those
      three options when available, otherwise in chat), then call
      `{{hostTool:respond}}` with **exactly one token**: yes / ok / sure /
