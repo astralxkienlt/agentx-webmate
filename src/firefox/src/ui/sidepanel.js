@@ -9070,8 +9070,11 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 browser.runtime.onMessage.addListener((msg) => {
   if (msg?.target !== 'sidepanel'
-      || msg.action !== 'tab_chat_cleared'
-      || msg.handoffOwnerId === tabChatHandoffOwnerId
+      || msg.action !== 'tab_chat_cleared') return;
+  if (msg.clearedContextMenuPromptId) {
+    clearQueuedForTab(msg.tabId, { promptId: msg.clearedContextMenuPromptId });
+  }
+  if (msg.handoffOwnerId === tabChatHandoffOwnerId
       || document.visibilityState === 'hidden'
       || !sameTabId(currentTabId, msg.tabId)) return;
   tabChats.delete(Number(msg.tabId));
@@ -13622,14 +13625,16 @@ async function startNewConversationForTab(tabId) {
   setConversationClearInProgress(tabId, true);
   try {
     if (isTabProcessing(tabId)) await abortRunForConversationClear(tabId, clearingRequestId);
-    await sendToBackground('clear_conversation', { tabId, clearContextMenuPrompt: true });
+    const clearResult = await sendToBackground('clear_conversation', { tabId, clearContextMenuPrompt: true });
     backgroundClearSucceeded = true;
     if (failedConversationClearRecoveryTabs.has(Number(tabId))) {
       finishFailedConversationClearRecovery(tabId, { processing: false });
     }
     suppressRunUpdatesForClearedConversation(tabId, clearingRequestId);
     clearQueuedComposerMessagesForTab(tabId);
-    clearQueuedForTab(tabId);
+    if (clearResult?.clearedContextMenuPromptId) {
+      clearQueuedForTab(tabId, { promptId: clearResult.clearedContextMenuPromptId });
+    }
     await renderClearedConversationForTab(tabId);
     return true;
   } catch (error) {
@@ -13649,6 +13654,7 @@ async function startNewConversationForTab(tabId) {
   } finally {
     setConversationClearInProgress(tabId, false);
     if (shouldRecoverActiveRun) await recoverActiveRunAfterFailedConversationClear(tabId);
+    else if (backgroundClearSucceeded) await drainQueuedPromptsAfterRunSettles(tabId);
   }
 }
 
