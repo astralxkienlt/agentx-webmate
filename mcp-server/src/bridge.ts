@@ -154,7 +154,7 @@ export class WebMateBridge {
       if (this.socket) {
         this.failAllPending(
           new BridgeError(
-            `${BRAND.productName} extension connection was superseded mid-command.`,
+            `${BRAND.extensionName} connection was superseded mid-command.`,
             undefined,
             "COMMAND_INTERRUPTED",
           ),
@@ -183,7 +183,7 @@ export class WebMateBridge {
         log("extension disconnected");
         this.failAllPending(
           new BridgeError(
-            `${BRAND.productName} extension disconnected mid-command.`,
+            `${BRAND.extensionName} disconnected mid-command.`,
             undefined,
             "COMMAND_INTERRUPTED",
           ),
@@ -296,7 +296,7 @@ export class WebMateBridge {
     const socket = this.socket;
     if (!socket || !this.isConnected()) {
       throw new BridgeError(
-        `No ${BRAND.productName} extension is connected. ${connectInstructions()}`,
+        `No ${BRAND.extensionName} is connected. ${connectInstructions()}`,
       );
     }
 

@@ -19,7 +19,7 @@ process.env.WEBMATE_POLL_INTERVAL_MS = "20";
 const { WebMateBridge, BridgeError, TERMINAL_STATUSES, EXTENSION_CLIENT_ID } = await import("../dist/bridge.js");
 const { BRAND } = await import("../dist/brand.generated.js");
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const NOT_CONNECTED = new RegExp(`No ${escapeRe(BRAND.productName)} extension is connected`);
+const NOT_CONNECTED = new RegExp(`No ${escapeRe(BRAND.extensionName)} is connected`);
 const { bridgeUrl } = await import("../dist/config.js");
 const { awaitSettled, describeSnapshot, respond } = await import("../dist/runs.js");
 

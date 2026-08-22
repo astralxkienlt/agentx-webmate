@@ -53,8 +53,8 @@ const server = new McpServer(
   },
   {
     instructions:
-      `These tools run inside the user's own signed-in browser through the ${PRODUCT} ` +
-      "extension. Use them for pages that need the user's login (SSO dashboards, webmail, " +
+      `These tools run inside the user's own signed-in browser through the ${BRAND.extensionName}. ` +
+      "Use them for pages that need the user's login (SSO dashboards, webmail, " +
       `admin panels, internal tools). Prefer mode='ask' (read-only) and ${T.extract} for ` +
       "structured data; use mode='act' whenever the task opens a site, navigates, clicks, types " +
       `or submits. If a tool reports that no extension is connected, call ${T.connection} and ` +
@@ -408,7 +408,7 @@ server.registerTool(
   {
     title: `Check the ${PRODUCT} browser connection`,
     description:
-      `Report whether the ${PRODUCT} extension is currently attached. Call this first ` +
+      `Report whether the ${BRAND.extensionName} is currently attached. Call this first ` +
       "when a browser tool fails, so you can tell the user what to fix instead of retrying " +
       "blindly.",
     inputSchema: {},
@@ -423,8 +423,8 @@ server.registerTool(
     }
     return ok(
       `Not connected. Listening on ${bridgeUrl()}, but no extension has dialled in.\n\n` +
-        `To connect: open a Chromium browser (Chrome, Edge, Brave) with the ${PRODUCT} ` +
-        `extension installed. ${connectInstructions()}\n` +
+        `To connect: open a Chromium browser (Chrome, Edge, Brave) with the ${BRAND.extensionName} ` +
+        `installed. ${connectInstructions()}\n` +
         "The extension holds one bridge socket at a time, so this cannot run at the same " +
         "time as the Cloud bridge on port 17373 or the LM Studio plugin on 17375.\n\n" +
         "Firefox cannot host the bridge — that build has no offscreen document. If the " +

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Health check for the branded browser-extension MCP bridge.
 
-Answers the four questions that explain nearly every "WebMate tools don't
+Answers the four questions that explain nearly every "the browser tools don't
 work" report, without needing a chat session:
 
 1. Is the server registered with the host — ``mcp_servers.<name>`` in AgentX
@@ -68,6 +68,7 @@ HOST = str(BRAND.get("host") or "workmate")
 PRODUCT = str(BRAND["productName"])
 SERVER_NAME = str(BRAND["registrationName"])
 TOOL_PREFIX = str(BRAND["toolPrefix"])
+ENV_PREFIX = str(BRAND.get("envPrefix") or f"{TOOL_PREFIX.upper()}_")
 EXPECTED_TOOLS = tuple(f"{TOOL_PREFIX}_{t}" for t in ("connection", "run", "extract", "status", "respond", "abort"))
 
 
@@ -197,7 +198,7 @@ def configured_port(entry: Optional[Dict[str, Any]], override: Optional[int]) ->
     if override:
         return override
     env = (entry or {}).get("env") or {}
-    for key in ("WEBMATE_BRIDGE_PORT", "WEBBRAIN_BRIDGE_PORT"):
+    for key in (f"{ENV_PREFIX}BRIDGE_PORT", "WEBMATE_BRIDGE_PORT", "WEBBRAIN_BRIDGE_PORT"):
         raw = str(env.get(key, "")).strip()
         if raw.isdigit():
             return int(raw)
