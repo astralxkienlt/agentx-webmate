@@ -132,6 +132,13 @@ without starting a chat session.
 
 ## Branding
 
+> This README uses the `main` branch's names as the worked example: product
+> **AgentX WebMate**, tools `webmate_*`, host-side `mcp__webmate__webmate_*`,
+> bundle `agentx-webmate-mcp.mjs`, env `WEBMATE_*`. On the `netmind-extension`
+> branch the same code builds as **netMind Extension** with `netmind_*`,
+> `mcp__netmind__netmind_*`, `netmind-mcp.mjs`, `NETMIND_*` — substitute
+> accordingly; nothing else differs.
+
 Every user-visible name — server name, tool prefix, product name in messages,
 `<PREFIX>_*` env vars, skill and bundle file names — is derived at build time
 from the repo's [`brand/brand.config.json`](../brand/brand.config.json) by
