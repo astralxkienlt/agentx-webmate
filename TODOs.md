@@ -239,10 +239,7 @@ Two plausible shapes:
 
 ## 12. Migrate the staged-screenshot store into the Attachment Store
 
-**Status:** Planned follow-up PR from PLAN-ingestion-v2 (decision Q5 / GĐ 3
-"sau merge"). Deliberately NOT bundled with the ingestion-v2 feature so the
-fail-closed screenshot-redaction path never shares a review with platform
-plumbing.
+**Status:** Completed (Migrated staged screenshots to `wb_attachments` IndexedDB claim-check store; deleted legacy `staged-screenshot-store.js`).
 
 **Why it matters:** Ingestion v2 gave user uploads a claim-check store
 (`wb_attachments`): `chat_start` carries `att_…` ids + metadata instead of
