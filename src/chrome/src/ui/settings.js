@@ -34,7 +34,7 @@ import {
 } from '../agent/capsolver-config.js';
 import {
   detectedCompatibilityPreset,
-  isNewOpenAIContractModel,
+  isNewOpenAIContractConfig,
   normalizeOpenAICompatibleBaseUrl,
   normalizeProviderCompatibility,
   parseProviderExtraBodyJson,
