@@ -9449,6 +9449,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.handoffOwnerId === tabChatHandoffOwnerId
       || document.visibilityState === 'hidden'
+      || isConversationClearInProgress(msg.tabId)
       || !sameTabId(currentTabId, msg.tabId)) return;
   tabChats.delete(Number(msg.tabId));
   if (lastVisibleTabChatSnapshot
