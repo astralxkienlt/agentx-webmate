@@ -1,4 +1,5 @@
 diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
+index afc7791b9..59f505556 100644
 --- a/src/ui/sidepanel.html
 +++ b/src/ui/sidepanel.html
 @@ -11,6 +11,7 @@
@@ -43,17 +44,18 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
    <div id="onboarding" class="onboarding hidden">
      <div class="ob-card">
 diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
+index ec36d9837..5dcbb2e37 100644
 --- a/src/ui/sidepanel.js
 +++ b/src/ui/sidepanel.js
-@@ -60,6 +60,7 @@ import {
-   removeStagedScreenshots,
-   saveStagedScreenshot,
- } from './staged-screenshot-store.js';
+@@ -25,6 +25,7 @@ import {
+ import { historyTextFromElement } from './history-text.js';
+ import { sniffAttachment } from '../media/media-core.js';
+ import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../media/attachment-store.js';
 +import { createAgentXLoginGate } from './agentx-login-gate.js';
- 
- const isStandaloneWindow = new URLSearchParams(window.location.search).get('standalone') === 'true';
- 
-@@ -110,6 +111,7 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
+ import { claimRunError } from './run-error-dedupe.js';
+ import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
+ import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
+@@ -112,6 +113,7 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
  
      applyDOMTranslations(overlay);
      const backgroundLayers = [
@@ -61,7 +63,7 @@ diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
        document.getElementById('onboarding'),
        document.getElementById('app'),
      ].filter(Boolean);
-@@ -201,10 +203,36 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
+@@ -203,10 +205,36 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
    }
  })();
  

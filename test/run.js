@@ -73232,6 +73232,165 @@ test('attachments: capture-time redaction snapshots fail closed instead of trunc
   }
 });
 
+test('attachments: staged screenshot store verifies exact pixels and cleans up', async () => {
+  const sources = [];
+  for (const build of ['chrome', 'firefox']) {
+    const modulePath = path.join(ROOT, `src/${build}/src/media/attachment-store.js`);
+    sources.push(fs.readFileSync(modulePath, 'utf8'));
+    const background = fs.readFileSync(path.join(ROOT, `src/${build}/src/background.js`), 'utf8');
+    assert.match(
+      background,
+      new RegExp(`clearStagedScreenshots\\(`),
+      `${build}: closing a tab should remove its durable staged pixels`,
+    );
+    const attachmentStoreMod = await import(pathToFileURL(modulePath).href);
+
+    const idbData = new Map();
+    const bytesData = new Map();
+    const fakeStore = {
+      async put(record, bytesInput) {
+        idbData.set(record.id, structuredClone(record));
+        if (bytesInput) bytesData.set(record.id, structuredClone(bytesInput));
+        return record;
+      },
+      async get(id) {
+        return idbData.has(id) ? structuredClone(idbData.get(id)) : null;
+      },
+      async getBytes(id) {
+        return bytesData.has(id) ? structuredClone(bytesData.get(id)) : null;
+      },
+      async listByTab(tabId) {
+        const numTab = Number(tabId);
+        return Array.from(idbData.values())
+          .filter(r => r.tabId === numTab)
+          .map(r => structuredClone(r));
+      },
+      async setState(ids, state, { requestId = '' } = {}) {
+        const idList = Array.isArray(ids) ? ids : [ids];
+        let count = 0;
+        for (const id of idList) {
+          if (idbData.has(id)) {
+            const rec = idbData.get(id);
+            rec.state = state;
+            if (state === 'sending' && requestId) rec.requestId = requestId;
+            else delete rec.requestId;
+            count++;
+          }
+        }
+        return count;
+      },
+      async remove(ids) {
+        const idList = Array.isArray(ids) ? ids : [ids];
+        for (const id of idList) {
+          idbData.delete(id);
+          bytesData.delete(id);
+        }
+        return idList.length;
+      },
+      async removeByTab(tabId, { states = ['pending'] } = {}) {
+        const numTab = Number(tabId);
+        const wanted = new Set(states);
+        let count = 0;
+        for (const [id, rec] of idbData.entries()) {
+          if (rec.tabId === numTab && wanted.has(rec.state)) {
+            idbData.delete(id);
+            bytesData.delete(id);
+            count++;
+          }
+        }
+        return count;
+      },
+    };
+
+    const attachment = {
+      stagedAttachmentId: 'att_1234567890abcdef',
+      id: 'att_1234567890abcdef',
+      name: 'page-screenshot.png',
+      dataUrl: 'data:image/png;base64,UkFXX0NBUFVRUkU=',
+      mimeType: 'image/png',
+      size: 11,
+      capturedAt: 123,
+      fullPage: false,
+      redactionSnapshotReady: true,
+      modelRedactionReady: true,
+      modelDataUrl: 'data:image/png;base64,UkVEQUNURURfQ0FQVFVSRQ==',
+      redactionSnapshot: {
+        coordinateSpace: 'viewport',
+        viewport: { width: 800, height: 600 },
+        regions: [],
+      },
+    };
+
+    assert.equal(await attachmentStoreMod.saveStagedScreenshot(fakeStore, 55, attachment), true, `${build}: exact readback should confirm staging`);
+    const loadedAttachments = await attachmentStoreMod.loadStagedScreenshots(fakeStore, 55);
+    assert.equal(loadedAttachments.length, 1);
+    const loadedAttachment = loadedAttachments[0];
+    assert.equal(loadedAttachment.dataUrl, attachment.dataUrl, `${build}: stored preview pixels should round-trip exactly`);
+    assert.equal(loadedAttachment.modelDataUrl, attachment.modelDataUrl, `${build}: stored model pixels should round-trip exactly`);
+    assert.equal(loadedAttachment.modelRedactionReady, true, `${build}: stored model-copy readiness should round-trip exactly`);
+
+    assert.equal(await attachmentStoreMod.markStagedScreenshots(fakeStore, 55, [{ ...attachment, source: 'slash_screenshot' }], {
+      deliveryState: 'sending',
+      requestId: 'request-55',
+    }), true, `${build}: in-flight ownership should be durably marked`);
+    assert.deepEqual(
+      (await attachmentStoreMod.loadStagedScreenshots(fakeStore, 55)).map(item => [item.deliveryState, item.requestId]),
+      [['sending', 'request-55']],
+      `${build}: reload should retain the active request association`,
+    );
+
+    assert.equal(await attachmentStoreMod.markStagedScreenshots(fakeStore, 55, [{ ...attachment, source: 'slash_screenshot' }], {
+      deliveryState: 'pending',
+    }), true, `${build}: a rejected screenshot should return to pending state`);
+
+    await attachmentStoreMod.removeStagedScreenshot(fakeStore, 55, attachment.id);
+    assert.deepEqual(await attachmentStoreMod.loadStagedScreenshots(fakeStore, 55), [], `${build}: sent or removed screenshots should be deleted`);
+
+    const older = { ...attachment, id: 'att_older1234567890', stagedAttachmentId: 'att_older1234567890' };
+    const newer = { ...attachment, id: 'att_newer1234567890', stagedAttachmentId: 'att_newer1234567890', dataUrl: 'data:image/png;base64,TkVXX0NBUFVRUkU=' };
+    await attachmentStoreMod.saveStagedScreenshot(fakeStore, 57, older);
+    await Promise.all([
+      attachmentStoreMod.removeStagedScreenshot(fakeStore, 57, older.id),
+      attachmentStoreMod.saveStagedScreenshot(fakeStore, 57, newer),
+    ]);
+    assert.deepEqual(
+      (await attachmentStoreMod.loadStagedScreenshots(fakeStore, 57)).map(item => item.id),
+      [newer.id],
+      `${build}: cleanup of an older screenshot must not erase or resurrect a concurrent new capture`,
+    );
+
+    const corruptingStore = {
+      ...fakeStore,
+      async get(id) {
+        const rec = await fakeStore.get(id);
+        if (rec && rec.redaction) rec.redaction.dataUrl = 'data:image/png;base64,Q09SUlVQVEVE';
+        return rec;
+      },
+    };
+    const corruptAtt = { ...attachment, id: 'att_corrupt12345678', stagedAttachmentId: 'att_corrupt12345678' };
+    assert.equal(await attachmentStoreMod.saveStagedScreenshot(corruptingStore, 56, corruptAtt), false, `${build}: staging must fail when exact pixels cannot be read back`);
+    await attachmentStoreMod.clearStagedScreenshots(fakeStore, 56);
+
+    const otherTabAttachment = { ...attachment, id: 'att_othertab1234567', stagedAttachmentId: 'att_othertab1234567' };
+    await attachmentStoreMod.saveStagedScreenshot(fakeStore, 58, attachment);
+    await attachmentStoreMod.saveStagedScreenshot(fakeStore, 59, otherTabAttachment);
+    assert.deepEqual(
+      (await attachmentStoreMod.loadStagedScreenshots(fakeStore, 58)).map(item => item.id),
+      [attachment.id],
+      `${build}: loading one tab's screenshots should return only that tab's records`,
+    );
+    await attachmentStoreMod.clearStagedScreenshots(fakeStore, 58);
+    assert.deepEqual(await attachmentStoreMod.loadStagedScreenshots(fakeStore, 58), [], `${build}: clearing a tab should remove its records`);
+    assert.deepEqual(
+      (await attachmentStoreMod.loadStagedScreenshots(fakeStore, 59)).map(item => item.id),
+      [otherTabAttachment.id],
+      `${build}: clearing one tab must not touch another tab's records`,
+    );
+    await attachmentStoreMod.clearStagedScreenshots(fakeStore, 59);
+  }
+  assert.equal(sources[0], sources[1], 'Chrome and Firefox attachment stores should stay byte-identical');
+});
+
 test('attachments: staged screenshot restore metadata never substitutes compacted image pixels', () => {
   for (const [label, panelRel] of [
     ['chrome', 'src/chrome/src/ui/sidepanel.js'],
@@ -73321,129 +73480,7 @@ test('attachments: staged screenshot restore metadata never substitutes compacte
   }
 });
 
-test('attachments: staged screenshot store verifies exact pixels and cleans up', async () => {
-  const sources = [];
-  for (const build of ['chrome', 'firefox']) {
-    const modulePath = path.join(ROOT, `src/${build}/src/ui/staged-screenshot-store.js`);
-    sources.push(fs.readFileSync(modulePath, 'utf8'));
-    assert.match(sources.at(-1), /function storageKey\(tabId, stagedAttachmentId\)[\s\S]*?\$\{prefix\}\$\{id\}/, `${build}: each screenshot should have an independent storage key`);
-    assert.doesNotMatch(sources.at(-1), /next\.push\(record\)|storageArea\.set\(\{ \[key\]: next \}\)/, `${build}: storage mutations must not replace a shared per-tab array`);
-    const background = fs.readFileSync(path.join(ROOT, `src/${build}/src/background.js`), 'utf8');
-    assert.match(
-      background,
-      new RegExp(`clearStagedScreenshots\\(${build === 'chrome' ? 'chrome' : 'browser'}\\.storage\\.local, tabId\\)`),
-      `${build}: closing a tab should remove its durable staged pixels`,
-    );
-    const store = await import(pathToFileURL(modulePath).href);
-    const values = {};
-    const storage = {
-      async get(key) {
-        if (key == null) return structuredClone(values);
-        const keys = Array.isArray(key) ? key : [key];
-        return Object.fromEntries(keys
-          .filter(item => Object.hasOwn(values, item))
-          .map(item => [item, structuredClone(values[item])]));
-      },
-      async set(update) { Object.assign(values, structuredClone(update)); },
-      async remove(key) {
-        for (const item of Array.isArray(key) ? key : [key]) delete values[item];
-      },
-    };
-    const attachment = {
-      stagedAttachmentId: 'screenshot-12345678',
-      name: 'page-screenshot.png',
-      dataUrl: 'data:image/png;base64,RAW_CAPTURE',
-      mimeType: 'image/png',
-      size: 11,
-      capturedAt: 123,
-      fullPage: false,
-      redactionSnapshotReady: true,
-      modelRedactionReady: true,
-      modelDataUrl: 'data:image/png;base64,REDACTED_CAPTURE',
-      redactionSnapshot: {
-        coordinateSpace: 'viewport',
-        viewport: { width: 800, height: 600 },
-        regions: [],
-      },
-    };
 
-    assert.equal(await store.saveStagedScreenshot(storage, 55, attachment), true, `${build}: exact readback should confirm staging`);
-    const loadedAttachment = (await store.loadStagedScreenshots(storage, 55))[0];
-    assert.equal(loadedAttachment.dataUrl, attachment.dataUrl, `${build}: stored preview pixels should round-trip exactly`);
-    assert.equal(loadedAttachment.modelDataUrl, attachment.modelDataUrl, `${build}: stored model pixels should round-trip exactly`);
-    assert.equal(loadedAttachment.modelRedactionReady, true, `${build}: stored model-copy readiness should round-trip exactly`);
-    assert.equal(await store.markStagedScreenshots(storage, 55, [{ ...attachment, source: 'slash_screenshot' }], {
-      deliveryState: 'sending',
-      requestId: 'request-55',
-    }), true, `${build}: in-flight ownership should be durably marked`);
-    assert.deepEqual(
-      (await store.loadStagedScreenshots(storage, 55)).map(item => [item.deliveryState, item.requestId]),
-      [['sending', 'request-55']],
-      `${build}: reload should retain the active request association`,
-    );
-    assert.equal(await store.markStagedScreenshots(storage, 55, [{ ...attachment, source: 'slash_screenshot' }], {
-      deliveryState: 'pending',
-    }), true, `${build}: a rejected screenshot should return to pending state`);
-    await store.removeStagedScreenshot(storage, 55, attachment.stagedAttachmentId);
-    assert.deepEqual(await store.loadStagedScreenshots(storage, 55), [], `${build}: sent or removed screenshots should be deleted`);
-
-    const older = { ...attachment, stagedAttachmentId: 'screenshot-older123' };
-    const newer = { ...attachment, stagedAttachmentId: 'screenshot-newer123', dataUrl: 'data:image/png;base64,NEW_CAPTURE' };
-    await store.saveStagedScreenshot(storage, 57, older);
-    await Promise.all([
-      store.removeStagedScreenshot(storage, 57, older.stagedAttachmentId),
-      store.saveStagedScreenshot(storage, 57, newer),
-    ]);
-    assert.deepEqual(
-      (await store.loadStagedScreenshots(storage, 57)).map(item => item.stagedAttachmentId),
-      [newer.stagedAttachmentId],
-      `${build}: cleanup of an older screenshot must not erase or resurrect a concurrent new capture`,
-    );
-
-    const corruptingStorage = {
-      ...storage,
-      async set(update) {
-        const copy = structuredClone(update);
-        const key = Object.keys(copy)[0];
-        copy[key].dataUrl = 'data:image/png;base64,DIFFERENT_PIXELS';
-        values[key] = copy[key];
-      },
-    };
-    assert.equal(await store.saveStagedScreenshot(corruptingStorage, 56, attachment), false, `${build}: staging must fail when exact pixels cannot be read back`);
-    await store.clearStagedScreenshots(storage, 56);
-
-    // Reads run on every tab switch and every reconnect probe, and each record
-    // holds multi-megabyte pixels for every tab, so they must never deserialize
-    // the whole area.
-    let fullAreaReads = 0;
-    const keyedStorage = {
-      ...storage,
-      async getKeys() { return Object.keys(values); },
-      async get(key) {
-        if (key == null) fullAreaReads += 1;
-        return storage.get(key);
-      },
-    };
-    const otherTabAttachment = { ...attachment, stagedAttachmentId: 'screenshot-othertab1' };
-    await store.saveStagedScreenshot(keyedStorage, 58, attachment);
-    await store.saveStagedScreenshot(keyedStorage, 59, otherTabAttachment);
-    assert.deepEqual(
-      (await store.loadStagedScreenshots(keyedStorage, 58)).map(item => item.stagedAttachmentId),
-      [attachment.stagedAttachmentId],
-      `${build}: loading one tab's screenshots should return only that tab's records`,
-    );
-    await store.clearStagedScreenshots(keyedStorage, 58);
-    assert.deepEqual(await store.loadStagedScreenshots(keyedStorage, 58), [], `${build}: clearing a tab should remove its records`);
-    assert.deepEqual(
-      (await store.loadStagedScreenshots(keyedStorage, 59)).map(item => item.stagedAttachmentId),
-      [otherTabAttachment.stagedAttachmentId],
-      `${build}: clearing one tab must not touch another tab's records`,
-    );
-    assert.equal(fullAreaReads, 0, `${build}: staged screenshot reads must never deserialize the whole storage area`);
-    await store.clearStagedScreenshots(keyedStorage, 59);
-  }
-  assert.equal(sources[0], sources[1], 'Chrome and Firefox staged screenshot stores should stay byte-identical');
-});
 
 test('attachments: a full-page screenshot is refused when deferred redaction leaves the pixels unchanged', async () => {
   for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {

@@ -1,4 +1,5 @@
 diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
+index 94d6f0d79..a44e2fce4 100644
 --- a/src/ui/sidepanel.html
 +++ b/src/ui/sidepanel.html
 @@ -12,6 +12,7 @@
@@ -43,17 +44,18 @@ diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
    <div id="onboarding" class="onboarding hidden">
      <div class="ob-card">
 diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
+index 8283a84c3..56e88a60e 100644
 --- a/src/ui/sidepanel.js
 +++ b/src/ui/sidepanel.js
-@@ -64,6 +64,7 @@ import {
-   removeStagedScreenshots,
-   saveStagedScreenshot,
- } from './staged-screenshot-store.js';
+@@ -25,6 +25,7 @@ import {
+ import { historyTextFromElement } from './history-text.js';
+ import { sniffAttachment } from '../media/media-core.js';
+ import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../media/attachment-store.js';
 +import { createAgentXLoginGate } from './agentx-login-gate.js';
- 
- const isStandaloneWindow = new URLSearchParams(window.location.search).get('standalone') === 'true';
- 
-@@ -85,8 +86,34 @@ if (globalThis.browser?.storage?.onChanged) {
+ import { claimRunError } from './run-error-dedupe.js';
+ import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
+ import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
+@@ -87,8 +88,34 @@ if (globalThis.browser?.storage?.onChanged) {
    });
  }
  

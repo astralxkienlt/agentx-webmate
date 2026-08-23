@@ -48,13 +48,14 @@ import {
   selectionTranslationLanguageLabel,
 } from './selection-shortcut-i18n.js';
 import { createTabChatHandoffCoordinator } from './ui/tab-chat-persistence.js';
-import { clearStagedScreenshots } from './ui/staged-screenshot-store.js';
 import {
   ATTACHMENT_RETENTION_KEY,
   ATTACHMENT_SESSION_MARKER_KEY,
   ATTACHMENT_SWEEP_ALARM,
   ATTACHMENT_SWEEP_PERIOD_MINUTES,
   ATTACHMENT_TTL_MS,
+  clearLegacyStagedScreenshots,
+  clearStagedScreenshots,
   getSharedAttachmentStore,
 } from './media/attachment-store.js';
 import { enqueueDocumentDecode } from './media/decode-queue.js';
@@ -1881,7 +1882,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   pendingContextMenuNotifications.delete(tabId);
   contextMenuStorage.cleanup(tabId);
   tabChatHandoff.clear(tabId).catch(() => {});
-  clearStagedScreenshots(chrome.storage.local, tabId).catch(() => {});
+  clearStagedScreenshots(attachmentStoreOrNull(), tabId).catch(() => {});
+  clearLegacyStagedScreenshots(chrome.storage.local, tabId).catch(() => {});
   // Pending (never-sent) attachment chips die with their tab; sent records
   // stay until the TTL sweep so read_attachment keeps working.
   attachmentStoreOrNull()?.removeByTab(tabId).catch(() => {});
@@ -2183,6 +2185,7 @@ async function initAttachmentRetention() {
     chrome.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES });
   } catch { /* alarms unavailable */ }
   void sweepAttachmentStore();
+  clearLegacyStagedScreenshots(chrome.storage.local).catch(() => {});
 }
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {

@@ -65,7 +65,7 @@ import {
   removeStagedScreenshot,
   removeStagedScreenshots,
   saveStagedScreenshot,
-} from './staged-screenshot-store.js';
+} from '../media/attachment-store.js';
 
 const isStandaloneWindow = new URLSearchParams(window.location.search).get('standalone') === 'true';
 
