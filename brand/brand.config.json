@@ -4,7 +4,7 @@
     "shortName": "netMind",
     "slug": "netmind-extension",
     "description": "AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
-    "homepage": "https://github.com/astralxkienlt/agentx-webmate",
+    "homepage": "https://netmind.viettel.vn/netmind-extension",
     "firefoxId": "netmind-extension@astralx.com.vn"
   },
 
@@ -147,14 +147,15 @@
     },
     {
       "_why": "User-visible export and capture filenames.",
-      "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage)-",
+      "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage|ci)-",
       "to": "netmind-extension-$1-",
       "only": [
         "src/ui/sidepanel.js",
         "src/ui/settings.js",
         "src/ui/traces.js",
         "src/ui/history.js",
-        "src/ui/staged-screenshot-store.js",
+        "src/cloud-runs.js",
+        "src/media/attachment-store.js",
         "src/recorder/host.js",
         "src/agent/agent.js"
       ]
@@ -165,7 +166,7 @@
       "to": "netmind-extension-$1",
       "only": [
         "src/ui/sidepanel.js",
-        "src/ui/staged-screenshot-store.js",
+        "src/media/attachment-store.js",
         "src/recorder/host.js"
       ]
     },
@@ -182,9 +183,27 @@
       "only": ["src/ui/sidepanel.js"]
     },
     {
+      "_why": "OpenRouter shows the HTTP-Referer next to X-Title on its app leaderboard and in the account dashboard, so this string is read by people outside the extension. X-Title already says netMind Extension; the referer has to agree.",
+      "from": "this.config.siteUrl || 'https://github.com/webbrain-one/webbrain'",
+      "to": "this.config.siteUrl || 'https://netmind.viettel.vn/netmind-extension'",
+      "only": ["src/providers/openai.js"]
+    },
+    {
+      "_why": "Thai marks sentence breaks with a space and never a terminator, so the rule above has nothing to anchor on in th.js. This is the only locale whose CTA has to be named outright; if upstream rewords the Thai copy, the leftover-webbrain count catches it.",
+      "from": " \u0e25\u0e2d\u0e07\u0e40\u0e25\u0e22: https://webbrain.one",
+      "to": "",
+      "only": ["src/ui/locales/th.js"]
+    },
+    {
+      "_why": "The Ollama origin warning links to upstream's blog post. netMind cannot host that page and must not send users to webbrain.one, so the anchor goes; the warning body and the OLLAMA_ORIGINS snippet above it already carry the actual fix. Leaves st.providers.ollama_warning.link unused, which is harmless.",
+      "from": "\n           <a href=\"https://www.webbrain.one/blog/ollama-launch-handoff\"\n              target=\"_blank\" rel=\"noopener noreferrer\">${escapeHtml(t('st.providers.ollama_warning.link'))} ↗</a>",
+      "to": "",
+      "only": ["src/ui/settings.js"]
+    },
+    {
       "_why": "Send reviews and feedback to the product repository until store listings are available.",
       "regex": "https://(?:chromewebstore\\.google\\.com/detail/webbrain/ljhijonmfahplgbbacgcfnaihbjljhhb|addons\\.mozilla\\.org/en-US/firefox/addon/webbrain/)",
-      "to": "https://github.com/astralxkienlt/agentx-webmate",
+      "to": "https://netmind.viettel.vn/netmind-extension",
       "only": ["src/ui/store-review-prompt.js"]
     },
     {
@@ -196,19 +215,19 @@
     {
       "_why": "Send feedback to the product issue tracker.",
       "from": "https://github.com/webbrain-one/webbrain/issues/new",
-      "to": "https://github.com/astralxkienlt/agentx-webmate/issues/new",
+      "to": "https://netmind.viettel.vn/netmind-extension",
       "only": ["src/ui/store-review-prompt.js"]
     },
     {
       "_why": "Point the in-app documentation link to this repository's documentation.",
       "from": "https://webbrain.one/docs",
-      "to": "https://github.com/astralxkienlt/agentx-webmate/tree/main/docs",
+      "to": "https://netmind.viettel.vn/netmind-extension",
       "only": ["src/ui/settings.html"]
     },
     {
-      "_why": "Avoid promoting the upstream brand in localized social-share copy.",
-      "regex": "https://webbrain\\.one(?=['\"])",
-      "to": "https://github.com/astralxkienlt/agentx-webmate",
+      "_why": "Strip the whole trailing call-to-action from localized social-share copy. Upstream closes every translation with a localized \"Try it:\" plus https://webbrain.one, and this text is published to X and LinkedIn, so outsiders read it. netMind posts carry no link, and dropping only the URL would publish a dangling \"Try it:\" in 23 languages. Anchored to the last sentence terminator before the URL so each locale loses exactly its own phrase.",
+      "regex": "(?<=[.\u3002\u0964!?])\\s*[^.\u3002\u0964!?'\"]*https://webbrain\\.one(?=['\"])",
+      "to": "",
       "only": ["src/ui/locales/**"]
     },
     {
