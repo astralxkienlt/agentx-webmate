@@ -1856,11 +1856,7 @@ export class Agent extends LoopDetector {
     return { status: reason, reason, ...(code ? { code } : {}) };
   }
 
-  async _chatWithCostAllowance(provider, messages, options, costState, requestContext = null) {
-    const before = await this._checkCostAllowance(provider, costState);
-    if (before) throw this._costAllowanceError(before);
-    this._throwIfAborted(options?.signal);
->>>>>>> 3163505a (feat(trace): turn/step boundary events with structured failure codes)
+  async _chat(provider, messages, options, requestContext = null) {
     const result = await provider.chat(messages, requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
       : options);

@@ -1549,8 +1549,18 @@ export class Agent extends LoopDetector {
     }
   }
 
+  _isUsageLimitError(err) {
+    return /Subscribe for more usage:\s*https?:\/\/\S+/i.test(String(err?.message || ''));
+  }
+
+  _isCostAllowanceError(err) {
+    return err?.code === 'WB_COST_ALLOWANCE'
+      || /^webbrain_cloud_(?:free|paid|plus)_tier_exceeded$/i.test(String(err?.code || ''))
+      || /(?:Subscribe for more usage|Upgrade to WebBrain Plus):\s*https?:\/\/\S+/i.test(String(err?.message || ''));
+  }
+
   _traceErrorCodeFor(error) {
-    if (this._isUsageLimitError(error)) return 'COST_LIMIT';
+    if (this._isCostAllowanceError(error)) return 'COST_LIMIT';
     const message = String(error?.message || '').toLowerCase();
     const status = Number(error?.status);
     const providerCode = String(error?.code || error?.type || '').toLowerCase();

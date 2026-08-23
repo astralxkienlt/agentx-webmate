@@ -164,7 +164,7 @@ export function isNewOpenAIContractModel(model, config = {}) {
   if (providerName === 'openrouter') {
     return /(?:^|\/)gpt-5\.6-terra(?:$|[-_.:\/])/.test(m);
   }
-  if (/(?:^|\/)gpt-5(?:\.(?:2|4|5))?-pro(?:$|[-_.\/:])/.test(m)) return false;
+  if (providerName !== 'openai' && /(?:^|\/)gpt-5(?:\.(?:2|4|5))?-pro(?:$|[-_.\/:])/.test(m)) return false;
   return /(?:^|\/)(?:gpt-5|o1|o3|o4)(?:$|[-_.\/])/.test(m);
 }
 

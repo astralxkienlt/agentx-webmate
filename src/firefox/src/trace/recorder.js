@@ -147,9 +147,6 @@ async function _peekSeq(db, runId) {
   return result;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 // Restore per-run flags after worker eviction from the durable run record so
 // the lossless tier decision survives a worker restart mid-run.
 async function peekRunFlags(db, runId) {

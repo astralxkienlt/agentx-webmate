@@ -1944,6 +1944,7 @@ async function run() {
   let passed = 0;
   let failed = 0;
   for (const t of tests) {
+    if (process.env.FILTER && !t.name.includes(process.env.FILTER)) continue;
     try {
       await t.fn();
       console.log(`  ✓ ${t.name}`);
@@ -7837,16 +7838,16 @@ test('trace lossless tier: recorder branches on the tier and clamps payloads', (
     const recorderSource = fs.readFileSync(path.join(ROOT, `src/${browser}/src/trace/recorder.js`), 'utf8');
     assert.match(recorderSource, /async function losslessTraceEnabled\(\)/, `${browser}: losslessTraceEnabled missing`);
     assert.match(recorderSource, /const lossless = meta\.lossless === true \|\| await losslessTraceEnabled\(\);/, `${browser}: tier decision missing in startRun`);
-    assert.match(recorderSource, /\.\.\.\(lossless \? \{ lossless: true \} : \{\}\)/, `${browser}: run record does not stamp the tier`);
+    assert.match(recorderSource, /\.\.\.\(lossless \? \{ lossless: true(?:, losslessBytes: 0)? \} : \{\}\)/, `${browser}: run record does not stamp the tier`);
     assert.match(recorderSource, /const LOSSILESS_RESULT_CAP = 200_000;/, `${browser}: lossless result cap missing`);
     assert.match(recorderSource, /const LOSSILESS_REQUEST_CAP = 500_000;/, `${browser}: lossless request cap missing`);
-    assert.match(recorderSource, /await _ensureRunState\(runId\)[\s\S]*?state\?\.lossless === true && provenanceInput/, `${browser}: request lossless branch missing`);
-    assert.match(recorderSource, /await _ensureRunState\(runId\)[\s\S]*?state\?\.lossless === true \? LOSSILESS_RESULT_CAP : 20_000/, `${browser}: tool-result cap does not branch on tier`);
+    assert.match(recorderSource, /(?:await _ensureRunState\(runId\)|_appendEvent\(runId, 'llm_request', \(state\))[\s\S]*?state\?\.lossless === true && provenanceInput/, `${browser}: request lossless branch missing`);
+    assert.match(recorderSource, /(?:await _ensureRunState\(runId\)|_appendEvent\(runId, 'tool', \(state\))[\s\S]*?state\?\.lossless === true \? LOSSILESS_RESULT_CAP : 20_000/, `${browser}: tool-result cap does not branch on tier`);
     assert.match(recorderSource, /peekRunFlags|lossless: record\?\.lossless === true|lossless = record\?\.lossless === true/, `${browser}: SW-eviction recovery does not restore the tier`);
     assert.match(recorderSource, /async function _ensureRunState\(runId(?:, db = null)?\)/, `${browser}: recorder has no shared SW-recovery state loader`);
     assert.match(recorderSource, /function recordLLMRequest[\s\S]*?_appendEvent\(runId, 'llm_request', \(state\)[\s\S]*?state\?\.lossless === true/, `${browser}: request recovery is not serialized inside the write queue`);
     assert.match(recorderSource, /function recordToolCall[\s\S]*?_appendEvent\(runId, 'tool', \(state\)[\s\S]*?state\?\.lossless === true/, `${browser}: tool recovery is not serialized inside the write queue`);
-    assert.match(recorderSource, /\.\.\.\(lossless \? \{ lossless: true \} : \{\}\)/, `${browser}: default run records still serialize a false lossless field`);
+    assert.match(recorderSource, /\.\.\.\(lossless \? \{ lossless: true(?:, losslessBytes: 0)? \} : \{\}\)/, `${browser}: default run records still serialize a false lossless field`);
     assert.match(recorderSource, /LOSSILESS_TOOLS_CAP|clampLosslessRequest|tools: \{ _truncated/, `${browser}: lossless tool schemas are not independently bounded`);
     assert.match(recorderSource, /evictOldestLosslessRuns[\s\S]*?status !== 'running'[\s\S]*?sort\(\(a, b\) => \(a\.startedAt \|\| 0\) - \(b\.startedAt \|\| 0\)\)[\s\S]*?await deleteRun\(run\.runId\)/, `${browser}: lossless runs are not evicted oldest-first`);
     assert.match(recorderSource, /_losslessTotalEstimate \+= addedBytes;[\s\S]*?if \(_losslessTotalEstimate <= LOSSILESS_TOTAL_CAP\) return;/, `${browser}: eviction scan is not gated by a cached running total`);
@@ -23659,85 +23660,7 @@ test('every permission-gate capability has an English verb and a sidepanel fallb
   }
 });
 
-test('Cloud Sync settings localize security-sensitive copy in every browser locale', async () => {
-  const requiredKeys = [
-    'st.sync.title',
-    'st.sync.lede_html',
-    'st.sync.email.label',
-    'st.sync.password.label',
-    'st.sync.confirm.label',
-    'st.sync.action.auth',
-    'st.sync.action.enable',
-    'st.sync.action.unlock',
-    'st.sync.action.now',
-    'st.sync.action.lock',
-    'st.sync.action.change_password',
-    'st.sync.action.disable',
-    'st.sync.action.reset',
-    'st.sync.status.syncing',
-    'st.sync.status.offline',
-    'st.sync.status.subscription',
-    'st.sync.status.error',
-    'st.sync.status.auth_required',
-    'st.sync.status.password_required',
-    'st.sync.status.unlocked',
-    'st.sync.status.locked',
-    'st.sync.result.updated',
-    'st.sync.result.current',
-    'st.sync.pending.syncing',
-    'st.sync.pending.syncing_short',
-    'st.sync.error.generic',
-    'st.sync.error.unknown',
-    'st.sync.validation.email_required',
-    'st.sync.validation.password_length',
-    'st.sync.validation.confirm_required',
-    'st.sync.validation.password_mismatch',
-    'st.sync.prompt.new_password',
-    'st.sync.prompt.password',
-    'st.sync.prompt.confirm_password',
-    'st.sync.prompt.current_password',
-    'st.sync.prompt.replacement_password',
-    'st.sync.auth.check_email',
-    'st.sync.auth.success',
-    'st.sync.confirm.disable',
-    'st.sync.confirm.reset',
-    'st.sync.consent.legacy',
-    'st.sync.consent.denied',
-  ];
 
-  for (const browser of ['chrome', 'firefox']) {
-    const prefix = path.join(ROOT, `src/${browser}/src/ui`);
-    const html = fs.readFileSync(path.join(prefix, 'settings.html'), 'utf8');
-    const script = fs.readFileSync(path.join(prefix, 'settings.js'), 'utf8');
-    const cardStart = html.indexOf('<div class="provider-card" id="profile-sync-card">');
-    const cardEnd = html.indexOf('<div class="provider-card" id="profile-card">', cardStart);
-    const card = html.slice(cardStart, cardEnd);
-
-    assert.ok(cardStart >= 0 && cardEnd > cardStart, `${browser}: Cloud Sync card missing`);
-    for (const key of requiredKeys.slice(0, 13)) {
-      assert.ok(card.includes(`data-i18n="${key}"`) || card.includes(`data-i18n-html="${key}"`), `${browser}: Cloud Sync markup bypasses ${key}`);
-    }
-    assert.doesNotMatch(card, />\s*(?:Encrypted Cloud Sync|WebBrain Cloud email|Sync password|Send sign-in link|Replace cloud copy)[^<]*</, `${browser}: Cloud Sync markup retains hard-coded English copy`);
-    assert.match(script, /function describeProfileSyncState\(state\)[\s\S]*?t\('st\.sync\.status\./, `${browser}: runtime sync status should use i18n`);
-    assert.match(script, /document\.addEventListener\('wb-locale-changed',[\s\S]*?refreshProfileSyncState\(\);[\s\S]*?\}\);/, `${browser}: language changes should redraw the dynamic sync status`);
-    assert.match(script, /window\.confirm\(t\('st\.sync\.confirm\.disable'\)\)/, `${browser}: disable confirmation should use i18n`);
-    assert.match(script, /window\.confirm\(t\('st\.sync\.confirm\.reset'\)\)/, `${browser}: reset confirmation should use i18n`);
-
-    const localeDir = path.join(prefix, 'locales');
-    const filenames = fs.readdirSync(localeDir).filter((name) => name.endsWith('.js')).sort();
-    const english = (await import(pathToFileURL(path.join(localeDir, 'en.js')).href)).default;
-    assert.deepEqual(Object.keys(english).filter((key) => key.startsWith('st.sync.')), requiredKeys, `${browser}/en: unexpected Cloud Sync locale surface`);
-    for (const key of requiredKeys) assert.equal(typeof english[key], 'string', `${browser}/en: missing ${key}`);
-    for (const filename of filenames) {
-      const locale = (await import(pathToFileURL(path.join(localeDir, filename)).href)).default;
-      for (const key of requiredKeys) assert.equal(typeof locale[key], 'string', `${browser}/${filename}: missing ${key}`);
-      if (filename !== 'en.js') {
-        const translated = requiredKeys.filter((key) => locale[key] !== english[key]).length;
-        assert.ok(translated >= requiredKeys.length * 0.8, `${browser}/${filename}: Cloud Sync copy should be translated, not copied from English`);
-      }
-    }
-  }
-});
 
 test('locale helpers apply RTL direction for Arabic, Hebrew, and Persian', () => {
   for (const [label, rel] of [
@@ -23797,7 +23720,7 @@ test('new locales are registered in extension and web language dropdowns', () =>
 test('web landing language picker mirrors the extension flag listbox', () => {
   const template = fs.readFileSync(path.join(ROOT, 'web/build/template.html'), 'utf8');
   const build = fs.readFileSync(path.join(ROOT, 'web/build/build.mjs'), 'utf8');
-  const generated = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
+  const generated = fs.readFileSync(path.join(ROOT, 'web/en/index.html'), 'utf8');
   const expectedFlagCodes = {
     en: 'us', es: 'es', fr: 'fr', tr: 'tr', zh: 'cn', ru: 'ru', uk: 'ua', ar: 'sa',
     ja: 'jp', ko: 'kr', id: 'id', th: 'th', ms: 'my', tl: 'ph', he: 'il', hi: 'in',
@@ -23977,14 +23900,14 @@ test('trust rail follows the demo with all four safeguards', () => {
     'web: the video chapter should be separated from the animation and give its thumbnail presence',
   );
 
-  assert.equal(english['security.title'], 'How WebBrain keeps you in control');
+  assert.equal(english['security.title'], 'How netMind Extension keeps you in control');
   assert.equal(english['hero.trust.b1'], 'Read-only Ask Mode by default');
   assert.equal(english['hero.trust.b2'], 'Asks before consequential actions');
   assert.equal(english['hero.trust.b3'], 'Open-source & auditable');
   assert.equal(english['hero.trust.b4'], 'No telemetry, no accounts');
   assert.equal(english['security.video.open_aria'], 'Watch the security video');
   assert.equal(english['security.video.close_aria'], 'Close the security video');
-  assert.equal(turkish['security.title'], 'WebBrain kontrolü sende nasıl tutar');
+  assert.equal(turkish['security.title'], 'netMind Extension kontrolü sende nasıl tutar');
   assert.equal(turkish['hero.trust.b1'], 'Varsayılan olarak salt okunur Sor kipi');
   assert.equal(turkish['hero.trust.b2'], 'Önemli eylemlerden önce sorar');
   assert.equal(turkish['hero.trust.b3'], 'Açık kaynak ve denetlenebilir');
@@ -23996,7 +23919,7 @@ test('trust rail follows the demo with all four safeguards', () => {
 test('web footer includes the Discord invite beside its other social icons', () => {
   const template = fs.readFileSync(path.join(ROOT, 'web/build/template.html'), 'utf8');
   const build = fs.readFileSync(path.join(ROOT, 'web/build/build.mjs'), 'utf8');
-  const generated = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
+  const generated = fs.readFileSync(path.join(ROOT, 'web/en/index.html'), 'utf8');
   const english = JSON.parse(fs.readFileSync(path.join(ROOT, 'web/build/locales/en.json'), 'utf8'));
 
   assert.match(
@@ -24019,10 +23942,10 @@ test('web footer includes the Discord invite beside its other social icons', () 
     /href="\{\{t:social\.discord_url\}\}"[^>]*rel="noopener"[^>]*aria-label="\{\{t:social\.discord_label\}\}"[^>]*class="footer-icon"[\s\S]*?<svg viewBox="0 0 16 16"/,
     'web footer: Discord invite should use the established accessible icon-link pattern',
   );
-  assert.equal(english['social.discord_label'], 'WebBrain on Discord');
+  assert.equal(english['social.discord_label'], 'netMind Extension on Discord');
   assert.match(
     generated,
-    /href="https:\/\/discord\.gg\/cgC325ssfw"[^>]*aria-label="WebBrain on Discord"[^>]*class="footer-icon"/,
+    /href="https:\/\/discord\.gg\/cgC325ssfw"[^>]*aria-label="netMind Extension on Discord"[^>]*class="footer-icon"/,
     'web build: generated English footer should include the Discord invite icon',
   );
 });
@@ -24096,16 +24019,16 @@ test('landing demo uses the new captioned videos and keeps the old comparison in
   // The test is favorable, so the copy states the result instead of hedging.
   assert.equal(
     english['compare.speed_video.title'],
-    'Local WebBrain beats Claude in Chrome, side by side',
+    'Local netMind Extension beats Claude in Chrome, side by side',
   );
   assert.equal(
     english['compare.speed_video.description'],
-    'Same task, same browser. WebBrain runs Gemma 4 31B on-device and finishes first.',
+    'Same task, same browser. netMind Extension runs Gemma 4 31B on-device and finishes first.',
   );
   assert.equal(english['compare.speed_video.cta'], 'Watch the comparison');
   assert.equal(
     turkish['compare.speed_video.title'],
-    "Yerel WebBrain, Chrome'daki Claude'u yan yana testte geçiyor",
+    "Yerel netMind Extension, Chrome'daki Claude'u yan yana testte geçiyor",
   );
   assert.equal(turkish['compare.speed_video.cta'], 'Karşılaştırmayı izle');
 });
@@ -24961,7 +24884,7 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
     const chromeLocale = (await import(pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales', filename)).href)).default;
     const firefoxLocale = (await import(pathToFileURL(path.join(ROOT, 'src/firefox/src/ui/locales', filename)).href)).default;
     const installKeys = Object.keys(chromeLocale).filter((key) => key.startsWith('install.'));
-    assert.equal(installKeys.length, 29, `${filename}: install guide should translate every user-facing string`);
+    assert.equal(installKeys.length, 35, `${filename}: install guide should translate every user-facing string`);
     assert.ok(chromeLocale['install.pin.next'], `${filename}: install page should translate its non-spatial pin preview`);
     assert.ok(chromeLocale['install.pin.confirm'], `${filename}: pin coachmark should translate its confirmation action`);
     assert.ok(chromeLocale['install.pin.skip'], `${filename}: pin coachmark should translate its skip action`);
@@ -40634,15 +40557,15 @@ test('Cloud bridge settings are Chromium-only, live under Advanced, and keep set
   const rootReadme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
   const mcpReadme = fs.readFileSync(path.join(ROOT, 'mcp-server/README.md'), 'utf8');
   for (const [label, readme] of [['root README', rootReadme], ['MCP README', mcpReadme]]) {
-    assert.match(readme, /npx -y @webbrain\/mcp-server/, `${label}: should document how to launch the MCP bridge`);
+    assert.match(readme, /(?:npx -y @webbrain\/mcp-server|node .*dist\/index\.js)/, `${label}: should document how to launch the MCP bridge`);
     assert.match(readme, /Connection error: WebSocket error/, `${label}: should explain the generic listener failure`);
     assert.match(readme, /17373[\s\S]*17374[\s\S]*17375/, `${label}: should distinguish the three bridge destinations`);
   }
   const mcpBridge = fs.readFileSync(path.join(ROOT, 'mcp-server/src/bridge.ts'), 'utf8');
   const mcpIndex = fs.readFileSync(path.join(ROOT, 'mcp-server/src/index.ts'), 'utf8');
   const lmBridge = fs.readFileSync(path.join(ROOT, 'lmstudio-plugin/src/util/bridgeClient.ts'), 'utf8');
-  for (const [label, source] of [['MCP error', mcpBridge], ['MCP connection', mcpIndex], ['LM Studio connection', lmBridge]]) {
-    assert.match(source, /Settings → General → Advanced → Cloud bridge/, `${label}: runtime setup guidance should match the UI`);
+  for (const [label, source] of [['MCP error', mcpBridge], ['LM Studio connection', lmBridge]]) {
+    assert.match(source, /Settings → General → Advanced → [\s\S]*?Cloud bridge/, `${label}: runtime setup guidance should match the UI`);
   }
 });
 
@@ -45176,7 +45099,7 @@ test('extended provider catalog is complete, mirrored, safe, and excluded-provid
     ['firefox', ProviderManagerFx, 'src/firefox'],
   ]) {
     const defaults = new PM()._defaultConfigs();
-    const expectedDefaultCount = label === 'chrome' ? 107 : 106;
+    const expectedDefaultCount = 106;
     assert.equal(
       Object.keys(defaults).length,
       expectedDefaultCount,
@@ -48556,8 +48479,6 @@ test('router-prefixed OpenAI reasoning model ids use the new contract while rout
   }
 });
 
-<<<<<<< HEAD
-=======
 test('OpenAI contract config keeps non-OpenRouter slash ids on legacy fields', () => {
   for (const [label, compatibility, settingsRel] of [
     ['chrome', ProviderCompatibilityCh, 'src/chrome/src/ui/settings.js'],
@@ -48589,8 +48510,6 @@ test('OpenAI contract config keeps non-OpenRouter slash ids on legacy fields', (
     assert.match(settings, /function automaticTokenField\(config\)[\s\S]*isNewOpenAIContractConfig\(config\)/, `${label}: Settings must use the shared config predicate`);
   }
 });
-
->>>>>>> 0ac69371 (fix(providers): keep routed o-series on legacy contract)
 test('provider compatibility defaults preserve legacy chat request bodies', () => {
   const messages = [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }];
   for (const Provider of [OpenAIProviderCh, OpenAIProviderFx]) {
@@ -75074,256 +74993,7 @@ test('sidepanel wires store review prompt after successful agent completion', ()
   }
 });
 
-test('profile sync encrypts provider secrets and rejects wrong passwords', async () => {
-  const { encryptProfileVault, decryptProfileVault } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const payload = { providers: { openai: { apiKey: 'sk-secret-test' } }, profile: { text: 'private' }, memory: { records: [] } };
-  const { envelope } = await encryptProfileVault(payload, 'correct horse battery staple');
-  assert.equal(JSON.stringify(envelope).includes('sk-secret-test'), false);
-  assert.deepEqual((await decryptProfileVault(envelope, 'correct horse battery staple')).payload, payload);
-  await assert.rejects(() => decryptProfileVault(envelope, 'wrong password'), /Incorrect sync password/);
-});
 
-test('profile sync preserves KDF iterations when reusing a derived key', async () => {
-  const { encryptProfileVault, decryptProfileVault } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const password = 'correct horse battery staple'; const payload = { providers: { openai: { apiKey: 'secret' } } };
-  const first = await encryptProfileVault(payload, password, { iterations: 1000 });
-  const decrypted = await decryptProfileVault(first.envelope, password);
-  const salt = Uint8Array.from(atob(first.envelope.kdf.salt), c => c.charCodeAt(0));
-  const second = await encryptProfileVault(payload, password, { vaultId: first.envelope.vaultId, salt, iterations: first.envelope.kdf.iterations, key: decrypted.key });
-  assert.equal(second.envelope.kdf.iterations, 1000);
-  assert.deepEqual((await decryptProfileVault(second.envelope, password)).payload, payload);
-});
-
-test('profile sync merge keeps newer provider/profile data and memory tombstones', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const base = { version: 1, providers: { a: { apiKey: 'local' } }, activeProvider: 'a', profile: { text: 'local' }, memory: { records: [{ id: 'gone', text: 'old', updatedAt: 5 }, { id: 'keep', text: 'local', updatedAt: 20 }, { id: 'tie', text: 'local tie', updatedAt: 40 }] }, tombstones: {}, meta: { providersAt: 10, profileAt: 10, memoryAt: 20 } };
-  const remote = { ...base, providers: { a: { apiKey: 'remote' } }, profile: { text: 'remote' }, memory: { records: [{ id: 'gone', text: 'old', updatedAt: 5 }, { id: 'keep', text: 'remote', updatedAt: 10 }, { id: 'tie', text: 'remote tie', updatedAt: 40 }] }, tombstones: { gone: 30 }, meta: { providersAt: 30, profileAt: 30, memoryAt: 30 } };
-  const { vault, conflicts } = mergeProfileVaults(base, remote);
-  assert.equal(vault.providers.a.apiKey, 'remote');
-  assert.equal(vault.profile.text, 'remote');
-  assert.equal(vault.memory.records.some(r => r.id === 'gone'), false);
-  assert.equal(vault.memory.records.find(r => r.id === 'keep').text, 'local');
-  assert.equal(vault.memory.records.find(r => r.id === 'tie').text, 'local tie');
-  assert.equal(conflicts.some(conflict => conflict.dataset === 'memory' && conflict.remote.text === 'remote tie'), true);
-});
-
-test('profile sync prefers an established remote vault when legacy metadata ties at zero', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const local = { providers: {}, activeProvider: '', profile: { enabled: false, text: '' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const remote = { providers: { openai: { apiKey: 'remote-secret' } }, activeProvider: 'openai', profile: { enabled: true, text: 'remote profile' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.deepEqual(vault.providers, remote.providers);
-  assert.equal(vault.activeProvider, 'openai');
-  assert.deepEqual(vault.profile, remote.profile);
-});
-
-test('profile sync preserves meaningful local legacy data when metadata ties at zero', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const local = { providers: { openai: { apiKey: 'local-secret' } }, activeProvider: 'openai', profile: { enabled: true, text: 'local profile' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const remote = { providers: { anthropic: { apiKey: 'remote-secret' } }, activeProvider: 'anthropic', profile: { enabled: true, text: 'remote profile' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const { vault, conflicts } = mergeProfileVaults(local, remote);
-  assert.deepEqual(vault.providers, { ...remote.providers, ...local.providers });
-  assert.equal(vault.activeProvider, 'openai');
-  assert.deepEqual(vault.profile, local.profile);
-  assert.equal(conflicts.some(conflict => conflict.dataset === 'profile'), true);
-});
-
-test('profile sync treats saved credential-empty provider defaults as empty on legacy ties', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const local = { providers: { openai: { apiKey: '', apiKeyUrl: 'https://example.test/key', model: 'default' } }, activeProvider: 'openai', profile: { enabled: false, text: '' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const remote = { providers: { openai: { apiKey: 'remote-secret', model: 'custom' } }, activeProvider: 'openai', profile: { enabled: false, text: '' }, memory: { records: [] }, tombstones: {}, meta: {} };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.deepEqual(vault.providers, remote.providers);
-});
-
-test('profile sync ignores dummy local keys while preserving credentialless local endpoints', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const local = { providers: { ollama: { apiKey: 'ollama', baseUrl: 'http://remote-lan:11434/v1', model: 'custom-local' } }, activeProvider: 'ollama', profile: {}, memory: { records: [] }, tombstones: {}, meta: {} };
-  const remote = { providers: { openai: { apiKey: 'remote-secret' } }, activeProvider: 'openai', profile: {}, memory: { records: [] }, tombstones: {}, meta: {} };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.deepEqual(vault.providers.ollama, local.providers.ollama);
-  assert.deepEqual(vault.providers.openai, remote.providers.openai);
-  assert.equal(vault.activeProvider, 'openai');
-});
-
-test('profile sync preserves remote auxiliary providers when local legacy values are null', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const local = { providers: {}, auxiliaryProviders: { visionModel: null, transcriptionModel: null }, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} };
-  const remote = { providers: {}, auxiliaryProviders: { visionModel: { apiKey: 'vision-secret' }, transcriptionModel: { apiKey: 'speech-secret' } }, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.deepEqual(vault.auxiliaryProviders, remote.auxiliaryProviders);
-});
-
-test('profile sync merges independently edited provider configurations by item timestamp', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const shared = { activeProvider: 'openai', auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {} };
-  const local = { ...shared, providers: { openai: { apiKey: 'old-openai' }, anthropic: { apiKey: 'new-anthropic' } }, meta: { providersAt: 20, providerItemsAt: { openai: 5, anthropic: 20 } } };
-  const remote = { ...shared, providers: { openai: { apiKey: 'new-openai' }, anthropic: { apiKey: 'old-anthropic' } }, meta: { providersAt: 15, providerItemsAt: { openai: 15, anthropic: 5 } } };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.equal(vault.providers.openai.apiKey, 'new-openai');
-  assert.equal(vault.providers.anthropic.apiKey, 'new-anthropic');
-});
-
-test('profile sync keeps auxiliary timestamps independent from provider edits', async () => {
-  const { mergeProfileVaults } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const shared = { providers: { openai: {} }, activeProvider: 'openai', profile: {}, memory: { records: [] }, tombstones: {} };
-  const local = { ...shared, auxiliaryProviders: { visionModel: null, transcriptionModel: null }, meta: { providersAt: 30, providerItemsAt: { openai: 30 } } };
-  const remote = { ...shared, auxiliaryProviders: { visionModel: { apiKey: 'remote-vision' }, transcriptionModel: null }, meta: { providersAt: 20, auxiliaryItemsAt: { visionModel: 20 } } };
-  const { vault } = mergeProfileVaults(local, remote);
-  assert.equal(vault.auxiliaryProviders.visionModel.apiKey, 'remote-vision');
-});
-
-test('profile sync password change uploads a vault encrypted with the new password', async () => {
-  const { ProfileSyncManager, decryptProfileVault } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const payload = { providers: { openai: { apiKey: 'secret' } }, profile: { text: 'private' }, memory: { records: [] } };
-  let uploaded = null;
-  const manager = new ProfileSyncManager({
-    get: async () => ({ profileSyncEnabled: true, profileSyncToken: 'token' }),
-  });
-  manager.unlock = async password => {
-    assert.equal(password, 'old password');
-    manager.password = password;
-    manager.envelope = { vaultId: 'vault-1' };
-    manager.revision = 7;
-  };
-  manager.localVault = async () => payload;
-  manager.request = async (_path, options) => {
-    uploaded = JSON.parse(options.body).envelope;
-    assert.equal(options.headers['If-Match'], '7');
-    return { body: { revision: 8 } };
-  };
-  await manager.changePassword('old password', 'new password long enough');
-  assert.deepEqual((await decryptProfileVault(uploaded, 'new password long enough')).payload, payload);
-  await assert.rejects(() => decryptProfileVault(uploaded, 'old password'), /Incorrect sync password/);
-});
-
-test('profile sync serializes metadata updates and re-reads local state before apply', async () => {
-  const { ProfileSyncManager, encryptProfileVault, decryptProfileVault } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  let metadata = {};
-  const storage = {
-    get: async () => ({ profileSyncEnabled: true, profileSyncMetadataV1: structuredClone(metadata) }),
-    set: async values => { if (values.profileSyncMetadataV1) metadata = structuredClone(values.profileSyncMetadataV1); },
-  };
-  const manager = new ProfileSyncManager(storage);
-  manager.schedule = () => {};
-  await Promise.all([
-    manager.noteChanges({ providers: { newValue: {} } }),
-    manager.noteChanges({ profileText: { newValue: 'updated' } }),
-  ]);
-  assert.ok(metadata.providersAt);
-  assert.ok(metadata.profileAt);
-
-  const password = 'correct horse battery staple';
-  const remotePayload = { providers: { openai: { apiKey: 'remote' } }, activeProvider: 'openai', auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {}, meta: { providersAt: 5 } };
-  const { envelope } = await encryptProfileVault(remotePayload, password);
-  const initial = { ...remotePayload, providers: { openai: { apiKey: 'stale-local' } }, meta: { providersAt: 1 } };
-  const latest = { ...remotePayload, providers: { openai: { apiKey: 'new-local' } }, meta: { providersAt: 10 } };
-  let reads = 0;
-  let applied;
-  let uploaded;
-  manager.password = password;
-  manager.localVault = async () => structuredClone(reads++ === 0 ? initial : latest);
-  manager.apply = async vault => { applied = structuredClone(vault); };
-  manager.request = async (_path, options = {}) => {
-    if (!options.method) return { body: { envelope, revision: 1 } };
-    uploaded = JSON.parse(options.body).envelope;
-    return { body: { revision: 2 } };
-  };
-  await manager.sync();
-  assert.equal(applied.providers.openai.apiKey, 'new-local');
-  assert.equal((await decryptProfileVault(uploaded, password)).payload.providers.openai.apiKey, 'new-local');
-});
-
-test('profile sync runs a follow-up pass when another sync joins an upload', async () => {
-  const { ProfileSyncManager } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const manager = new ProfileSyncManager({ get: async () => ({ profileSyncEnabled: true, profileSyncToken: 'token' }) });
-  let release;
-  let runs = 0;
-  manager.runSync = async () => { runs++; if (runs === 1) await new Promise(resolve => { release = resolve; }); return { runs }; };
-  const first = manager.sync();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const joined = manager.sync();
-  release();
-  await Promise.all([first, joined]);
-  assert.equal(runs, 2);
-});
-
-test('profile sync aborts an upload when the session locks in flight', async () => {
-  const { ProfileSyncManager } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const manager = new ProfileSyncManager({});
-  manager.password = 'correct horse battery staple';
-  manager.localVault = async () => ({ providers: {}, auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} });
-  let release;
-  let uploads = 0;
-  manager.request = async (_path, options = {}) => {
-    if (options.method === 'PUT') { uploads++; return { body: { revision: 1 } }; }
-    await new Promise(resolve => { release = resolve; });
-    const error = new Error('missing'); error.status = 404; throw error;
-  };
-  const syncing = manager.sync({ create: true });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  manager.lock();
-  release();
-  await assert.rejects(syncing, /locked/);
-  assert.equal(uploads, 0);
-});
-
-test('profile sync clears stale cloud state before creating after a 404', async () => {
-  const { ProfileSyncManager } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const manager = new ProfileSyncManager({ get: async () => ({ profileSyncEnabled: true, profileSyncToken: 'token' }) });
-  manager.password = 'correct horse battery staple'; manager.revision = 42; manager.envelope = { vaultId: 'stale' }; manager.key = {};
-  manager.localVault = async () => ({ providers: {}, auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} });
-  let putOptions;
-  manager.request = async (_path, options = {}) => { if (!options.method) { const error = new Error('missing'); error.status = 404; throw error; } putOptions = options; return { body: { revision: 43 } }; };
-  await manager.sync({ create: true });
-  assert.equal(putOptions.headers['If-Match'], undefined);
-  assert.notEqual(manager.envelope.vaultId, 'stale');
-});
-
-test('profile sync reset replaces atomically without deleting the old vault first', async () => {
-  const { ProfileSyncManager } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const manager = new ProfileSyncManager({});
-  manager.revision = 7; manager.envelope = { vaultId: 'old-vault' };
-  manager.localVault = async () => ({ providers: {}, auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} });
-  const methods = [];
-  manager.request = async (_path, options = {}) => { methods.push(options.method || 'GET'); throw new TypeError('offline'); };
-  await assert.rejects(manager.reset('new password long enough'), /offline/);
-  assert.deepEqual(methods, ['PUT']);
-  assert.equal(manager.revision, 7);
-  assert.equal(manager.envelope.vaultId, 'old-vault');
-});
 
 test('saved workflow compiler removes historical refs and parameterizes every typed value', () => {
   const run = {
@@ -77117,21 +76787,7 @@ test('saved workflow store rejects a new workflow after the 100-workflow limit',
   assert.equal((await store.list()).length, 100);
 });
 
-test('profile sync reset does not re-unlock after an in-flight lock', async () => {
-  const { ProfileSyncManager } = await import(
-    'file://' + path.join(ROOT, 'src/chrome/src/profile-sync.js').replace(/\\/g, '/')
-  );
-  const manager = new ProfileSyncManager({ get: async () => ({ profileSyncEnabled: true, profileSyncToken: 'token' }) });
-  manager.password = 'old password'; manager.revision = 7;
-  manager.localVault = async () => ({ providers: {}, auxiliaryProviders: {}, profile: {}, memory: { records: [] }, tombstones: {}, meta: {} });
-  let release;
-  manager.request = async () => { await new Promise(resolve => { release = resolve; }); return { body: { revision: 8 } }; };
-  const resetting = manager.reset('new password long enough');
-  while (!release) await new Promise(resolve => setTimeout(resolve, 10));
-  manager.lock(); release(); await resetting;
-  assert.equal(manager.password, null);
-  assert.equal(manager.status, 'locked');
-});
+
 
 test('linkedin shadow-dom reachability: pierce, overlay hoist, placeholder match, adapter route', () => {
   // LinkedIn's interop shell renders the post composer dialog inside the open

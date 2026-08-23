@@ -4,6 +4,11 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [0.1.14] - 2026-08-23
+
+### Added
+- Comprehensive agent tracing support with lossless tracing tier, execution evidence, and UI.
+
 ## [0.1.13] - 2026-08-20
 
 ### Added
