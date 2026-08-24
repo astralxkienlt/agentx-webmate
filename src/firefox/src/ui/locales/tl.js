@@ -3,7 +3,6 @@ import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 // Filipino / Tagalog (tl).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   "tool.delegate_research": "Researching with ChatGPT",
   "st.display.research_escalation.label": "Research escalation",
@@ -109,7 +108,6 @@ export default {
   'st.tab.permissions': "Mga pahintulot",
   'st.perms.revoke': "Bawiin",
   'st.perms.clear_all': "I-clear ang lahat ng pahintulot",
-  'st.perms.gate.label': "Magtanong bago ang mahahalagang aksyon",
 
   'brand': 'WebBrain',
   'install.page_title': 'Naka-install na ang WebBrain',
@@ -506,8 +504,11 @@ export default {
   "sp.vision.error": "Nabigo ang vision toggle: {msg}",
   "st.tab.multimodal": "Multimodal",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "Inirerekomenda. Kapag naka-on, humihingi ng pahintulot ang WebBrain sa unang pagkakataong mag-click, mag-type, mag-navigate, magpatakbo ng JavaScript, mag-upload, mag-download, o mag-record ito sa isang site (at saka tinatandaan ang iyong pinili). I-off para sa mabilis at walang prompt na paggamit sa mga site na lubos mong pinagkakatiwalaan.",
+
   "st.perms.gate.warning": "⚠️ Naka-OFF ang mga prompt ng pahintulot. Mag-cli-click, magta-type, magna-navigate, magpapatakbo ng JavaScript, mag-aupload, mag-dadownload, at magre-record ang WebBrain sa anumang site nang HINDI nagtatanong — kasama na ang mga pahinang ang nilalaman ay maaaring kontrolado ng attacker. Itinuturing pa ring untrusted ang nilalaman ng pahina sa loob, ngunit walang pipigil sa isang injected na tagubilin na mag-trigger ng aksyon. Iwang naka-off lamang ito kung lubos mong pinagkakatiwalaan ang bawat site na ginagamitan mo ng assistant.",
+  'st.perms.mode.label': 'Mode ng pahintulot',
+  'st.perms.mode.desc': 'Kung gaano karami ang maaaring gawin ng WebBrain nang hindi nagtatanong. Bawat antas ay nagpapahintulot nang maaga sa isa pang uri ng aksyon; nakalista sa ibaba ang mga site na isa-isa mong pinayagan.',
+  'st.perms.mode.wide_warning': '⚠️ Awtomatikong tinatanggap ang pagsumite ng form. Mag-click, mag-type, magsusumite ng form at magpapatakbo ng script ng pahina ang WebBrain sa anumang site nang HINDI nagtatanong — kasama ang mga pahinang maaaring kontrolado ng umaatake ang nilalaman. Nagtatanong pa rin ito bago mag-download, mag-upload, magsulat sa API, at mag-schedule ng trabaho.',
   "st.perms.desc": "Mga site na pinayagan mong kilusin ng WebBrain. Bawat entry ay isang kakayahan (click, type, navigate, magpatakbo ng JavaScript, atbp.) na ibinigay sa isang partikular na site. Alisin ang anumang hindi mo na gusto — magtatanong muli ang WebBrain sa susunod na kailanganin niya ito.",
   "st.perms.empty": "Wala pang ibinigay na pahintulot sa site. Nagtatanong ang WebBrain bago ito mag-click, mag-type, mag-navigate, mag-upload, mag-download, mag-record, o magpatakbo ng code sa isang site, at tinatandaan dito ang iyong pinili kapag pinili mong “Palaging payagan”.",
   "st.perms.allowed": "Pinayagang {verb}",
@@ -656,6 +657,17 @@ export default {
   'sp.scratchpad.error': 'Hindi available ang scratchpad: {msg}',
   'sp.perm.verb.schedule': 'mag-iskedyul ng gawaing hinaharap para sa',
   'sp.perm.verb.window': 'baguhin ang laki ng window ng browser sa',
+  'sp.permmode.open': 'Mode ng pahintulot',
+  'sp.permmode.heading': 'Mga pahintulot',
+  'sp.permmode.changed': 'Mode ng pahintulot: {mode}',
+  'sp.permmode.manual': 'Magtanong palagi',
+  'sp.permmode.manual.desc': 'Nagtatanong ang WebBrain sa unang pagkakataong mag-click, mag-type, mag-navigate, mag-download, mag-upload, o mag-schedule ng trabaho sa isang site.',
+  'sp.permmode.auto': 'Awtomatiko',
+  'sp.permmode.auto.desc': 'Nag-navigate, nag-click at nag-type ang WebBrain nang mag-isa. Nagtatanong pa rin ito bago magsumite ng form, mag-download, mag-upload, magsulat sa API, o mag-schedule ng trabaho.',
+  'sp.permmode.page_actions': 'Aksyon sa pahina',
+  'sp.permmode.page_actions.desc': 'Tinatanggap na rin ang pagsumite ng form at mga script ng pahina. Nagtatanong pa rin ang WebBrain bago mag-download, mag-upload, magsulat sa API, o mag-schedule ng trabaho.',
+  'sp.permmode.bypass': 'Payagan lahat',
+  'sp.permmode.bypass.desc': 'Tinatanggap ang lahat ng pahintulot, sa lahat ng site.',
   'tool.schedule_resume': 'Nag-iiskedyul ng pagpapatuloy',
   'tool.schedule_task': 'Nag-iiskedyul ng gawain',
   'st.display.scheduled_tasks.label': 'Mga naka-iskedyul na gawain',
@@ -690,7 +702,6 @@ export default {
   'sp.compact.failed': 'Nabigong i-compact ang konteksto: {error}',
   'tool.inspect_element_styles': 'Sinusuri ang mga estilo',
   'tool.read_page_source': 'Binabasa ang source ng pahina',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'Mga Kasanayan',
@@ -1030,7 +1041,7 @@ export default {
   "sp.import_config.done": "Na-import ang {count} Settings value. Aktibo na ang mga provider key at configuration.",
   "sp.import_config.error": "Hindi ma-import ang configuration: {error}",
   "sp.input.placeholder_tip.skip_permissions": "Mode na walang prompt: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "Gusto mo ng mas kaunting pagkaantala? Tinatandaan ng “Palaging payagan” ang site na ito. Ino-off ng command sa ibaba ang mga permission prompt ng WebBrain sa lahat ng site.",
+  'sp.perm.skip_hint': 'Gusto ng mas kaunting pag-abala? Tinatandaan ng “Palaging payagan” ang site na ito, at ang mode ng pahintulot sa itaas ng kahon ng mensahe ay maaaring magpahintulot nang maaga sa buong uri ng aksyon. Ini-off ng utos sa ibaba ang mga tanong sa pahintulot ng WebBrain sa lahat ng site.',
   "sp.perm.insert_skip_command": "Ilagay ang /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "Hindi binago ang draft mo. I-clear ito bago ilagay ang command.",
   "ob.act.permissions_tip": "Naka-on bilang default ang mga permission prompt. Maaaring i-off ng advanced users ang mga ito sa lahat ng site gamit ang /dangerously-skip-permissions at i-on muli sa Settings → Permissions.",

@@ -34,11 +34,17 @@ them in sync — the test suite asserts the pure modules are byte-identical.
 3. **Capability × origin permission gate (Layer 3).** Before a consequential
    tool runs, the agent checks a `(capability, host)` grant and prompts the user
    (Allow once / Always / Deny) if there isn't one. No text inspection, no LLM —
-   the human is the trust anchor.
+   the human is the trust anchor. A **permission mode** supplies the standing
+   answer for pairs the user has not been asked about yet: `manual` (default)
+   asks for all of them, `auto` pre-approves reversible on-page interaction,
+   `page_actions` adds form submits and page scripts, `bypass` accepts
+   everything. An explicit "Don't allow" outranks every mode except `bypass`,
+   and a mode decision is never recorded as a grant.
    - Code: `permission-gate.js` (`capabilityFor`, `requiredHosts`,
-     `PermissionManager`); the gate loop in `agent.js _executeToolBatch`.
-   - User control: Settings → Permissions (review/revoke grants + the master
-     switch "Ask before consequential actions").
+     `PermissionManager`), `permission-mode.js` (the ladder); the gate loop in
+     `agent.js _executeToolBatch`.
+   - User control: the side panel's permission-mode chip, and Settings →
+     Permissions (the mode plus review/revoke of per-site grants).
 4. **Output sanitizer (Layer 4).** Model output is HTML-escaped and only
    `[label](url)` markdown becomes an allowlisted (http/https/mailto) link — no
    auto-loading images, no bare-URL linkification.
@@ -121,11 +127,17 @@ Known non-tool ingestion points (keep this list current):
 - the `done` tool-result push (special-cased before the normal wrap).
 
 ### Don't weaken the boundary for "trusted sites"
-The master switch (Settings → Permissions) disables **Layer 3 only** (the
-prompts). Layers 1, 2, and 4 stay on always — they cost nothing and are what
-protect the user on the trusted sites where injected content actually lives
-(a reputable domain is *anti-correlated* with safe content). Never gate Layers
-1/2/4 behind a setting.
+A permission mode — including `bypass`, the widest — changes **Layer 3 only**
+(which actions still raise a card). Layers 1, 2, and 4 stay on in every mode:
+they cost nothing and are what protect the user on the trusted sites where
+injected content actually lives (a reputable domain is *anti-correlated* with
+safe content). Never gate Layers 1/2/4 behind a setting.
+
+A wider mode is a decision about interruptions, not about trust, so it must
+never be inferred: the mode changes only when the user picks one in the chip,
+in Settings, or by typing `/dangerously-skip-permissions`. Page content cannot
+influence it — the mode is read from extension storage, never from a prompt or
+a tool result.
 
 ---
 

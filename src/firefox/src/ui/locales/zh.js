@@ -3,7 +3,6 @@ import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 // Simplified Chinese (zh).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   "tool.delegate_research": "Researching with ChatGPT",
   "st.display.research_escalation.label": "Research escalation",
@@ -109,7 +108,6 @@ export default {
   'st.tab.permissions': "权限",
   'st.perms.revoke': "撤销",
   'st.perms.clear_all': "清除所有权限",
-  'st.perms.gate.label': "执行重要操作前询问",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain 已安装',
@@ -506,8 +504,11 @@ export default {
   "sp.vision.error": "视觉模式切换失败：{msg}",
   "st.tab.multimodal": "多模态",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "推荐开启。开启后，WebBrain 首次在某站点点击、输入、导航、运行 JavaScript、上传、下载或录制时会请求权限（随后记住你的选择）。在你完全信任的站点上可关闭，以便快速、免提示地使用。",
+
   "st.perms.gate.warning": "⚠️ 权限提示已关闭。WebBrain 将在任何站点上点击、输入、导航、运行 JavaScript、上传、下载和录制而无需询问 —— 包括内容可能被攻击者控制的页面。页面内容在内部仍被视为不可信，但没有任何机制能阻止被注入的指令触发操作。只有当你完全信任使用本助手的每一个站点时，才将其保持关闭。",
+  'st.perms.mode.label': '权限模式',
+  'st.perms.mode.desc': 'WebBrain 无需询问即可执行的范围。每提升一档就预先批准一类操作；你单独授权过的网站列在下方。',
+  'st.perms.mode.wide_warning': '⚠️ 表单提交将被自动接受。WebBrain 会在任何网站上点击、输入、提交表单并运行页面脚本而不再询问——包括内容可能被攻击者控制的页面。下载、上传、写入 API 和安排任务前仍会询问。',
   "st.perms.desc": "你已允许 WebBrain 在其上操作的站点。每一条对应授予某个特定站点的一项能力（点击、输入、导航、运行 JavaScript 等）。移除任何你不再需要的项 —— 下次 WebBrain 需要时会再次询问。",
   "st.perms.empty": "尚未授予任何站点权限。WebBrain 会在某站点上点击、输入、导航、上传、下载、录制或运行代码前先询问，并在你选择“始终允许”时把你的选择记在这里。",
   "st.perms.allowed": "允许{verb}",
@@ -656,6 +657,17 @@ export default {
   'sp.scratchpad.error': '草稿板不可用：{msg}',
   'sp.perm.verb.schedule': '为以下对象安排后续任务',
   'sp.perm.verb.window': '调整浏览器窗口大小于',
+  'sp.permmode.open': '权限模式',
+  'sp.permmode.heading': '权限',
+  'sp.permmode.changed': '权限模式：{mode}',
+  'sp.permmode.manual': '每次都询问',
+  'sp.permmode.manual.desc': 'WebBrain 首次在某个网站上点击、输入、跳转、下载、上传或安排后续任务时会先询问。',
+  'sp.permmode.auto': '自动',
+  'sp.permmode.auto.desc': 'WebBrain 自行跳转、点击和输入；在提交表单、下载、上传、写入 API 或安排任务前仍会询问。',
+  'sp.permmode.page_actions': '页面操作',
+  'sp.permmode.page_actions.desc': '同时接受提交表单和运行页面脚本；在下载、上传、写入 API 或安排任务前仍会询问。',
+  'sp.permmode.bypass': '跳过权限确认',
+  'sp.permmode.bypass.desc': '在所有网站上接受全部权限。',
   'tool.schedule_resume': '正在安排恢复',
   'tool.schedule_task': '正在安排任务',
   'st.display.scheduled_tasks.label': '定时任务',
@@ -690,7 +702,6 @@ export default {
   'sp.compact.failed': '上下文压缩失败：{error}',
   'tool.inspect_element_styles': '正在检查样式',
   'tool.read_page_source': '正在读取页面源代码',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': '技能',
@@ -1030,7 +1041,7 @@ export default {
   "sp.import_config.done": "已导入 {count} 个设置值。提供商密钥和配置现已生效。",
   "sp.import_config.error": "无法导入配置：{error}",
   "sp.input.placeholder_tip.skip_permissions": "免提示模式：/dangerously-skip-permissions",
-  "sp.perm.skip_hint": "想减少打断？“始终允许”会记住此网站。下面的命令会在所有网站上关闭 WebBrain 权限提示。",
+  'sp.perm.skip_hint': '希望减少打扰？“始终允许”会记住此网站，输入框上方的权限模式可以预先批准整类操作。下面的命令会关闭 WebBrain 在所有网站上的权限询问。',
   "sp.perm.insert_skip_command": "插入 /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "草稿未更改。请先清空草稿再插入命令。",
   "ob.act.permissions_tip": "权限提示默认开启。高级用户可使用 /dangerously-skip-permissions 在所有网站上关闭提示，并在设置 → 权限中重新开启。",

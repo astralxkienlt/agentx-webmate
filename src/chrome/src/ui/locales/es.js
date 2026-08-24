@@ -3,7 +3,6 @@ import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 // Spanish (es).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   "tool.delegate_research": "Researching with ChatGPT",
   "st.display.research_escalation.label": "Research escalation",
@@ -134,7 +133,6 @@ export default {
   'st.tab.permissions': "Permisos",
   'st.perms.revoke': "Revocar",
   'st.perms.clear_all': "Borrar todos los permisos",
-  'st.perms.gate.label': "Preguntar antes de acciones importantes",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain instalado',
@@ -540,8 +538,11 @@ export default {
   "sp.vision.error": "Falló el cambio del modo de visión: {msg}",
   "st.tab.multimodal": "Multimodal",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "Recomendado. Cuando está activado, WebBrain pide permiso la primera vez que hace clic, escribe, navega, ejecuta JavaScript, sube, descarga o graba en un sitio (y luego recuerda tu elección). Desactívalo para un uso rápido y sin avisos en sitios en los que confías plenamente.",
+
   "st.perms.gate.warning": "⚠️ Los avisos de permiso están DESACTIVADOS. WebBrain hará clic, escribirá, navegará, ejecutará JavaScript, subirá, descargará y grabará en cualquier sitio SIN preguntar, incluso en páginas cuyo contenido pueda estar controlado por un atacante. El contenido de la página se sigue tratando como no fiable internamente, pero nada impedirá que una instrucción inyectada desencadene una acción. Deja esto desactivado solo si confías plenamente en todos los sitios donde usas el asistente.",
+  'st.perms.mode.label': 'Modo de permisos',
+  'st.perms.mode.desc': 'Cuánto puede hacer WebBrain sin preguntar. Cada nivel aprueba de antemano una clase más de acciones; los sitios que permitiste uno a uno aparecen abajo.',
+  'st.perms.mode.wide_warning': '⚠️ Los formularios se envían automáticamente. WebBrain hará clic, escribirá, enviará formularios y ejecutará scripts de la página en cualquier sitio SIN preguntar, incluso en páginas cuyo contenido puede estar controlado por un atacante. Sigue preguntando antes de descargas, subidas, escrituras en API y trabajo programado.',
   "st.perms.desc": "Sitios en los que has permitido que WebBrain actúe. Cada entrada es una capacidad (hacer clic, escribir, navegar, ejecutar JavaScript, etc.) concedida a un sitio concreto. Elimina las que ya no quieras: WebBrain volverá a preguntar la próxima vez que la necesite.",
   "st.perms.empty": "Aún no has concedido permisos para ningún sitio. WebBrain pregunta antes de hacer clic, escribir, navegar, subir, descargar, grabar o ejecutar código en un sitio, y recuerda aquí tu elección cuando seleccionas «Permitir siempre».",
   "st.perms.allowed": "Permitido {verb}",
@@ -690,6 +691,17 @@ export default {
   'sp.scratchpad.error': 'Bloc de notas no disponible: {msg}',
   'sp.perm.verb.schedule': 'programar trabajo futuro en',
   'sp.perm.verb.window': 'cambiar el tamaño de la ventana del navegador en',
+  'sp.permmode.open': 'Modo de permisos',
+  'sp.permmode.heading': 'Permisos',
+  'sp.permmode.changed': 'Modo de permisos: {mode}',
+  'sp.permmode.manual': 'Preguntar siempre',
+  'sp.permmode.manual.desc': 'WebBrain pregunta la primera vez que hace clic, escribe, navega, descarga, sube un archivo o programa trabajo en un sitio.',
+  'sp.permmode.auto': 'Automático',
+  'sp.permmode.auto.desc': 'WebBrain navega, hace clic y escribe por su cuenta. Sigue preguntando antes de enviar un formulario, descargar, subir un archivo, escribir en una API o programar trabajo.',
+  'sp.permmode.page_actions': 'Acciones de página',
+  'sp.permmode.page_actions.desc': 'También acepta el envío de formularios y los scripts de la página. Sigue preguntando antes de descargar, subir un archivo, escribir en una API o programar trabajo.',
+  'sp.permmode.bypass': 'Omitir permisos',
+  'sp.permmode.bypass.desc': 'Acepta todos los permisos, en todos los sitios.',
   'tool.schedule_resume': 'Programando reanudación',
   'tool.schedule_task': 'Programando tarea',
   'st.display.scheduled_tasks.label': 'Tareas programadas',
@@ -724,7 +736,6 @@ export default {
   'sp.compact.failed': 'Error al compactar el contexto: {error}',
   'tool.inspect_element_styles': 'Inspeccionando estilos',
   'tool.read_page_source': 'Leyendo fuente de la página',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'Habilidades',
@@ -1069,7 +1080,7 @@ export default {
   "sp.import_config.done": "Se importaron {count} valores de Configuración. Las claves de proveedores y la configuración están activas.",
   "sp.import_config.error": "No se pudo importar la configuración: {error}",
   "sp.input.placeholder_tip.skip_permissions": "Modo sin avisos: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "¿Quieres menos interrupciones? «Permitir siempre» recuerda este sitio. El comando de abajo desactiva los avisos de permisos de WebBrain en todos los sitios.",
+  'sp.perm.skip_hint': '¿Quieres menos interrupciones? «Permitir siempre» recuerda este sitio, y el modo de permisos que está sobre el cuadro de mensaje aprueba de antemano clases enteras de acciones. El comando de abajo desactiva las solicitudes de permiso de WebBrain en todos los sitios.',
   "sp.perm.insert_skip_command": "Insertar /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "Tu borrador no ha cambiado. Bórralo antes de insertar el comando.",
   "ob.act.permissions_tip": "Los avisos de permisos están activados de forma predeterminada. Los usuarios avanzados pueden desactivarlos globalmente con /dangerously-skip-permissions y volver a activarlos en Configuración → Permisos.",

@@ -60,6 +60,7 @@ src/firefox/
 │   │   ├── skills.js               # Settings skills + dynamic skill tool manifests
 │   │   ├── planner.js              # Plan-before-Act structured planner
 │   │   ├── permission-gate.js      # Capability x origin permission gate
+│   │   ├── permission-mode.js      # Standing permission ladder (manual/auto/page/bypass)
 │   │   ├── adapters.js             # Per-site guidance (identical to Chrome)
 │   │   └── scheduler.js            # ScheduledJobManager — alarms-backed deferred tasks
 │   ├── content/
@@ -577,6 +578,53 @@ request authorizes an external message.
 
 ---
 
+## Permission Modes (`permission-mode.js`)
+
+The capability x origin gate asks one question at a time, which is safe but
+noisy. A **permission mode** is the standing answer for questions the user has
+not been asked yet — the middle ground between a card per action and the old
+all-or-nothing master switch:
+
+| Mode | Runs without a card | Still asks |
+|---|---|---|
+| `manual` (default) | nothing | every consequential action |
+| `auto` | navigate, click, type, temporary page edits, window resize | form submits, page scripts, downloads, uploads, outbound requests, scheduled work |
+| `page_actions` | the above plus form submits and `execute_js` | downloads, uploads, outbound requests, scheduled work |
+| `bypass` | everything | nothing |
+
+Two invariants make this reviewable:
+
+1. **A mode only answers unanswered questions.** `PermissionManager.check()`
+   looks for an explicit grant first, so a standing "Don't allow" outranks any
+   mode. `bypass` is the documented exception, applied by the tool loop rather
+   than inside the manager — because a mandatory gate can outrank even
+   `bypass`, and that is only knowable per call (`requireExplicitGrant`). The
+   case that needs it, a WebMCP page callback, exists only in the Chrome build;
+   the flag is passed here too so the two trees decide alike.
+2. **A mode decision is never recorded as a grant.** Dropping back to a
+   stricter mode restores the prompts immediately, and Settings ->
+   Permissions keeps listing only the sites the user chose one at a time.
+
+The submit confirmation has its own threshold (`page_actions` and up), so
+`auto` can click freely while the card that guards spending money and sending
+messages stays in place. Layers 1 and 2 of the injection defense
+(untrusted-content wrapping, system-prompt contract) are active in **every**
+mode.
+
+The mode is stored under `permissionMode`; an install that predates it is
+migrated from `askBeforeConsequentialActions` on first read, and that key is
+then removed. It survives in config exports only as a mirror, so a file written
+here still lands correctly in an older build.
+
+UI: a small chip in the composer's footer, under the input (number
+shortcuts, arrow keys, Escape), and Settings -> Permissions. The chip has one
+fixed spot and its menu is a pop-up anchored above it, so a long mode name in
+any locale can never reflow the input or the Ask/Act/Dev pill. Widening the
+mode answers the cards it now covers with a turn-scoped `once`, never
+`always`.
+
+---
+
 ## Security Model
 
 Same as Chrome, minus CDP:
@@ -585,6 +633,7 @@ Same as Chrome, minus CDP:
 - `<all_urls>` host permission allows content-script injection anywhere
 - Cross-origin iframes accessible via extension privilege
 - Ask is read-only; Act and Dev are action modes. Dev adds source/style/page-inspection tools and is blocked for Compact-tier providers.
+- Permission modes decide how much runs without a card; see the section below.
 - Plan before Act can require user approval before any action-mode tool executes
 - API shortcut observer is off by default; when enabled, it records bounded same-tab XHR/fetch replay metadata in memory only
 - `/allow-api` flag required for API mutations (POST/PUT/PATCH/DELETE via `fetch_url`)

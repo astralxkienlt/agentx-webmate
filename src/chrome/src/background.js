@@ -2995,7 +2995,7 @@ async function handleMessage(msg, sender) {
         loadPlanBeforeAct(),
         loadPlanReviewSettings(),
         loadApiMutationObserverSetting(),
-        agent._ensureGateSetting({ force: true }),
+        agent._ensurePermissionMode({ force: true }),
       ]);
       agent._refreshSystemPrompts();
       return {

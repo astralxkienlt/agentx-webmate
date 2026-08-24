@@ -3,7 +3,6 @@ import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 // Turkish (tr).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   "tool.delegate_research": "Researching with ChatGPT",
   "st.display.research_escalation.label": "Research escalation",
@@ -135,7 +134,6 @@ export default {
   'st.tab.skills': 'Skills',
   'st.perms.revoke': "Kaldır",
   'st.perms.clear_all': "Tüm izinleri temizle",
-  'st.perms.gate.label': "Önemli işlemlerden önce sor",
 
   'st.skills.desc_html': 'Etkin skill\'ler Mid ve Full katmanlarında isteğe bağlı olarak yüklenir; Compact skill yüklemez. Küçük katalog yalnızca uygun skill\'lerin adını ve özetini gönderir. Tam talimatlar ve uyumlu <code>webbrain-tools</code> araçları, WebBrain ilgili skill\'i o çalışma için yükledikten sonra sunulur. İsteğe bağlı <code>webbrain-skill</code> metadatası özeti ve Ask/Act uyumluluğunu belirler.',
   'st.skills.name.label': 'Ad (isteğe bağlı)',
@@ -579,8 +577,11 @@ export default {
   "sp.vision.error": "Görme kipi değiştirilemedi: {msg}",
   "st.tab.multimodal": "Çok kipli",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "Önerilir. Açıkken WebBrain, bir sitede ilk kez tıkladığında, yazdığında, gezindiğinde, JavaScript çalıştırdığında, dosya yüklediğinde, indirdiğinde veya kayıt yaptığında izin ister (sonra seçimini hatırlar). Tamamen güvendiğin sitelerde hızlı, istemsiz kullanım için kapat.",
+
   "st.perms.gate.warning": "⚠️ İzin istemleri KAPALI. WebBrain herhangi bir sitede SORMADAN tıklayacak, yazacak, gezinecek, JavaScript çalıştıracak, dosya yükleyecek, indirecek ve kayıt yapacak — içeriği saldırgan kontrolünde olabilecek sayfalar dahil. Sayfa içeriği yine de dahili olarak güvenilmez kabul edilir, ama enjekte edilmiş bir talimatın bir işlemi tetiklemesini hiçbir şey engellemez. Bunu yalnızca asistanı kullandığın her siteye tamamen güveniyorsan kapalı bırak.",
+  'st.perms.mode.label': 'İzin modu',
+  'st.perms.mode.desc': 'WebBrain\'in sormadan yapabileceklerinin sınırı. Her basamak bir eylem sınıfını daha önceden onaylar; tek tek izin verdiğiniz siteler aşağıda listelenir.',
+  'st.perms.mode.wide_warning': '⚠️ Form gönderimleri otomatik kabul edilir. WebBrain herhangi bir sitede SORMADAN tıklar, yazar, form gönderir ve sayfa betikleri çalıştırır — içeriği bir saldırgan tarafından denetlenebilen sayfalar dahil. İndirmeler, dosya yüklemeleri, API yazmaları ve planlanmış işlerden önce yine sorar.',
   "st.perms.desc": "WebBrain'in işlem yapmasına izin verdiğin siteler. Her giriş, belirli bir siteye verilmiş tek bir yetkidir (tıklama, yazma, gezinme, JavaScript çalıştırma vb.). Artık istemediklerini kaldır — WebBrain bir sonraki ihtiyaç duyduğunda yeniden soracak.",
   "st.perms.empty": "Henüz hiçbir site izni verilmedi. WebBrain bir sitede tıklamadan, yazmadan, gezinmeden, dosya yüklemeden, indirmeden, kayıt yapmadan veya kod çalıştırmadan önce sorar ve “Her zaman izin ver” seçtiğinde seçimini burada hatırlar.",
   "st.perms.allowed": "{verb} işlemine izin verildi",
@@ -729,6 +730,17 @@ export default {
   'sp.scratchpad.error': 'Not defterine erişilemiyor: {msg}',
   'sp.perm.verb.schedule': 'gelecekteki çalışmayı zamanlamak için',
   'sp.perm.verb.window': 'tarayıcı penceresinin boyutunu değiştirmek',
+  'sp.permmode.open': 'İzin modu',
+  'sp.permmode.heading': 'İzinler',
+  'sp.permmode.changed': 'İzin modu: {mode}',
+  'sp.permmode.manual': 'Her seferinde sor',
+  'sp.permmode.manual.desc': 'WebBrain bir sitede ilk kez tıkladığında, yazdığında, gezindiğinde, indirdiğinde, dosya yüklediğinde veya ileri bir iş planladığında sorar.',
+  'sp.permmode.auto': 'Otomatik',
+  'sp.permmode.auto.desc': 'WebBrain kendi başına gezinir, tıklar ve yazar. Form göndermeden, indirmeden, dosya yüklemeden, API\'ye yazmadan veya iş planlamadan önce yine sorar.',
+  'sp.permmode.page_actions': 'Sayfa eylemleri',
+  'sp.permmode.page_actions.desc': 'Form gönderimleri ve sayfa betikleri de kabul edilir. WebBrain indirmeden, dosya yüklemeden, API\'ye yazmadan veya iş planlamadan önce yine sorar.',
+  'sp.permmode.bypass': 'İzinleri atla',
+  'sp.permmode.bypass.desc': 'Tüm sitelerde tüm izinleri kabul eder.',
   'tool.schedule_resume': 'Devam zamanlama',
   'tool.schedule_task': 'Görev zamanlama',
   'st.display.scheduled_tasks.label': 'Zamanlanmış görevler',
@@ -763,7 +775,6 @@ export default {
   'sp.compact.failed': 'Bağlam sıkıştırma başarısız oldu: {error}',
   'tool.inspect_element_styles': 'Stiller inceleniyor',
   'tool.read_page_source': 'Sayfa kaynağı okunuyor',
-
 
   // --- Missing translations added by translation script ---
   'sp.slash.edit_scratchpad': 'Geçerli taslak defterine metin ekle',
@@ -1068,7 +1079,7 @@ export default {
   "sp.import_config.done": "{count} Ayarlar değeri içe aktarıldı. Sağlayıcı anahtarları ve yapılandırma etkin.",
   "sp.import_config.error": "Yapılandırma içe aktarılamadı: {error}",
   "sp.input.placeholder_tip.skip_permissions": "İzin istemi olmadan: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "Daha az kesinti mi istiyorsunuz? “Her zaman izin ver” bu siteyi hatırlar. Aşağıdaki komut, WebBrain izin istemlerini tüm sitelerde kapatır.",
+  'sp.perm.skip_hint': 'Daha az kesinti mi istiyorsunuz? “Her zaman izin ver” bu siteyi hatırlar, mesaj kutusunun üstündeki izin modu ise eylem sınıflarının tamamını önceden onaylar. Aşağıdaki komut, WebBrain izin isteklerini tüm sitelerde kapatır.',
   "sp.perm.insert_skip_command": "/dangerously-skip-permissions komutunu ekle",
   "sp.perm.skip_hint_draft": "Taslağınız değişmedi. Komutu eklemeden önce taslağı temizleyin.",
   "ob.act.permissions_tip": "İzin istemleri varsayılan olarak açıktır. İleri düzey kullanıcılar /dangerously-skip-permissions ile bunları tüm sitelerde kapatabilir ve Ayarlar → İzinler bölümünden yeniden açabilir.",

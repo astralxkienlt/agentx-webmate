@@ -93,6 +93,7 @@ assert.equal(resolveCloudRunId({}), '');
 assert.equal(suiteShouldFail({ failed: 0, skipped: 0 }), false);
 assert.equal(suiteShouldFail({ failed: 1, skipped: 0 }), true);
 assert.equal(suiteShouldFail({ failed: 0, skipped: 1 }), true);
+assert.equal(buildSessionSettings().permissionMode, 'bypass');
 assert.equal(buildSessionSettings().askBeforeConsequentialActions, false);
 assert.equal(buildSessionSettings().captchaSolverEnabled, false);
 assert.equal(buildSessionSettings('', { strictSecretMode: true }).strictSecretMode, true);

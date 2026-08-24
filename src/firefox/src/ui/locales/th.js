@@ -3,7 +3,6 @@ import { getEmergencyBoxCopy } from './emergency-copy.mjs';
 // Thai (th).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   "tool.delegate_research": "Researching with ChatGPT",
   "st.display.research_escalation.label": "Research escalation",
@@ -109,7 +108,6 @@ export default {
   'st.tab.permissions': "สิทธิ์",
   'st.perms.revoke': "เพิกถอน",
   'st.perms.clear_all': "ล้างสิทธิ์ทั้งหมด",
-  'st.perms.gate.label': "ถามก่อนการดำเนินการสำคัญ",
 
   'brand': 'WebBrain',
   'install.page_title': 'ติดตั้ง WebBrain แล้ว',
@@ -506,8 +504,11 @@ export default {
   "sp.vision.error": "สลับโหมดการมองเห็นไม่สำเร็จ: {msg}",
   "st.tab.multimodal": "มัลติโมดัล",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "แนะนำ เมื่อเปิด WebBrain จะขออนุญาตในครั้งแรกที่คลิก พิมพ์ นำทาง รัน JavaScript อัปโหลด ดาวน์โหลด หรือบันทึกบนเว็บไซต์ (จากนั้นจะจดจำตัวเลือกของคุณ) ปิดไว้เพื่อใช้งานได้รวดเร็วโดยไม่ต้องถาม บนเว็บไซต์ที่คุณไว้วางใจเต็มที่",
+
   "st.perms.gate.warning": "⚠️ การถามสิทธิ์ถูกปิดอยู่ WebBrain จะคลิก พิมพ์ นำทาง รัน JavaScript อัปโหลด ดาวน์โหลด และบันทึกบนเว็บไซต์ใด ๆ โดยไม่ถาม — รวมถึงหน้าที่เนื้อหาอาจถูกควบคุมโดยผู้โจมตี เนื้อหาของหน้ายังถูกปฏิบัติเสมือนไม่น่าเชื่อถือภายในระบบ แต่ไม่มีอะไรหยุดคำสั่งที่ถูกแทรกเข้ามาไม่ให้กระตุ้นการกระทำได้ ปิดไว้เฉพาะเมื่อคุณไว้วางใจทุกเว็บไซต์ที่ใช้ผู้ช่วยนี้เต็มที่",
+  'st.perms.mode.label': 'โหมดการอนุญาต',
+  'st.perms.mode.desc': 'ขอบเขตที่ WebBrain ทำได้โดยไม่ต้องถาม แต่ละระดับจะอนุมัติการทำงานเพิ่มอีกหนึ่งประเภทไว้ล่วงหน้า เว็บไซต์ที่คุณอนุญาตทีละแห่งแสดงอยู่ด้านล่าง',
+  'st.perms.mode.wide_warning': '⚠️ การส่งฟอร์มจะถูกยอมรับอัตโนมัติ WebBrain จะคลิก พิมพ์ ส่งฟอร์ม และรันสคริปต์บนหน้าเว็บใดก็ได้โดยไม่ถาม รวมถึงหน้าที่เนื้อหาอาจถูกควบคุมโดยผู้โจมตี แต่ยังถามก่อนดาวน์โหลด อัปโหลด เขียนผ่าน API และตั้งเวลางาน',
   "st.perms.desc": "เว็บไซต์ที่คุณอนุญาตให้ WebBrain ดำเนินการ แต่ละรายการคือหนึ่งความสามารถ (คลิก พิมพ์ นำทาง รัน JavaScript ฯลฯ) ที่มอบให้กับเว็บไซต์หนึ่ง ๆ ลบรายการที่คุณไม่ต้องการอีกต่อไปได้ — WebBrain จะถามอีกครั้งเมื่อจำเป็น",
   "st.perms.empty": "ยังไม่ได้มอบสิทธิ์ให้เว็บไซต์ใด WebBrain จะถามก่อนคลิก พิมพ์ นำทาง อัปโหลด ดาวน์โหลด บันทึก หรือรันโค้ดบนเว็บไซต์ และจะจดจำตัวเลือกของคุณที่นี่เมื่อคุณเลือก “อนุญาตเสมอ”",
   "st.perms.allowed": "อนุญาตให้{verb}",
@@ -656,6 +657,17 @@ export default {
   'sp.scratchpad.error': 'ไม่สามารถใช้กระดานร่างได้: {msg}',
   'sp.perm.verb.schedule': 'ตั้งเวลางานในอนาคตสำหรับ',
   'sp.perm.verb.window': 'ปรับขนาดหน้าต่างเบราว์เซอร์บน',
+  'sp.permmode.open': 'โหมดการอนุญาต',
+  'sp.permmode.heading': 'การอนุญาต',
+  'sp.permmode.changed': 'โหมดการอนุญาต: {mode}',
+  'sp.permmode.manual': 'ถามทุกครั้ง',
+  'sp.permmode.manual.desc': 'WebBrain จะถามเมื่อคลิก พิมพ์ เปิดหน้าเว็บ ดาวน์โหลด อัปโหลด หรือตั้งเวลางานบนเว็บไซต์นั้นเป็นครั้งแรก',
+  'sp.permmode.auto': 'อัตโนมัติ',
+  'sp.permmode.auto.desc': 'WebBrain เปิดหน้าเว็บ คลิก และพิมพ์ได้เอง แต่ยังถามก่อนส่งฟอร์ม ดาวน์โหลด อัปโหลด เขียนผ่าน API หรือตั้งเวลางาน',
+  'sp.permmode.page_actions': 'การทำงานในหน้า',
+  'sp.permmode.page_actions.desc': 'ยอมรับการส่งฟอร์มและสคริปต์บนหน้าเว็บด้วย แต่ WebBrain ยังถามก่อนดาวน์โหลด อัปโหลด เขียนผ่าน API หรือตั้งเวลางาน',
+  'sp.permmode.bypass': 'ข้ามการขออนุญาต',
+  'sp.permmode.bypass.desc': 'ยอมรับทุกการอนุญาตบนทุกเว็บไซต์',
   'tool.schedule_resume': 'กำลังตั้งเวลาต่องาน',
   'tool.schedule_task': 'กำลังตั้งเวลางาน',
   'st.display.scheduled_tasks.label': 'งานที่ตั้งเวลาไว้',
@@ -690,7 +702,6 @@ export default {
   'sp.compact.failed': 'การบีบอัดบริบทล้มเหลว: {error}',
   'tool.inspect_element_styles': 'กำลังตรวจสอบสไตล์',
   'tool.read_page_source': 'กำลังอ่านซอร์สโค้ดหน้า',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'ทักษะ',
@@ -1030,7 +1041,7 @@ export default {
   "sp.import_config.done": "นำเข้าค่าการตั้งค่า {count} รายการแล้ว คีย์ผู้ให้บริการและการกำหนดค่ามีผลแล้ว",
   "sp.import_config.error": "นำเข้าการกำหนดค่าไม่ได้: {error}",
   "sp.input.placeholder_tip.skip_permissions": "โหมดไม่ถามสิทธิ์: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "ต้องการให้ขัดจังหวะน้อยลงไหม? “อนุญาตเสมอ” จะจดจำเว็บไซต์นี้ คำสั่งด้านล่างจะปิดการถามสิทธิ์ของ WebBrain ในทุกเว็บไซต์",
+  'sp.perm.skip_hint': 'ต้องการถูกรบกวนน้อยลงไหม “อนุญาตเสมอ” จะจำเว็บไซต์นี้ไว้ และโหมดการอนุญาตเหนือช่องข้อความจะอนุมัติการทำงานทั้งประเภทไว้ล่วงหน้า คำสั่งด้านล่างจะปิดการถามสิทธิ์ของ WebBrain บนทุกเว็บไซต์',
   "sp.perm.insert_skip_command": "แทรก /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "แบบร่างของคุณยังไม่เปลี่ยน โปรดล้างก่อนแทรกคำสั่ง",
   "ob.act.permissions_tip": "การถามสิทธิ์เปิดอยู่ตามค่าเริ่มต้น ผู้ใช้ขั้นสูงสามารถปิดทั่วโลกด้วย /dangerously-skip-permissions และเปิดอีกครั้งได้ที่ การตั้งค่า → สิทธิ์",

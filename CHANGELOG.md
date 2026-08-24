@@ -4,6 +4,19 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [0.1.15] - 2026-08-24
+
+### Added
+- **Permission modes.** One control above the composer now decides how much the agent may do without asking, instead of the old all-or-nothing master switch. Four rungs, ordered by how hard an action is to undo and how far it reaches past the page in front of you: **Ask every time** (default — a card the first time it clicks, types, navigates, downloads, uploads or schedules work on a site), **Auto** (navigates, clicks and types on its own, and still confirms form submits, downloads, uploads, outbound requests and scheduled work), **Accept page actions** (adds form submits and page scripts), and **Bypass permissions** (accepts everything). Pick one from the chip in the composer's footer, just under the input — number keys, arrows and Escape work, and its menu pops up over the conversation so the composer never shifts — or from Settings → Permissions; the two are one stored setting, live-synced, and `/dangerously-skip-permissions` writes the same value.
+- Two invariants keep the wider rungs reviewable. A mode only ever answers a question you have *not* answered, so an explicit "Don't allow" outranks every mode except Bypass; and a mode decision is never recorded as a grant, so dropping back to a stricter mode restores the prompts immediately and Settings keeps listing only the sites you allowed one at a time. Widening the mode while a card is open clears just the cards that mode covers, and answers them as a turn-scoped "once".
+
+### Fixed
+- A mandatory gate now survives a permissive mode. WebMCP invocations run arbitrary page logic behind a documented two-gate boundary; the new `requireExplicitGrant` flag opts them out of the mode policy, so they still raise a card in Auto, Accept page actions and Bypass alike.
+
+### Changed
+- The permission gate's storage moved from the `askBeforeConsequentialActions` boolean to `permissionMode`. An existing install is migrated on first read — gate off becomes Bypass — and the old key is then removed so the two cannot drift. Config exports keep the boolean beside the mode purely as a mirror, reconciled in both directions, so a file written here still lands correctly in a build that predates modes.
+- Layers 1 and 2 of the injection defence (untrusted-content wrapping, system-prompt contract) are unchanged and active in *every* mode, including Bypass. The mode is read from extension storage only — page content and model output can never widen it.
+
 ## [0.1.14] - 2026-08-23
 
 ### Added

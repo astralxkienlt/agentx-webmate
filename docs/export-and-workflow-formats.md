@@ -153,6 +153,7 @@ distributed context propagation.
     "wbLocale": "en",
     "activeProvider": "webbrain_cloud",
     "providers": {},
+    "permissionMode": "manual",
     "askBeforeConsequentialActions": true
   }
 }
@@ -165,6 +166,14 @@ distributed context propagation.
 | `webbrainVersion` | Version of the extension that created the file. |
 | `warning` | Human-readable plaintext-secret warning. |
 | `settings` | Allowlisted, default-resolved portable Settings values. |
+
+`permissionMode` is the permission ladder (`manual` | `auto` | `page_actions` |
+`bypass`). `askBeforeConsequentialActions` is kept beside it purely as the
+pre-modes mirror — `false` only for `bypass` — so a file written by this build
+still lands correctly in one that predates modes, and vice versa. The two are
+reconciled on both export and import: whenever a snapshot carries a mode, that
+mode wins and the mirror is rewritten from it; a file carrying only the old
+boolean is read as the mode it meant. Runtime code reads `permissionMode` alone.
 
 The snapshot includes provider, vision, transcription, and CapSolver API keys;
 profile data; user memory; custom skills; and permission choices. It excludes

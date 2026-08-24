@@ -5,6 +5,23 @@
 
 import { t, getLocale, setLocale, LANGUAGES, applyDOMTranslations } from './i18n.js';
 import { CAPABILITY_LABEL } from '../agent/permission-gate.js';
+import {
+  DEFAULT_PERMISSION_MODE,
+  PERMISSION_MODES,
+  PERMISSION_MODE_STORAGE_KEY,
+  PermissionMode,
+  loadPermissionMode,
+  normalizePermissionMode,
+  permissionModeAsksBeforeConsequentialActions,
+  permissionModeAutoAcceptsSubmit,
+  permissionModeAutoAllows,
+  permissionModeDescKey,
+  permissionModeIsWide,
+  permissionModeLabelKey,
+  permissionModeRank,
+  permissionModeSkipsAllGates,
+  savePermissionMode,
+} from '../agent/permission-mode.js';
 import { sanitizeMarkdownLinks } from './markdown-link.js';
 import { codeFenceLanguage, highlightCode, renderMarkdownHeadings, renderMarkdownTables } from './markdown-render.js';
 import { applyMode, loadMode, watch } from './theme.js';
@@ -566,6 +583,9 @@ const modeAskBtn = document.getElementById('btn-mode-ask');
 const modeActBtn = document.getElementById('btn-mode-act');
 const modeDevBtn = document.getElementById('btn-mode-dev');
 const modeToggleEl = document.getElementById('mode-toggle');
+const permissionModeBtn = document.getElementById('btn-permission-mode');
+const permissionModeChipLabel = document.getElementById('permission-mode-chip-label');
+const permissionModeMenuEl = document.getElementById('permission-mode-menu');
 const modeToggleHighlight = (() => {
   const el = document.createElement('div');
   el.className = 'mode-toggle-highlight instant';
@@ -1289,15 +1309,16 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-// Act-mode risk banner is only meaningful when the permission gate is OFF.
-// With "Ask before consequential actions" ON (the default) the user is
-// prompted per consequential action, so the standing banner is redundant —
-// only surface it in Act mode when the gate is disabled.
-const PERMISSION_GATE_KEY = 'askBeforeConsequentialActions';
+// Act-mode risk banner is only meaningful once the permission mode is wider
+// than on-page interaction. In `manual` and `auto` the user is still prompted
+// before the consequential steps, so a standing banner would be noise.
 const ACT_WARNING_DISMISSED_KEY = 'actWarningDismissed';
 const PERMISSION_EDUCATION_KEY = 'permissionPromptEducation';
 const PERMISSION_EDUCATION_THRESHOLD = 2;
-let askBeforeConsequential = true; // gate ON by default
+// The standing permission mode (src/agent/permission-mode.js). The agent holds
+// the authoritative copy; this one drives the composer's chip, banner and
+// placeholder.
+let permissionMode = DEFAULT_PERMISSION_MODE;
 let actWarningDismissed = false;
 let actWarningPreferenceLoaded = false;
 let permissionEducationState = { promptCount: 0, hintShown: false };
@@ -1372,7 +1393,7 @@ function bindPermissionEducationAction(btn) {
 
 async function maybeShowPermissionEducationHint(card) {
   await permissionEducationReady;
-  if (!askBeforeConsequential || !card) return;
+  if (!permissionPromptsActive() || !card) return;
 
   permissionEducationState = {
     ...permissionEducationState,
@@ -1409,12 +1430,16 @@ async function maybeShowPermissionEducationHint(card) {
   scrollToBottom();
 }
 
-chrome.storage.local.get([PERMISSION_GATE_KEY, ACT_WARNING_DISMISSED_KEY]).then((stored) => {
-  if (stored && stored[PERMISSION_GATE_KEY] === false) askBeforeConsequential = false;
+chrome.storage.local.get([ACT_WARNING_DISMISSED_KEY]).then((stored) => {
   actWarningDismissed = stored?.[ACT_WARNING_DISMISSED_KEY] === true;
   actWarningPreferenceLoaded = true;
   updateActWarning();
-  updateInputPlaceholder();
+}).catch(() => {});
+// loadPermissionMode also migrates an install still carrying only the pre-modes
+// boolean, so the panel and the agent converge on the same answer.
+void loadPermissionMode(chrome.storage.local).then((mode) => {
+  permissionMode = mode;
+  applyPermissionModeToComposer();
 }).catch(() => {});
 chrome.storage.onChanged.addListener((changes) => {
   if (changes[PERMISSION_EDUCATION_KEY]) {
@@ -1423,10 +1448,9 @@ chrome.storage.onChanged.addListener((changes) => {
     );
     updateInputPlaceholder();
   }
-  if (changes[PERMISSION_GATE_KEY]) {
-    askBeforeConsequential = changes[PERMISSION_GATE_KEY].newValue !== false;
-    updateActWarning();
-    updateInputPlaceholder();
+  if (changes[PERMISSION_MODE_STORAGE_KEY]) {
+    permissionMode = normalizePermissionMode(changes[PERMISSION_MODE_STORAGE_KEY].newValue);
+    applyPermissionModeToComposer();
   }
   if (changes[ACT_WARNING_DISMISSED_KEY]) {
     actWarningDismissed = changes[ACT_WARNING_DISMISSED_KEY].newValue === true;
@@ -1440,7 +1464,7 @@ function updateActWarning() {
   const show = actWarningPreferenceLoaded
     && !actWarningDismissed
     && agentMode !== 'ask'
-    && !askBeforeConsequential;
+    && permissionModeIsWide(permissionMode);
   actWarning.classList.toggle('hidden', !show);
 }
 
@@ -1448,6 +1472,204 @@ actWarningDismiss?.addEventListener('click', () => {
   actWarningDismissed = true;
   updateActWarning();
   void chrome.storage.local.set({ [ACT_WARNING_DISMISSED_KEY]: true }).catch(() => {});
+});
+
+// --- Permission mode ------------------------------------------------------
+// One control for "how much may the agent do without asking", replacing the
+// old all-or-nothing master switch. The ladder itself lives in
+// src/agent/permission-mode.js, so the panel, Settings and the agent cannot
+// disagree about what a mode means.
+
+function permissionPromptsActive() {
+  return permissionModeAsksBeforeConsequentialActions(permissionMode);
+}
+
+function permissionModeMenuIsOpen() {
+  return !!permissionModeMenuEl && !permissionModeMenuEl.classList.contains('hidden');
+}
+
+function renderPermissionModeChip() {
+  if (permissionModeChipLabel) {
+    permissionModeChipLabel.textContent = t(permissionModeLabelKey(permissionMode));
+  }
+  if (!permissionModeBtn) return;
+  permissionModeBtn.dataset.mode = permissionMode;
+  // A mode wider than on-page interaction is a standing risk; make it visible
+  // on the chip so nobody has to open the menu to notice.
+  permissionModeBtn.dataset.wide = String(permissionModeIsWide(permissionMode));
+}
+
+function renderPermissionModeMenu() {
+  if (!permissionModeMenuEl) return;
+  permissionModeMenuEl.textContent = '';
+  const heading = document.createElement('div');
+  heading.className = 'permission-mode-menu-heading';
+  heading.textContent = t('sp.permmode.heading');
+  permissionModeMenuEl.appendChild(heading);
+
+  PERMISSION_MODES.forEach((mode, index) => {
+    const active = mode === permissionMode;
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'permission-mode-item';
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(active));
+    item.dataset.mode = mode;
+    // Only the active row is tabbable, so the menu is one stop for the keyboard
+    // and the arrow keys move within it (WAI-ARIA menu pattern).
+    item.tabIndex = active ? 0 : -1;
+
+    const label = document.createElement('span');
+    label.className = 'permission-mode-item-label';
+    label.textContent = t(permissionModeLabelKey(mode));
+
+    const shortcut = document.createElement('span');
+    shortcut.className = 'permission-mode-item-shortcut';
+    const check = document.createElement('span');
+    check.className = 'permission-mode-item-check';
+    check.textContent = '\u2713';
+    check.setAttribute('aria-hidden', 'true');
+    const number = document.createElement('span');
+    number.textContent = String(index + 1);
+    number.setAttribute('aria-hidden', 'true');
+    shortcut.append(check, number);
+
+    const desc = document.createElement('span');
+    desc.className = 'permission-mode-item-desc';
+    desc.textContent = t(permissionModeDescKey(mode));
+
+    item.append(label, shortcut, desc);
+    item.addEventListener('click', () => { void selectPermissionMode(mode); });
+    permissionModeMenuEl.appendChild(item);
+  });
+}
+
+function applyPermissionModeToComposer() {
+  renderPermissionModeChip();
+  if (permissionModeMenuIsOpen()) renderPermissionModeMenu();
+  updateActWarning();
+  updateInputPlaceholder();
+}
+
+function permissionModeMenuItems() {
+  return permissionModeMenuEl
+    ? [...permissionModeMenuEl.querySelectorAll('.permission-mode-item')]
+    : [];
+}
+
+function focusPermissionModeItem(index) {
+  const items = permissionModeMenuItems();
+  if (!items.length) return;
+  const target = items[(index + items.length) % items.length];
+  for (const item of items) item.tabIndex = item === target ? 0 : -1;
+  try { target.focus(); } catch { /* focus can fail on a detached node */ }
+}
+
+function openPermissionModeMenu() {
+  if (!permissionModeMenuEl || permissionModeMenuIsOpen()) return;
+  renderPermissionModeMenu();
+  permissionModeMenuEl.classList.remove('hidden');
+  permissionModeBtn?.setAttribute('aria-expanded', 'true');
+  document.addEventListener('pointerdown', handlePermissionModeOutsidePointer, true);
+  focusPermissionModeItem(Math.max(0, PERMISSION_MODES.indexOf(permissionMode)));
+}
+
+function closePermissionModeMenu({ focusChip = false } = {}) {
+  if (!permissionModeMenuEl) return;
+  permissionModeMenuEl.classList.add('hidden');
+  permissionModeBtn?.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('pointerdown', handlePermissionModeOutsidePointer, true);
+  if (focusChip) {
+    try { permissionModeBtn?.focus(); } catch { /* nothing to focus */ }
+  }
+}
+
+function handlePermissionModeOutsidePointer(event) {
+  if (!permissionModeMenuIsOpen()) return;
+  if (permissionModeMenuEl?.contains(event.target)) return;
+  if (permissionModeBtn?.contains(event.target)) return;
+  closePermissionModeMenu();
+}
+
+/**
+ * Cards already on screen were raised under the previous, stricter mode. A
+ * widened mode now answers them, so clear them instead of leaving the user to
+ * dismiss questions the mode has already settled. They are answered 'once' and
+ * never 'always': the widened mode stays the only reason the action ran, so
+ * going back to a stricter mode brings the prompt back.
+ */
+function resolvePermissionPromptsCoveredByMode(mode) {
+  const cards = document.querySelectorAll(
+    '.clarify-card[data-permission="1"], .clarify-card[data-submit-confirmation="1"]',
+  );
+  let resolved = 0;
+  for (const card of cards) {
+    if (card.classList.contains('clarify-answered')) continue;
+    const clarifyId = String(card.dataset.clarifyId || '');
+    const tabId = normalizePermissionSkipTabId(card.dataset.scheduledTabId ?? card.dataset.tabId);
+    if (!clarifyId || tabId == null) continue;
+    const covered = card.dataset.permission === '1'
+      ? (permissionModeSkipsAllGates(mode)
+        || permissionModeAutoAllows(mode, String(card.dataset.permissionCapability || '')))
+      : permissionModeAutoAcceptsSubmit(mode);
+    if (!covered) continue;
+    submitClarify(card, tabId, clarifyId, 'once', 'permission-mode');
+    resolved += 1;
+  }
+  return resolved;
+}
+
+async function selectPermissionMode(mode) {
+  const next = normalizePermissionMode(mode);
+  const widened = permissionModeRank(next) > permissionModeRank(permissionMode);
+  permissionMode = next;
+  closePermissionModeMenu({ focusChip: true });
+  applyPermissionModeToComposer();
+  await savePermissionMode(chrome.storage.local, next);
+  // Only a widened mode may answer a question already on screen; a stricter one
+  // must leave the open card to the user.
+  if (widened) resolvePermissionPromptsCoveredByMode(next);
+  showComposerToast(t('sp.permmode.changed', { mode: t(permissionModeLabelKey(next)) }));
+}
+
+permissionModeBtn?.addEventListener('click', () => {
+  if (permissionModeMenuIsOpen()) closePermissionModeMenu({ focusChip: true });
+  else openPermissionModeMenu();
+});
+
+permissionModeBtn?.addEventListener('keydown', (event) => {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  if (!permissionModeMenuIsOpen()) openPermissionModeMenu();
+});
+
+permissionModeMenuEl?.addEventListener('keydown', (event) => {
+  const items = permissionModeMenuItems();
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement);
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closePermissionModeMenu({ focusChip: true });
+    return;
+  }
+  if (event.key === 'ArrowDown') { event.preventDefault(); focusPermissionModeItem(current + 1); return; }
+  if (event.key === 'ArrowUp') { event.preventDefault(); focusPermissionModeItem(current - 1); return; }
+  if (event.key === 'Home') { event.preventDefault(); focusPermissionModeItem(0); return; }
+  if (event.key === 'End') { event.preventDefault(); focusPermissionModeItem(items.length - 1); return; }
+  if (event.key === 'Tab') { closePermissionModeMenu(); return; }
+  // Number shortcuts match the digits drawn on the rows.
+  const digit = Number(event.key);
+  if (Number.isInteger(digit) && digit >= 1 && digit <= PERMISSION_MODES.length) {
+    event.preventDefault();
+    void selectPermissionMode(PERMISSION_MODES[digit - 1]);
+  }
+});
+
+// The chip label and the menu rows are built in JS, so a locale change has to
+// re-render them; applyDOMTranslations only reaches the declared attributes.
+document.addEventListener('wb-locale-changed', () => {
+  renderPermissionModeChip();
+  if (permissionModeMenuIsOpen()) renderPermissionModeMenu();
 });
 
 /**
@@ -7429,10 +7651,11 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
   }
 
   if (command.value === '/dangerously-skip-permissions') {
-    await chrome.storage.local.set({ [PERMISSION_GATE_KEY]: false }).catch(() => {});
-    askBeforeConsequential = false;
-    updateActWarning();
-    updateInputPlaceholder();
+    // The typed command is the same decision as picking Bypass in the mode
+    // menu, so it writes the same setting rather than a second switch.
+    permissionMode = PermissionMode.BYPASS;
+    await savePermissionMode(chrome.storage.local, PermissionMode.BYPASS);
+    applyPermissionModeToComposer();
     if (options.permissionSkipContext) {
       resolvePendingPermissionPromptForContext(options.permissionSkipContext);
     } else {
@@ -9286,6 +9509,8 @@ function renderClarifyCard(data) {
     card.dataset.permission = '1';
     const host = String(data.permission.host || '');
     const cap = String(data.permission.capability || '');
+    // Lets a widened permission mode resolve exactly the open cards it covers.
+    card.dataset.permissionCapability = cap;
     const verbKey = 'sp.perm.verb.' + cap;
     const verb = t(verbKey);
     // English falls back to the single CAPABILITY_LABEL source of truth so the
@@ -11516,7 +11741,7 @@ function getInputPlaceholderKeys() {
   if (agentMode === 'ask') keys = ASK_PLACEHOLDER_KEYS;
   else if (agentMode === 'dev') keys = ['sp.input.dev_placeholder'];
   else keys = ['sp.input.act_placeholder'];
-  if (askBeforeConsequential && permissionEducationState.promptCount > 0) {
+  if (permissionPromptsActive() && permissionEducationState.promptCount > 0) {
     return [...keys, PERMISSION_REMINDER_PLACEHOLDER_KEY];
   }
   return keys;

@@ -1700,17 +1700,20 @@
 
   <section class="tab-panel" data-panel="permissions" role="tabpanel">
     <div class="provider-card" id="permissions-card">
-      <div class="setting-row" style="margin-bottom:14px;">
+      <div class="setting-row" style="margin-bottom:6px;">
         <div class="setting-info">
-          <div class="setting-label" data-i18n="st.perms.gate.label"></div>
-          <div class="setting-desc" data-i18n="st.perms.gate.desc"></div>
+          <div class="setting-label" data-i18n="st.perms.mode.label"></div>
+          <div class="setting-desc" data-i18n="st.perms.mode.desc"></div>
         </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-permission-gate" checked>
-          <span class="toggle-slider"></span>
-        </label>
+        <!-- Options are built in JS from PERMISSION_MODES so the ladder stays
+             defined once, in src/agent/permission-mode.js. -->
+        <select id="select-permission-mode" data-i18n-aria-label="st.perms.mode.label"
+                style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:inherit;cursor:pointer;max-width:50%;"></select>
       </div>
-      <div class="info-box" id="permission-gate-warning" style="display:none;margin-bottom:16px;" data-i18n="st.perms.gate.warning"></div>
+      <div class="setting-desc" id="permission-mode-desc" style="margin:0 0 14px;"></div>
+      <!-- Text is set in JS: the bypass warning and the wider-mode warning are
+           different claims, and only one applies at a time. -->
+      <div class="info-box" id="permission-gate-warning" style="display:none;margin-bottom:16px;"></div>
 
       <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.55;" data-i18n="st.perms.desc"></div>
       <div id="permissions-list"></div>

@@ -360,8 +360,12 @@ export function requiredHosts(capability, args, currentUrlOrHost, toolName) {
 
 /**
  * Stores and evaluates (capability, host) grants. Pure logic — storage is
- * injected via async load/save hooks so this stays Node-testable. `skipAll`
- * is an optional escape hatch (e.g. an explicit autopilot setting).
+ * injected via async load/save hooks so this stays Node-testable. `autoAllow`
+ * is the per-capability standing policy of the active permission mode.
+ *
+ * There is deliberately no "skip everything" hook: the `bypass` mode is
+ * applied by the tool loop instead, because the one boundary that outranks it
+ * (a WebMCP page callback's mandatory gate) is only knowable per call.
  *
  * Grant shape: { capability, host, action: 'allow'|'deny', duration: 'once'|'always', ts }
  *   - 'always' grants are persisted (via save) and survive turns/sessions.
@@ -371,7 +375,11 @@ export class PermissionManager {
   constructor(opts = {}) {
     this._load = typeof opts.load === 'function' ? opts.load : null;
     this._save = typeof opts.save === 'function' ? opts.save : null;
-    this._skipAll = typeof opts.skipAll === 'function' ? opts.skipAll : (() => false);
+    // Standing permission-mode policy (permission-mode.js): given a
+    // capability the user has NOT answered for this host yet, may it run
+    // without a card? Defaults to "no" so an unwired manager behaves exactly
+    // like the ask-every-time mode.
+    this._autoAllow = typeof opts.autoAllow === 'function' ? opts.autoAllow : (() => false);
     this.permissions = [];
     this._hydrated = false;
   }
@@ -418,17 +426,31 @@ export class PermissionManager {
   }
 
   /**
-   * { allowed, needsPrompt, grant? } for a (host, capability) in a given tab.
-   * "always" grants are global; "once" grants only count for the tab that made
-   * them, so one tab's Allow-once can't silently authorize another tab.
+   * { allowed, needsPrompt, grant?, autoAllowed? } for a (host, capability) in
+   * a given tab. "always" grants are global; "once" grants only count for the
+   * tab that made them, so one tab's Allow-once can't silently authorize
+   * another tab. Pass { requireExplicitGrant: true } for a call whose gate is
+   * mandatory regardless of the active permission mode.
    */
-  check(host, capability, tabId) {
-    if (this._skipAll()) return { allowed: true, needsPrompt: false };
+  check(host, capability, tabId, options = {}) {
     const h = normalizeHost(host);
     const g = this.permissions.find(p =>
       p.capability === capability && p.host === h &&
       (p.duration === 'always' || p.tabId === tabId));
     if (g) return { allowed: g.action === 'allow', needsPrompt: false, grant: g };
+    // Nothing decided for this pair yet → the standing permission mode does.
+    // Deliberately AFTER the grant lookup, so a "don't allow" the user chose
+    // still wins over a permissive mode, and deliberately NOT recorded as a
+    // grant: modes are live policy, so returning to a stricter mode has to
+    // bring the prompt back instead of leaving grants nobody picked.
+    //
+    // `requireExplicitGrant` opts a call out of that policy entirely: some
+    // gates are mandatory by contract (a WebMCP page callback runs arbitrary
+    // page logic behind a documented two-gate boundary) and must reach a human
+    // even in a mode that pre-approves the same capability elsewhere.
+    if (!options.requireExplicitGrant && this._autoAllow(capability)) {
+      return { allowed: true, needsPrompt: false, autoAllowed: true };
+    }
     return { allowed: false, needsPrompt: true };
   }
 
