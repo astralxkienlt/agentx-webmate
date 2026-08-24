@@ -40,7 +40,8 @@ This doc covers the shared architecture and calls out where the builds diverge.
 │         ├─ captcha-solver.js — CapSolver integration │
 │         ├─ user-memory.js — local preference memory  │
 │         ├─ loop-bucket.js — URL-family loop bucketing│
-│         └─ pdf-tools.js — PDF text extraction        │
+│         ├─ pdf-core.js  — parser-free PDF helpers    │
+│         └─ pdf-tools.js — PDF parsing (decode host)  │
 │    ├─ providers/       — LLM provider abstraction    │
 │    ├─ network/         — fetch_url, downloads        │
 │    ├─ trace/           — optional IndexedDB recorder │
@@ -304,8 +305,8 @@ follow-up turns and retries, and is shown in the side-panel scope banner.
 | `done` | agent.js — captures verification screenshot + page state probe | Service worker + CDP |
 | `clarify` | agent.js — pauses for user input | Service worker |
 | `solve_captcha` | captcha-solver.js | Service worker + CapSolver API |
-| `read_pdf` | pdf-tools.js | Service worker |
-| `read_attachment` | agent.js + media/attachment-store.js + pdf-tools.js / extract-docx.js | Service worker |
+| `read_pdf` | media/decode-host.js -> pdf-tools.js | Chrome: offscreen document; Firefox: background page |
+| `read_attachment` | agent.js + media/attachment-store.js + media/decode-host.js | Service worker; parsing in the Chrome offscreen document |
 | `scratchpad_write` | agent.js — in-memory pinned note | Service worker |
 | `read_page_source`, `inspect_element_styles` | agent/content helpers | Dev-only source/style inspection |
 | `inject_css`, `remove_injected_css` | `chrome.scripting.insertCSS/removeCSS` + document-bound session patch metadata | Chrome Dev-only reversible CSS |
@@ -827,10 +828,23 @@ the background:
   reads them by `att_…` id at materialize/tool time, so `chat_start`
   payloads carry ids + metadata instead of base64. Records expire 24 hours
   after last use (hourly `wb-attachment-sweep` alarm) or at session end.
-- **extract-docx.js** — DOCX → flattened text via the vendored mammoth
-  bundle (tables one row per line with `|` separators, numbering kept).
-- **decode-queue.js** — serializes heavy pdfjs/mammoth decodes so the
-  background holds at most one decoded document in memory at a time.
+- **docx-core.js / extract-docx.js** — DOCX → flattened text via the
+  vendored mammoth bundle (tables one row per line with `|` separators,
+  numbering kept). The core half carries the sniffer and HTML flattener and
+  needs no unzip engine; only `extractDocxText` touches mammoth.
+- **decode-host.js** — the one module that differs per browser (like
+  vendor-loader.js). Chrome proxies the five parser-backed calls to the
+  offscreen document over runtime messaging, with bytes base64-encoded
+  because a `Uint8Array` on a message arrives as `{"0":37,…}`. Firefox calls
+  the parsers directly on its background page. Keeping pdfjs (3.2 MB) and
+  mammoth (621 KB) off the MV3 service worker's static graph matters because
+  the worker is evicted after ~30s idle and re-parses that graph on every
+  wake — a running `/watch` wakes it every 30-120s. The graph went from
+  7.26 MB to ~3.5 MB; `test/run.js` guards both the vendor exclusion and a
+  size ceiling.
+- **decode-queue.js** — one decode at a time. Enforced on both sides of the
+  Chrome boundary: in the offscreen document, where the parse buffers live,
+  and in the service worker, which still holds the base64 copy it sends.
 
 `Agent._applyAttachments` routes every file through a delivery matrix
 (native document/image blocks, locally extracted text with coverage

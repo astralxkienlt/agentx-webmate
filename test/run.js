@@ -81501,6 +81501,12 @@ function ingestionAgent(AgentClass, { store = null } = {}) {
   agent._pdfjsOverride = ingestionPdfjs;
   agent._createCanvasOverride = fakeRenderCanvas;
   agent._mammothOverride = globalThis.mammoth;
+  // Production routes decoding through media/decode-host.js — an offscreen
+  // document on Chrome. Node has no such host, so point the agent straight at
+  // the parsers; that is also the only way _pdfjsOverride / _mammothOverride
+  // still reach a parser, since the Chrome host drops live objects that
+  // runtime messaging cannot serialize.
+  agent._decoderOverride = { ...ingestionPdfToolsCh, ...extractDocxCh };
   agent._attachmentStoreOverride = store;
   // Rendered pages normally pass through the vision shrink pipeline, which
   // needs createImageBitmap; identity keeps the unit tests hermetic.
@@ -82132,9 +82138,18 @@ test('ingestion media modules are byte-identical across browser trees', () => {
   // vendor-loader.js is the ONE deliberately divergent module: Chrome must
   // import the bundles statically (dynamic import() is disallowed in the MV3
   // service worker), Firefox keeps them lazy on its background page.
-  for (const rel of ['media-core.js', 'attachment-store.js', 'decode-queue.js', 'extract-docx.js']) {
+  for (const rel of ['media-core.js', 'attachment-store.js', 'decode-queue.js', 'docx-core.js', 'extract-docx.js']) {
     const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/media', rel), 'utf8');
     const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/media', rel), 'utf8');
+    assert.equal(chrome, firefox, `${rel} must not drift between trees`);
+  }
+  // The parsers themselves are shared too: only media/vendor-loader.js and
+  // media/decode-host.js may differ per tree. Tests that drive one tree's
+  // parser therefore cover both, which is what lets ingestionAgent() install a
+  // single decoder override.
+  for (const rel of ['pdf-core.js', 'pdf-tools.js']) {
+    const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent', rel), 'utf8');
+    const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/agent', rel), 'utf8');
     assert.equal(chrome, firefox, `${rel} must not drift between trees`);
   }
   const chromeMammoth = fs.readFileSync(path.join(ROOT, 'src/chrome/vendor/mammoth/mammoth.browser.min.js'));
@@ -82148,7 +82163,10 @@ test('chrome service-worker attachment modules never dynamic-import (MV3 ban)', 
   // MV3 background worker, so every vendor load on the chrome SW graph must
   // be a static import via media/vendor-loader.js.
   const swModules = [
+    'src/chrome/src/agent/pdf-core.js',
     'src/chrome/src/agent/pdf-tools.js',
+    'src/chrome/src/media/decode-host.js',
+    'src/chrome/src/media/docx-core.js',
     'src/chrome/src/media/extract-docx.js',
     'src/chrome/src/media/vendor-loader.js',
     'src/chrome/src/media/attachment-store.js',
@@ -82188,6 +82206,169 @@ test('scanned-pdf rendering respects the shared pixel ceiling per send', async (
   const totalPixels = rendered.reduce((sum, page) => sum + page.width * page.height, 0);
   assert.ok(totalPixels <= 400000 * 1.02, `total ${totalPixels} stays inside the ceiling`);
   assert.ok(rendered.every(page => page.dataUrl.startsWith('data:image/png;base64,')), 'pages export as PNG data URLs');
+});
+
+// ── decode host: pdfjs/mammoth off the MV3 service-worker cold-start graph ──
+
+test('no vendor bundle sits on the chrome service-worker static import graph', () => {
+  // The whole point of media/decode-host.js. MV3 evicts the worker after ~30s
+  // idle and re-parses its entire graph on every wake, so a static vendor
+  // import is not a once-per-session cost — with a `/watch` polling every
+  // 30-120s the worker wakes continuously. Before the decode host the graph
+  // was 7.26 MB, 3.79 MB of it pdfjs + mammoth. This test is what stops a
+  // convenience import from quietly putting them back.
+  const walk = (entry) => {
+    const seen = new Set();
+    const visit = (file) => {
+      if (seen.has(file) || !fs.existsSync(file)) return;
+      seen.add(file);
+      const source = fs.readFileSync(file, 'utf8');
+      for (const re of [/^import[^'"]*['"](\.[^'"]+)['"]/gm, /^export[^'"]*from\s*['"](\.[^'"]+)['"]/gm]) {
+        for (const match of source.matchAll(re)) visit(path.resolve(path.dirname(file), match[1]));
+      }
+    };
+    visit(entry);
+    return [...seen];
+  };
+
+  for (const [label, entry] of [
+    ['chrome', path.join(ROOT, 'src/chrome/src/background.js')],
+    ['firefox', path.join(ROOT, 'src/firefox/src/background.js')],
+  ]) {
+    const graph = walk(entry);
+    const vendor = graph.filter((file) => /[\\/]vendor[\\/]/.test(file)).map((f) => path.relative(ROOT, f));
+    assert.deepEqual(vendor, [], `${label}: background graph must not statically import vendor bundles`);
+
+    const bytes = graph.reduce((sum, file) => sum + fs.statSync(file).size, 0);
+    // Headroom over the ~3.5 MB the graph weighs today; the assertion exists to
+    // catch a multi-megabyte regression, not to police normal growth.
+    assert.ok(
+      bytes < 4.5 * 1024 * 1024,
+      `${label}: background graph grew to ${(bytes / 1048576).toFixed(2)} MB — did a heavy bundle land back on the startup path?`,
+    );
+  }
+});
+
+test('offscreen document hosts the decode script as a module', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/offscreen.html'), 'utf8');
+  // Classic <script> cannot carry the ES imports the parsers need, and a
+  // missing tag means every decode call times out with no listener to answer.
+  assert.match(html, /<script type="module" src="document-decode\.js"><\/script>/,
+    'offscreen.html must load document-decode.js as a module');
+});
+
+test('re-exported helpers are also imported where the module body uses them', () => {
+  // `export { x } from './y.js'` re-exports x WITHOUT binding it locally, so a
+  // function body still referencing x throws ReferenceError at call time.
+  // Splitting the parser modules hit this twice (flattenDocxHtml, and
+  // PDF_RENDER_PIXEL_BUDGET which no existing test exercised because every
+  // caller happened to pass pixelBudget explicitly).
+  const modules = [
+    'src/chrome/src/agent/pdf-tools.js', 'src/firefox/src/agent/pdf-tools.js',
+    'src/chrome/src/media/extract-docx.js', 'src/firefox/src/media/extract-docx.js',
+    'src/chrome/src/media/decode-host.js', 'src/firefox/src/media/decode-host.js',
+  ];
+  const names = (text, re) => {
+    const out = new Set();
+    for (const match of text.matchAll(re)) {
+      for (const part of match[1].split(',')) if (part.trim()) out.add(part.trim());
+    }
+    return out;
+  };
+  for (const rel of modules) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const reexported = names(source, /^export \{([^}]+)\} from/gms);
+    const imported = names(source, /^import[^{;]*\{([^}]+)\} from/gms);
+    const body = source
+      .replace(/^export \{[^}]+\} from[^;]+;/gms, '')
+      .replace(/^import[^{;]*\{[^}]+\} from[^;]+;/gms, '');
+    const dangling = [...reexported]
+      .filter((name) => !imported.has(name) && new RegExp(`\\b${name}\\b`).test(body))
+      .sort();
+    assert.deepEqual(dangling, [], `${rel}: used in the module body but only re-exported, never imported`);
+  }
+});
+
+test('decode host round-trips pdf and docx through the offscreen message boundary', async () => {
+  // The boundary is the risk: runtime messaging JSON-serializes its payload, so
+  // a Uint8Array crosses as {"0":37,"1":80,…} and every parser rejects it. This
+  // test wires the REAL decode-host client to the REAL offscreen handler
+  // through a transport that applies exactly that serialization, then compares
+  // the results against direct parser calls on the same fixtures.
+  const originalChrome = globalThis.chrome;
+  const wire = (value) => JSON.parse(JSON.stringify(value));
+  try {
+    let handler = null;
+    globalThis.chrome = {
+      runtime: {
+        onMessage: { addListener: (fn) => { handler = fn; } },
+        // Mirrors chrome.runtime.sendMessage: message and response both go
+        // through structured serialization, and the listener answers async.
+        sendMessage: (message) => new Promise((resolve, reject) => {
+          if (!handler) return reject(new Error('no offscreen listener registered'));
+          const kept = handler(wire(message), {}, (response) => resolve(wire(response)));
+          if (kept !== true) reject(new Error('decode listener must keep the response channel open'));
+        }),
+      },
+      offscreen: { hasDocument: async () => true, createDocument: async () => {} },
+    };
+
+    // Importing the handler registers the listener on the stubbed runtime.
+    await ingestionImport('src/chrome/src/offscreen/document-decode.js');
+    const host = await ingestionImport('src/chrome/src/media/decode-host.js');
+    assert.ok(handler, 'document-decode.js registered no onMessage listener');
+
+    const pdf = attachmentFixture('pdf-text-3p.pdf');
+    const viaHost = await host.extractPdfTextFromBytes(pdf, { fromPage: 1, toPage: 3, maxChars: 50000 });
+    const direct = await ingestionPdfToolsCh.extractPdfTextFromBytes(pdf, {
+      fromPage: 1, toPage: 3, maxChars: 50000, pdfjs: ingestionPdfjs,
+    });
+    assert.equal(viaHost.success, true, 'pdf text decode survived the boundary');
+    assert.equal(viaHost.totalPages, direct.totalPages, 'page count matches a direct call');
+    assert.deepEqual(viaHost.pages, direct.pages, 'extracted page text matches a direct call');
+
+    const probe = await host.probePdfBytes(pdf, { sampleLimit: 3 });
+    assert.equal(probe.pages, direct.totalPages, 'probe agrees on page count');
+    assert.equal(probe.hasTextLayer, true, 'a text PDF reports a text layer');
+
+    const docx = attachmentFixture('report.docx');
+    const docxViaHost = await host.extractDocxText(docx, { maxChars: 200000 });
+    const docxDirect = await extractDocxCh.extractDocxText(docx, {
+      maxChars: 200000, mammoth: globalThis.mammoth,
+    });
+    assert.equal(docxViaHost.success, true, 'docx decode survived the boundary');
+    assert.equal(docxViaHost.text, docxDirect.text, 'flattened docx text matches a direct call');
+
+    // Parser failures must arrive as a message, not as a dropped Error object.
+    await assert.rejects(
+      () => host.extractDocxText(attachmentFixture('bare.zip'), {}),
+      /Content_Types/,
+      'a decode failure crosses the boundary with its message intact',
+    );
+    await assert.rejects(
+      () => host.extractPdfTextFromBytes(new Uint8Array([1, 2, 3]), {}),
+      (error) => error instanceof Error && error.message.length > 0,
+      'invalid bytes reject with a real Error',
+    );
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
+
+test('decode host forwards only options that survive serialization', () => {
+  // pdfjs / mammoth / createCanvas are live values; putting them on a message
+  // silently drops them, which would look like injection while sending nothing.
+  // The offscreen document resolves its own vendor and OffscreenCanvas.
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/media/decode-host.js'), 'utf8');
+  const list = source.match(/const TRANSFERABLE_OPTS = Object\.freeze\(\[([^\]]+)\]\)/);
+  assert.ok(list, 'decode-host.js must declare its transferable option allowlist');
+  const allowed = list[1].split(',').map((s) => s.trim().replace(/^'|',?$/g, '')).filter(Boolean);
+  for (const banned of ['pdfjs', 'mammoth', 'createCanvas']) {
+    assert.ok(!allowed.includes(banned), `${banned} must never be forwarded over messaging`);
+  }
+  for (const needed of ['fromPage', 'toPage', 'maxChars', 'pages', 'pixelBudget', 'sampleLimit']) {
+    assert.ok(allowed.includes(needed), `${needed} must reach the parser`);
+  }
 });
 
 await run();

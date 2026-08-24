@@ -1,11 +1,12 @@
 /**
- * PDF reading for the agent (Firefox).
+ * PDF reading for the agent.
  *
- * Why a separate module: Firefox's built-in PDF viewer is a privileged
- * page (about:reader-style) that our content scripts cannot inject into,
- * so click / read_page / get_accessibility_tree all silently no-op
- * against PDF tabs. The agent ends up clicking around the viewer's
- * chrome indefinitely.
+ * Why a separate module: Chrome's PDF viewer is a `chrome-extension://`
+ * page that our content scripts cannot inject into, so click /
+ * read_page / get_accessibility_tree all silently no-op against
+ * PDF tabs. The agent ends up clicking around the viewer's chrome
+ * indefinitely (see the qwen3.6-27b lease trace from 2026-05-04 —
+ * 17 steps, 184 seconds, 345k input tokens, no progress).
  *
  * What this module does instead: fetches the PDF binary from the
  * tab URL via plain `fetch()`, parses it with the bundled pdfjs-dist
@@ -23,89 +24,37 @@
  */
 
 import { loadPdfjs } from '../media/vendor-loader.js';
+import {
+  bytesToBase64,
+  fetchPdfBytes,
+  PDF_LOW_TEXT_PAGE_CHARS,
+  PDF_RENDER_PIXEL_BUDGET,
+} from './pdf-core.js';
 
+// Vendor-free helpers keep living in pdf-core.js; re-exported here so the
+// module stays one import for the decode host and for tests that drive the
+// parser directly. Service-worker callers must NOT import from this file —
+// it pulls pdfjs into the module graph. They go through media/decode-host.js.
+export {
+  bytesToBase64,
+  buildClaudeDocumentBlock,
+  buildPdfCoverageReport,
+  fetchPdfBytes,
+  isPdfUrl,
+  PDF_LOW_TEXT_PAGE_CHARS,
+  PDF_PASSTHROUGH_MAX_BYTES,
+  PDF_RENDER_MAX_PAGES_PER_SEND,
+  PDF_RENDER_PIXEL_BUDGET,
+  providerSupportsPdfPassthrough,
+} from './pdf-core.js';
 /**
- * pdfjs comes from the per-browser vendor loader: lazily imported on the
- * Firefox background page (this tree), statically imported on Chrome where
- * the MV3 service worker disallows dynamic import().
+ * pdfjs comes from the per-browser vendor loader: statically imported on
+ * Chrome, because dynamic import() is disallowed in the MV3 service worker
+ * (the old lazy `import()` here threw on every read_pdf call), lazily
+ * imported on the Firefox background page.
  */
 async function getPdfjs() {
   return loadPdfjs();
-}
-
-/**
- * Cheap byte-array → base64 conversion that doesn't blow the call
- * stack on multi-MB PDFs. fromCharCode.apply has a per-call argument
- * limit (~64k in V8), so we chunk.
- */
-const BASE64_MAX_INPUT_BYTES = 32 * 1024 * 1024; // 32 MB safety cap
-
-function bytesToBase64(bytes) {
-  if (bytes.length > BASE64_MAX_INPUT_BYTES) {
-    throw new Error(`PDF too large for base64 conversion (${bytes.length} bytes, cap ${BASE64_MAX_INPUT_BYTES}).`);
-  }
-  let bin = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
-
-/**
- * Heuristic: does this URL look like a PDF? Used by `read_page` to
- * decide whether to redirect to `read_pdf`.
- */
-export function isPdfUrl(url) {
-  if (!url || typeof url !== 'string') return false;
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.pathname.toLowerCase().endsWith('.pdf')) return true;
-  // Some servers include the .pdf in a query parameter (e.g. content-disposition
-  // viewers, Google Drive previews). Catch the common patterns.
-  const fileParam = parsed.searchParams.get('file');
-  if (fileParam && fileParam.toLowerCase().endsWith('.pdf')) return true;
-  return false;
-}
-
-/**
- * Fetch the PDF binary from `url`. Returns a Uint8Array.
- * Throws with a helpful message on failure — file:// URLs in Firefox
- * are blocked by default for extensions; about:config
- * `extensions.webextensions.background.allowed_protocols` would have to
- * be modified, which is not user-friendly. We surface a descriptive
- * error instead of leaving the agent guessing.
- */
-export async function fetchPdfBytes(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
-  try {
-    let res;
-    try {
-      res = await fetch(url, { credentials: 'include', signal: controller.signal });
-    } catch (e) {
-      if (typeof url === 'string' && url.startsWith('file://')) {
-        throw new Error(
-          'Cannot fetch local PDF from a file:// URL. Firefox blocks ' +
-          'extension fetches against file:// for privacy. Workaround: ' +
-          'open the PDF over http(s) (e.g. drag it into a local web ' +
-          'server, or upload it to a file host) and try read_pdf again.'
-        );
-      }
-      throw new Error(`PDF fetch failed: ${e.message}`);
-    }
-    if (!res.ok) {
-      throw new Error(`PDF fetch returned HTTP ${res.status} ${res.statusText}`);
-    }
-    const buf = await res.arrayBuffer();
-    return new Uint8Array(buf);
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 /**
@@ -237,48 +186,6 @@ export async function extractPdfText(url, opts = {}) {
   return { ...result, _pdfBytes: bytes };
 }
 
-// A page under this many extracted characters is treated as having no usable
-// text layer (page numbers and stray marks survive OCR-less scans).
-export const PDF_LOW_TEXT_PAGE_CHARS = 20;
-
-function formatPageRanges(pageNumbers) {
-  const sorted = [...pageNumbers].sort((a, b) => a - b);
-  const ranges = [];
-  for (const page of sorted) {
-    const last = ranges[ranges.length - 1];
-    if (last && page === last.end + 1) last.end = page;
-    else ranges.push({ start: page, end: page });
-  }
-  return ranges.map(({ start, end }) => (start === end ? `${start}` : `${start}–${end}`)).join(', ');
-}
-
-/**
- * Per-page coverage check for extracted PDF text (thresholds mirror the
- * Hermes ingestion pipeline): count characters per page; when at least two
- * examined pages — and either ≥ 20% of them or ≥ 10 pages — fall under 20
- * characters, the extraction is declared partial and the English header
- * lists the low-text page ranges plus the vision escape hatch.
- *
- * @param {number[]} pageCharCounts chars per examined page
- * @param {{ fromPage?: number }} opts first examined page's 1-based number
- * @returns {{ lowTextPages: number[], partial: boolean, warning: string }}
- */
-export function buildPdfCoverageReport(pageCharCounts, opts = {}) {
-  const fromPage = Math.max(1, Math.floor(opts.fromPage || 1));
-  const counts = Array.isArray(pageCharCounts) ? pageCharCounts : [];
-  const lowTextPages = [];
-  counts.forEach((count, index) => {
-    if ((Number(count) || 0) < PDF_LOW_TEXT_PAGE_CHARS) lowTextPages.push(fromPage + index);
-  });
-  const partial = lowTextPages.length >= 2
-    && (lowTextPages.length >= counts.length * 0.2 || lowTextPages.length >= 10);
-  const warning = partial
-    ? `[PDF text coverage warning: pages ${formatPageRanges(lowTextPages)} contain little or no extractable text — `
-      + 'likely scanned images. Reading those pages requires vision: call '
-      + "read_attachment with mode:'render' and the page range on a vision-capable model.]"
-    : '';
-  return { lowTextPages, partial, warning };
-}
 
 /**
  * Cheap structural probe for a freshly attached PDF: page count plus a
@@ -317,11 +224,7 @@ export async function probePdfBytes(bytes, opts = {}) {
   }
 }
 
-// Q3: scanned-PDF delivery renders at most the first 8 pages per send at
-// ~144 DPI equivalent, under a shared pixel ceiling split across the pages
-// still to render. Later pages go through read_attachment({mode:'render'}).
-export const PDF_RENDER_MAX_PAGES_PER_SEND = 8;
-export const PDF_RENDER_PIXEL_BUDGET = 4_000_000;
+
 const PDF_RENDER_TARGET_SCALE = 2; // 144 DPI over the PDF-native 72
 
 /**
@@ -391,40 +294,3 @@ async function canvasToPngDataUrl(canvas) {
   throw new Error('Canvas implementation cannot export PNG data');
 }
 
-/**
- * Whether the given provider can natively consume PDFs as a
- * `document` content block. Currently Anthropic only — OpenAI's
- * gpt-4o has its own PDF API surface (file-uploads + references)
- * that's a different shape, not portable from the Anthropic format,
- * so we keep that for a future iteration.
- */
-export function providerSupportsPdfPassthrough(provider) {
-  if (!provider) return false;
-  const className = provider.constructor?.name || '';
-  if (className === 'AnthropicProvider') return true;
-  // Some users route Claude through OpenAI-compatible endpoints; the
-  // model name is the only signal there.
-  const model = (provider.config?.model || '').toLowerCase();
-  if (className === 'OpenAICompatibleProvider' && model.includes('claude')) return true;
-  return false;
-}
-
-/**
- * Build the `document` content block for the Anthropic Messages API
- * from raw PDF bytes. Caller is responsible for size-checking — Claude's
- * cap is ~32 MB base64 / ~24 MB binary as of writing, but we cap
- * lower (16 MB binary) to leave room for the rest of the conversation.
- */
-export function buildClaudeDocumentBlock(bytes, name) {
-  return {
-    type: 'document',
-    source: {
-      type: 'base64',
-      media_type: 'application/pdf',
-      data: bytesToBase64(bytes),
-    },
-    ...(name ? { title: name } : {}),
-  };
-}
-
-export const PDF_PASSTHROUGH_MAX_BYTES = 16 * 1024 * 1024; // 16 MB

@@ -7,6 +7,9 @@
       • skill-download.js — validated large-file staging through OPFS + blob URLs
       • recorder.js  — tab/display capture + mic mix + MediaRecorder
       • cloud-bridge.js — outbound localhost WebSocket for managed cloud runs
+      • document-decode.js — pdfjs/mammoth decode host, keeping both bundles
+        off the MV3 service worker's cold-start graph (ES module, unlike the
+        classic scripts above, because it imports the parser modules)
 
     Chrome MV3 only allows ONE offscreen document per extension at a time,
     so these responsibilities share this host. Each script binds its own
@@ -22,6 +25,7 @@
   <script src="recorder.js"></script>
   <script src="cloud-bridge.js"></script>
   <script src="watch-audio.js"></script>
+  <script type="module" src="document-decode.js"></script>
 </head>
 <body></body>
 </html>
