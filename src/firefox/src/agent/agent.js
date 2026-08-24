@@ -47,17 +47,18 @@ import {
 } from '../network/network-tools.js';
 import {
   isPdfUrl,
-  extractPdfText,
-  extractPdfTextFromBytes,
   buildPdfCoverageReport,
-  renderPdfPagesToPng,
   providerSupportsPdfPassthrough,
   buildClaudeDocumentBlock,
   PDF_PASSTHROUGH_MAX_BYTES,
   PDF_RENDER_MAX_PAGES_PER_SEND,
   PDF_RENDER_PIXEL_BUDGET,
-} from './pdf-tools.js';
-import { extractDocxText } from '../media/extract-docx.js';
+} from './pdf-core.js';
+// Parser-backed decoding goes through the platform decode host, never through
+// pdf-tools.js / extract-docx.js directly: importing those here would put
+// pdfjs (3.2 MB) and mammoth (621 KB) back on the Chrome service worker's
+// cold-start graph, which is exactly what the host exists to prevent.
+import * as decodeHost from '../media/decode-host.js';
 import { enqueueDocumentDecode } from '../media/decode-queue.js';
 import { getSharedAttachmentStore, isAttachmentId } from '../media/attachment-store.js';
 import { safeAttachmentDisplayName } from '../media/media-core.js';
@@ -18089,7 +18090,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           return { success: false, error: 'read_pdf: no url provided and could not read the active tab URL.' };
         }
 
-        const result = await extractPdfText(pdfUrl, {
+        const result = await this._decoder().extractPdfText(pdfUrl, {
           fromPage: args.fromPage,
           toPage: args.toPage,
           maxChars: args.maxChars,
@@ -18198,7 +18199,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           );
           const pageNumbers = [];
           for (let page = fromPage; page <= toPage; page++) pageNumbers.push(page);
-          const rendered = await enqueueDocumentDecode(() => renderPdfPagesToPng(bytes, {
+          const rendered = await enqueueDocumentDecode(() => this._decoder().renderPdfPagesToPng(bytes, {
             pages: pageNumbers,
             pixelBudget: PDF_RENDER_PIXEL_BUDGET,
             ...this._pdfToolDeps(),
@@ -18235,7 +18236,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (!bytes) return { success: false, error: expiredError };
           const sentToPage = Number(record?.facts?.sentToPage) || 0;
           const fromPage = Math.max(1, Math.floor(Number(args.fromPage) || (sentToPage + 1)));
-          const extraction = await enqueueDocumentDecode(() => extractPdfTextFromBytes(bytes, {
+          const extraction = await enqueueDocumentDecode(() => this._decoder().extractPdfTextFromBytes(bytes, {
             fromPage,
             toPage: Math.floor(Number(args.toPage) || 0) || fromPage + 49,
             maxChars: charBudget,
@@ -18269,7 +18270,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (docType === 'docx') {
           const bytes = await readBytes();
           if (!bytes) return { success: false, error: expiredError };
-          const extraction = await enqueueDocumentDecode(() => extractDocxText(bytes, {
+          const extraction = await enqueueDocumentDecode(() => this._decoder().extractDocxText(bytes, {
             maxChars: 2_000_000,
             ...(this._mammothOverride ? { mammoth: this._mammothOverride } : {}),
           }));
@@ -19381,6 +19382,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return 'reference';
   }
 
+  /**
+   * Decode backend for PDF/DOCX bytes. Production resolves to the platform
+   * decode host: the offscreen document on Chrome, the parsers themselves on
+   * Firefox. Node tests assign `_decoderOverride` to the parser modules so
+   * decoding runs in-process — and only then do the `_pdfjsOverride` /
+   * `_mammothOverride` options below reach a parser, because the Chrome host
+   * deliberately drops live objects that runtime messaging cannot carry.
+   */
+  _decoder() {
+    return this._decoderOverride || decodeHost;
+  }
+
   /** pdfjs/canvas injection seams for Node tests; production resolves lazily. */
   _pdfToolDeps() {
     return {
@@ -19641,7 +19654,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     if (att.docType === 'docx') {
       try {
-        const extraction = await enqueueDocumentDecode(() => extractDocxText(bytes, {
+        const extraction = await enqueueDocumentDecode(() => this._decoder().extractDocxText(bytes, {
           maxChars: Math.max(2000, share),
           ...(this._mammothOverride ? { mammoth: this._mammothOverride } : {}),
         }));
@@ -19672,7 +19685,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     // PDF on a provider without native document support.
     try {
-      const extraction = await enqueueDocumentDecode(() => extractPdfTextFromBytes(bytes, {
+      const extraction = await enqueueDocumentDecode(() => this._decoder().extractPdfTextFromBytes(bytes, {
         fromPage: 1,
         toPage: 100000,
         maxChars: Math.max(2000, share),
@@ -19716,7 +19729,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           { length: Math.min(extraction.totalPages, PDF_RENDER_MAX_PAGES_PER_SEND) },
           (_, pageIndex) => pageIndex + 1,
         );
-        const rendered = await enqueueDocumentDecode(() => renderPdfPagesToPng(bytes, {
+        const rendered = await enqueueDocumentDecode(() => this._decoder().renderPdfPagesToPng(bytes, {
           pages: pageNumbers,
           pixelBudget: PDF_RENDER_PIXEL_BUDGET,
           ...this._pdfToolDeps(),

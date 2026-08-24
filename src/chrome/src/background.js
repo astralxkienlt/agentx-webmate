@@ -59,8 +59,10 @@ import {
   getSharedAttachmentStore,
 } from './media/attachment-store.js';
 import { enqueueDocumentDecode } from './media/decode-queue.js';
-import { looksLikeOoxmlPackage } from './media/extract-docx.js';
-import { probePdfBytes } from './agent/pdf-tools.js';
+import { looksLikeOoxmlPackage } from './media/docx-core.js';
+// Via the decode host, not pdf-tools.js: a direct import would put pdfjs back
+// on the Chrome service worker's cold-start graph. See media/decode-host.js.
+import { probePdfBytes } from './media/decode-host.js';
 import {
   prepareRecordingHost,
   startTabRecording,
