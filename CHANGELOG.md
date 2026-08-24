@@ -11,13 +11,27 @@ This changelog was generated from the repository Git history and release tags. V
 - Added a `read_attachment` agent tool (Ask/Mid/Full tiers) that pages through attached files by page range or character cursor, with a vision render mode for scanned pages that counts against the per-turn image budget.
 - Attached files now persist in a local IndexedDB claim-check store for up to 24 hours after last use, so composer chips survive side-panel reloads and retries re-send every file; a new Settings → Multimodal → Attachments card controls retention (24 hours or session-only), shows local usage, and deletes everything on demand.
 - Added paste-to-attach and composer drag-and-drop with a localized drop hint, plus pre-send chip hints from a background probe ("PDF · 12 pages" / scanned-PDF vision warnings).
+- Agent runs now record a structured trace: a versioned event model with a tolerant read path, session lineage (parent run ids plumbed through cloud runs and replays), turn/step boundary events with stable failure codes, and a step trajectory table in the Traces tab.
+- Added an opt-in lossless recording tier (Settings → Display → "Record full request details"). The default tier is unchanged and content-free; the lossless tier persists full prompts, messages and tool schemas (clamped at 500 KB) and raises the tool-result cap to 200 KB, marks affected runs with a "sensitive debug tier" badge, redacts and credential-masks its JSON and Markdown exports, and evicts the oldest lossless runs to stay inside a disk budget. Runs interrupted by service-worker eviction are repaired when the Traces tab opens.
+- Permission prompts now have a middle ground: a standing, capability-scoped permission mode picker above the composer, with four rungs — `manual` (ask every time, the default), `auto` (navigate/click/type freely), `page_actions` (also accept form submits and `execute_js`), and `bypass` (accept everything). The ladder is ordered by how hard an action is to undo and how far it reaches past the page. A mode only ever answers a question the user has not answered, so a standing "Don't allow" outranks every mode, and a mode decision is never recorded as a grant — dropping back to a stricter rung restores the prompts immediately. WebMCP page callbacks keep their mandatory two-gate boundary even under `bypass`.
+- Staged `/screenshot` captures now live in the shared `wb_attachments` claim-check store instead of their own `chrome.storage.local` keyspace, so they inherit the 24-hour TTL sweep, the retention setting, and the usage figure in Settings. Captures staged but not yet sent before this upgrade are dropped, not migrated.
 
 ### Changed
 - A single unsupported attachment no longer blocks the whole send: every file resolves to a per-file delivery outcome shown on the message card (sent natively, sent as text, sent as rendered pages, reference, or skipped with the reason), and runtime messages now carry attachment ids plus metadata instead of multi-megabyte base64 payloads.
 - Attachment classification is now byte-first: files renamed to fake an image type are rejected, legacy `.doc` files get a dedicated message asking for `.docx`, and text encodings (UTF-8/UTF-16 BOM) are honored.
+- Prompt sizing is now script-aware. Context and compaction budgets were derived from a flat `chars / 4` estimate, which badly undercounts languages that pack more tokens per character — a Vietnamese conversation could blow the real context window while the estimate said it fit. Cost and budget estimates now measure by script.
+- PDF and DOCX decoding moved out of the service worker into the offscreen document, so a large document no longer blocks the worker's event loop.
+- Side-panel visibility is owned by one module (`src/side-panel-availability.js`) instead of the same `setOptions` payload copied across the service worker, the agent's `new_tab`, and the install page. Behavior is unchanged; the write-only `panelTabs` bookkeeping it replaced was dead code.
 
 ### Fixed
 - Attachment document extraction was dead on Chrome: MV3 service workers disallow dynamic `import()`, so the lazy pdfjs/mammoth loads threw at materialize time and every PDF/DOCX rode the error outcome. Vendored bundles now load through per-browser vendor loaders — statically on Chrome (with the pdfjs worker module published for the fake-worker path), lazily on the Firefox background page. This also repairs the pre-existing silent `read_pdf` breakage on Chrome, which failed the same way.
+- The composer no longer snaps back to Ask. Act and Dev were held in a variable that died with the panel document, and Chrome gives every tab its own panel document — so opening the sidebar on a second tab, or closing and reopening it, always came back in Ask. The chosen mode is remembered and restored, while modes the panel *forces* (a selection-scoped conversation, a standalone chat window) no longer overwrite that choice.
+- Anthropic runs no longer lose thinking content across turns, and a replay that fails mid-stream now yields `done` instead of throwing.
+- Routed reasoning models keep the right token contract: reasoning-model classification is done per provider, routed GPT-5 Pro keeps its own contract, routed o-series stays on the legacy fields, and the contract regex is bounded and shared with Settings instead of re-derived there.
+- Settings lists the built-in providers' default models, and the provider summary imports the contract helper it calls.
+- The composer respects IME composition, so committing a candidate no longer sends the message. Clarify stays open while typing, and stale list refreshes are ignored.
+- Gmail complete-thread reads no longer loop.
+- The agent's rejection of a plain final answer is now bounded, so a run cannot be held in a retry loop by the runtime blocks that reject one.
 
 ### Security
 - The user-attachment notice is now sealed with a per-send random nonce, extracted document text is neutralized against forged notice/document markers and zero-width/bidi control characters before it reaches the model, and attachment display names pass a positive allowlist instead of escape-and-keep.
@@ -25,6 +39,7 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Tests
 - Added mirrored Chrome and Firefox coverage for the byte sniffer, the attachment store (TTL, per-tab lifecycle, degraded backend), the nine-row delivery matrix against real PDF/DOCX fixtures, coverage thresholds, notice nonce and neutralization seals, `read_attachment` paging/render budgets, the delivery-note budget, and the closed outcome union.
+- Added a guard that every i18n key the code passes to `t()` is defined in `en.js`. The existing locale test only checked the other direction — that each locale covers `en.js` — which is how a deleted key block shipped rendering as its own dotted names.
 
 ## [32.1.0] - 2026-08-16
 
