@@ -64,14 +64,15 @@
     },
     {
       "_why": "User-visible export and capture filenames.",
-      "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage)-",
+      "regex": "webbrain-(run|recording|config|traces|trace|chat|user-memory|screenshot|visible-media|fullpage|ci)-",
       "to": "agentx-webmate-$1-",
       "only": [
         "src/ui/sidepanel.js",
         "src/ui/settings.js",
         "src/ui/traces.js",
         "src/ui/history.js",
-        "src/ui/staged-screenshot-store.js",
+        "src/cloud-runs.js",
+        "src/media/attachment-store.js",
         "src/recorder/host.js",
         "src/agent/agent.js"
       ]
@@ -82,7 +83,7 @@
       "to": "agentx-webmate-$1",
       "only": [
         "src/ui/sidepanel.js",
-        "src/ui/staged-screenshot-store.js",
+        "src/media/attachment-store.js",
         "src/recorder/host.js"
       ]
     },
