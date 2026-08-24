@@ -19,6 +19,15 @@
  *     page_actions  auto-accept page interaction incl. form submits
  *     bypass        accept everything (the old master switch, off)
  *
+ * `bypass` is the one rung that reaches past this file's capability ladder.
+ * Its name is a promise about the whole run, not about a subset of the cards,
+ * so it also auto-approves the planner's review gate
+ * (permissionModeAutoApprovesPlanReview) and it outranks the WebMCP callback's
+ * otherwise-mandatory confirmation — a mode that already runs execute_js
+ * unprompted buys no safety by stopping for a tool the page chose to expose.
+ * What it does NOT silence is a question about the TASK: the model's own
+ * clarify() call is not a permission, and no mode answers it.
+ *
  * Two rules make this safe to reason about:
  *
  *   1. A mode only ever answers a question the user has NOT already answered.
@@ -144,6 +153,21 @@ export function permissionModeAutoAcceptsSubmit(mode) {
  */
 export function permissionModeSkipsAllGates(mode) {
   return normalizePermissionMode(mode) === PermissionMode.BYPASS;
+}
+
+/**
+ * Does the mode also approve the PLANNER's review card? Only `bypass`.
+ *
+ * Plan review is not a capability grant — it has its own Settings control and
+ * its own confidence threshold — so for every other mode it stays independent
+ * of this ladder. But `bypass` is the rung whose whole promise is "accepts
+ * everything, asks nothing", and a run that stops before its first tool call
+ * to collect an approval is not that, whatever the card is called. Stated here
+ * beside the ladder so the agent and both UIs read one definition of how far
+ * the widest mode reaches.
+ */
+export function permissionModeAutoApprovesPlanReview(mode) {
+  return permissionModeSkipsAllGates(mode);
 }
 
 /** Does this mode still interrupt for SOMETHING? Drives the risk banner. */

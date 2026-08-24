@@ -79,7 +79,7 @@ import {
   normalizeCloudflareManagedChallengeState,
 } from './cloudflare-managed-challenge.js';
 import { Capability, CAPABILITY_LABEL, capabilitiesFor, requiredHosts, frameHostMatches, isNetworkMutation, normalizeHost, PermissionManager, UNTRUSTED_CONTENT_TOOLS } from './permission-gate.js';
-import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeSkipsAllGates } from './permission-mode.js';
+import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeSkipsAllGates } from './permission-mode.js';
 import {
   buildPlannerMessages,
   buildPlannerIntentMessages,
@@ -9442,11 +9442,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const canonicalVerboseMarkdown = formatPlanMarkdown(plan, { verbose: true });
       const scheduledPolicy = this.scheduledRunPolicies.get(tabId);
       const scheduledAutoApprove = scheduledPolicy?.autoApprovePlanReview === true;
-      if (scheduledAutoApprove || !this._shouldReviewPlan(plan)) {
-        // Confidence-gated skips leave a visible trace in the conversation so
-        // the run isn't silent; scheduled runs stay quiet as before.
+      // The plan card stops the run to collect an approval, so the mode that
+      // promises to accept everything and ask nothing has to cover it as well —
+      // otherwise `bypass` still blocks on a question before the first tool
+      // call, which is the opposite of what the user picked. The mode is read
+      // here rather than taken from the cached field: the planner runs BEFORE
+      // the tool loop, so on a cold service worker nothing has loaded it yet.
+      const permissionMode = await this._ensurePermissionMode();
+      const modeAutoApprove = permissionModeAutoApprovesPlanReview(permissionMode);
+      if (scheduledAutoApprove || modeAutoApprove || !this._shouldReviewPlan(plan)) {
+        // Confidence- and mode-gated skips leave a visible trace in the
+        // conversation so the run isn't silent; scheduled runs stay quiet as
+        // before. The note says WHICH of the two approved it, because
+        // "confidence 0.42" under a mode the user chose reads as a bug.
         if (!scheduledAutoApprove) {
-          onUpdate('plan_auto_approved', { planId, confidence: plan.confidence });
+          onUpdate('plan_auto_approved', modeAutoApprove
+            ? { planId, confidence: plan.confidence, reason: 'permission_mode', mode: permissionMode }
+            : { planId, confidence: plan.confidence });
         }
         const approvedScratchpadText = formatPlanScratchpad(plan, '', canonicalVerboseMarkdown);
         this._armReadCompletenessFromPlan(tabId, plan);

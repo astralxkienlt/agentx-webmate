@@ -867,16 +867,19 @@ all-or-nothing master switch:
 | `manual` (default) | nothing | every consequential action |
 | `auto` | navigate, click, type, temporary page edits, window resize | form submits, page scripts, downloads, uploads, outbound requests, scheduled work |
 | `page_actions` | the above plus form submits and `execute_js` | downloads, uploads, outbound requests, scheduled work |
-| `bypass` | everything | nothing |
+| `bypass` | everything, incl. form submits, WebMCP callbacks and the plan card | nothing |
 
 Two invariants make this reviewable:
 
 1. **A mode only answers unanswered questions.** `PermissionManager.check()`
    looks for an explicit grant first, so a standing "Don't allow" outranks any
    mode. `bypass` is the documented exception, applied by the tool loop rather
-   than inside the manager — because a WebMCP page callback's mandatory
-   two-gate boundary outranks even `bypass`, and that is only knowable per call
-   (`requireExplicitGrant`).
+   than inside the manager — the manager cannot see which call carries a
+   mandatory gate (`requireExplicitGrant`), and that flag is what stops `auto`
+   and `page_actions` from answering for a WebMCP callback the PAGE wrote. Only
+   `bypass` outranks that gate: it already runs `execute_js` unprompted on the
+   same page, which is more authority than invoking a tool the page chose to
+   expose, so a card there would buy no safety and only break the mode's name.
 2. **A mode decision is never recorded as a grant.** Dropping back to a
    stricter mode restores the prompts immediately, and Settings ->
    Permissions keeps listing only the sites the user chose one at a time.
@@ -886,6 +889,16 @@ The submit confirmation has its own threshold (`page_actions` and up), so
 messages stays in place. Layers 1 and 2 of the injection defense
 (untrusted-content wrapping, system-prompt contract) are active in **every**
 mode.
+
+`bypass` also reaches past this table to the **planner's review card**
+(`permissionModeAutoApprovesPlanReview`). Plan review is not a capability grant
+— it has its own Settings control and confidence threshold — but it is still a
+card that stops a run before its first tool call, so the rung that promises
+"accepts everything, asks nothing" approves it and runs, overriding even
+`planReviewMode: always`. The skip is not silent: the conversation gets an
+"auto-approved by permission mode" note naming the mode. What no mode silences
+is a question about the TASK — the model's own `clarify()` call is not a
+permission, so nothing on this ladder answers it.
 
 The mode is stored under `permissionMode`; an install that predates it is
 migrated from `askBeforeConsequentialActions` on first read, and that key is

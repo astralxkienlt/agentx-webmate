@@ -42423,10 +42423,14 @@ test('WebMCP page annotations never bypass Act mode or frame-scoped permission',
   }
 });
 
-test('WebMCP invocation gates survive global and scheduled permission bypasses', async () => {
+test('WebMCP invocation gates survive a scheduled bypass, and yield only to bypass mode', async () => {
+  // An unattended scheduled run may not suppress the two-gate boundary — nobody
+  // is watching it. `bypass` may: the person chose "accepts everything, asks
+  // nothing" for THIS run, and by then execute_js already runs unprompted on
+  // the same page, which is more authority than a page-declared callback.
   for (const scenario of [
-    { label: 'global permission bypass', skipGate: true },
-    { label: 'scheduled confirmation bypass', scheduledBypass: true },
+    { label: 'global permission bypass', skipGate: true, expectsGates: false },
+    { label: 'scheduled confirmation bypass', scheduledBypass: true, expectsGates: true },
   ]) {
     const agent = new AgentCh({ getVisionProvider: async () => null });
     const tabId = scenario.skipGate ? 20416 : 20417;
@@ -42505,13 +42509,15 @@ test('WebMCP invocation gates survive global and scheduled permission bypasses',
       1,
     );
 
-    assert.equal(submitPrompts, 1, `${scenario.label}: fresh WebMCP confirmation was bypassed`);
-    assert.deepEqual(permissionPrompts, [
+    assert.equal(submitPrompts, scenario.expectsGates ? 1 : 0,
+      `${scenario.label}: wrong number of fresh WebMCP confirmations`);
+    assert.deepEqual(permissionPrompts, scenario.expectsGates ? [
       { host: 'frame.pay.test', capability: CapabilityCh.CLICK },
-    ], `${scenario.label}: registration-frame permission was not checked`);
-    assert.deepEqual(permissionRecords, [
+    ] : [], `${scenario.label}: wrong registration-frame permission checks`);
+    assert.deepEqual(permissionRecords, scenario.expectsGates ? [
       { host: 'frame.pay.test', capability: CapabilityCh.CLICK, action: 'allow', scope: 'once' },
-    ], `${scenario.label}: registration-frame permission was not recorded`);
+    ] : [], `${scenario.label}: wrong registration-frame permission records`);
+    // Either way the call RUNS, and still against the registering frame's host.
     assert.equal(executedArgs?._webMcpTargetUrl, 'https://frame.pay.test/embed');
     assert.equal(messages.length, 1, `${scenario.label}: expected one successful tool result`);
   }
@@ -66568,7 +66574,25 @@ test('permission-mode stays byte-identical across browser trees', () => {
       permissionModeCh.permissionModeAutoAllows(mode, 'click'));
     assert.equal(permissionModeFx.permissionModeAutoAcceptsSubmit(mode),
       permissionModeCh.permissionModeAutoAcceptsSubmit(mode));
+    assert.equal(permissionModeFx.permissionModeAutoApprovesPlanReview(mode),
+      permissionModeCh.permissionModeAutoApprovesPlanReview(mode));
   }
+});
+
+test('only bypass reaches past the capability ladder to the plan card', () => {
+  // The widest rung is the one whose name is a promise about the whole run, so
+  // it owns the planner's approval gate too. Every narrower rung leaves plan
+  // review to its own Settings control.
+  for (const mode of PERMISSION_MODES) {
+    assert.equal(
+      permissionModeCh.permissionModeAutoApprovesPlanReview(mode),
+      mode === PermissionMode.BYPASS,
+      `${mode}: wrong plan-review policy`,
+    );
+  }
+  // Junk resolves to the strictest rung, never to the one that skips review.
+  assert.equal(permissionModeCh.permissionModeAutoApprovesPlanReview('yolo'), false);
+  assert.equal(permissionModeCh.permissionModeAutoApprovesPlanReview(undefined), false);
 });
 
 // --- The gate consults the mode only where it is allowed to ------------------
@@ -66864,10 +66888,16 @@ test('widening the mode while a card is open runs that action without recording 
   }
 });
 
-test('WebMCP keeps its mandatory two-gate boundary in every permission mode', async () => {
+test('WebMCP keeps its mandatory two-gate boundary in every mode below bypass', async () => {
   // Chrome-only: the Firefox agent answers execute_webmcp_tool as unsupported,
   // because invocation needs CDP.
+  //
+  // `auto` and `page_actions` pre-approve the agent's OWN clicking and typing;
+  // they must not also answer for a callback the page wrote. `bypass` is the
+  // exception its name promises — and it concedes nothing, because that mode
+  // already runs execute_js on the same page without a card.
   for (const mode of PERMISSION_MODES) {
+    const gated = mode !== PermissionMode.BYPASS;
     for (const AgentClass of [AgentCh]) {
       const agent = new AgentClass({ getVisionProvider: async () => null });
       agent.setWebMCPEnabled(true);
@@ -66912,10 +66942,92 @@ test('WebMCP keeps its mandatory two-gate boundary in every permission mode', as
 
       assert.deepEqual(
         prompts,
-        [{ capability: CapabilityCh.CLICK, host: 'frame.tool.example' }],
-        `${AgentClass.name}/${mode}: a page-declared WebMCP call must always ask`,
+        gated ? [{ capability: CapabilityCh.CLICK, host: 'frame.tool.example' }] : [],
+        `${AgentClass.name}/${mode}: wrong prompting for a page-declared WebMCP call`,
       );
-      assert.equal(executed, false, `${AgentClass.name}/${mode}: the denied WebMCP call must not run`);
+      assert.equal(executed, !gated,
+        gated
+          ? `${AgentClass.name}/${mode}: the denied WebMCP call must not run`
+          : `${AgentClass.name}/${mode}: bypass must run the call with no card`);
+    }
+  }
+});
+
+
+test('bypass approves the plan card; every narrower mode still raises it', async () => {
+  // The card that stops a run before its FIRST tool call was the loudest thing
+  // "Bypass permissions" did not cover: the user had turned every prompt off
+  // and the run still blocked on an approval. planReviewMode is pinned to
+  // 'always' here — the strictest plan setting there is — so the only thing
+  // that can skip the card is the mode.
+  const plan = {
+    request_kind: 'execute',
+    requires_state_change: true,
+    requires_submission: false,
+    allows_planner_shaped_result: false,
+    allows_app_state_tool_evidence: false,
+    read_scope: 'visible_page',
+    summary: 'Fill in the leave request and stop before submitting.',
+    confidence: 0.31,
+    steps: [{ id: '1', action: 'Type the dates into the leave-request form.', tools: ['set_field'] }],
+    skill_ids: [],
+    memory: { use_scratchpad: false, scratchpad_notes: [], use_progress_ledger: false, progress_action: null },
+    scheduling: null,
+    risks: [],
+    localized: {
+      locale: 'en',
+      summary: 'Fill in the leave request and stop before submitting.',
+      steps: [{ id: '1', action: 'Type the dates into the leave-request form.' }],
+      risks: [],
+    },
+    mode: 'act',
+  };
+  const pageUrl = 'https://itbrain.example/leave/new';
+
+  for (const [index, [label, AgentClass]] of [['chrome', AgentCh], ['firefox', AgentFx]].entries()) {
+    for (const [modeIndex, mode] of PERMISSION_MODES.entries()) {
+      const provider = { name: `${label}-plan-mode`, model: `${label}-plan-mode`, promptTier: 'full' };
+      const agent = new AgentClass({ getActive: () => provider, getVisionProvider: async () => null });
+      agent._persist = () => {};
+      agent._currentUrl = async () => pageUrl;
+      agent._chat = async () => ({ content: JSON.stringify(plan), usage: {} });
+      agent.planReviewMode = 'always';
+      agent._permissionMode = mode;
+      agent._ensurePermissionMode = async () => agent._permissionMode;
+
+      let reviews = 0;
+      agent._waitForPlanReview = async () => {
+        reviews += 1;
+        return { action: 'approve', editedText: '', markdownMode: 'compact' };
+      };
+      const events = [];
+      const tabId = 74100 + index * 10 + modeIndex;
+      const gate = await agent._runPlannerGate(
+        tabId,
+        { role: 'user', content: 'Fill in my leave request for next Monday.' },
+        (type, data) => events.push({ type, data }),
+        null,
+        '',
+        { tabUrl: pageUrl, tabTitle: 'Leave request' },
+        'try',
+        'act',
+        { locale: 'en' },
+      );
+
+      assert.equal(gate.proceed, true, `${label}/${mode}: the gate did not proceed`);
+      const note = events.find(event => event.type === 'plan_auto_approved');
+      if (mode === PermissionMode.BYPASS) {
+        assert.equal(reviews, 0, `${label}/${mode}: bypass still blocked on a plan approval`);
+        // Skipped, not silent — and attributed to the mode, because quoting the
+        // confidence score here would send the user hunting for a threshold
+        // that had no say in it.
+        assert.ok(note, `${label}/${mode}: the skipped review left no trace`);
+        assert.equal(note.data.reason, 'permission_mode', `${label}/${mode}: wrong reason`);
+        assert.equal(note.data.mode, PermissionMode.BYPASS, `${label}/${mode}: wrong mode`);
+      } else {
+        assert.equal(reviews, 1, `${label}/${mode}: the plan card must still be raised`);
+        assert.equal(note, undefined, `${label}/${mode}: a reviewed plan is not auto-approved`);
+      }
     }
   }
 });
