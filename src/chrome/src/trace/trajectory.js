@@ -80,6 +80,7 @@ const FAILED_END_STATUSES = [
   'error', 'loop_stopped', 'max_steps', 'cancelled', 'cost_limit',
   'plan_only_output', 'incomplete_output', 'empty_output',
   'placeholder_output', 'required_tool_missing', 'grounding_unavailable',
+  'plain_final_blocked',
   'captcha_manual_required',
 ];
 

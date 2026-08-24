@@ -47976,10 +47976,10 @@ test('Agent tool loops preserve provider reasoning state on both execution paths
     assert.match(source, /_expireCurrentToolReasoning\(messages\)/, `${prefix}: new user turns should expire immediate-only reasoning replay`);
     assert.match(source, /reasoning_content: reasoningContent/, `${prefix}: assistant helper should retain Chat Completions reasoning content`);
     assert.match(source, /content: assistantToolContent,[\s\S]*tool_calls: result\.toolCalls,[\s\S]*}, result\.responseItems, result\.reasoningContent, provider\)/, `${prefix}: non-stream tool loop should retain provider reasoning state`);
-    assert.match(source, /content: result\.content \}, result\.responseItems, result\.reasoningContent, provider\)[\s\S]*messages\.push\(\{ role: 'user', content: plainFinalBlocks\.join/, `${prefix}: non-stream progress continuations should scope provider reasoning state`);
+    assert.match(source, /content: result\.content \}, result\.responseItems, result\.reasoningContent, provider\)[\s\S]*messages\.push\(\{ role: 'user', content: plainFinalDecision\.nudge/, `${prefix}: non-stream progress continuations should scope provider reasoning state`);
     assert.match(source, /content: finalResponse \}, result\.responseItems, result\.reasoningContent, provider\)/, `${prefix}: non-stream final answers should scope provider reasoning state`);
     assert.match(source, /chunk\.type === 'reasoning'[\s\S]*content: fullText \|\| null,[\s\S]*tool_calls: toolCalls,[\s\S]*}, responseItems, reasoningContent, provider\)/, `${prefix}: stream tool loop should retain provider reasoning state`);
-    assert.match(source, /content: fullText \}, responseItems, reasoningContent, provider\)[\s\S]*messages\.push\(\{ role: 'user', content: plainFinalBlocks\.join/, `${prefix}: stream progress continuations should scope provider reasoning state`);
+    assert.match(source, /content: fullText \}, responseItems, reasoningContent, provider\)[\s\S]*messages\.push\(\{ role: 'user', content: plainFinalDecision\.nudge/, `${prefix}: stream progress continuations should scope provider reasoning state`);
     assert.match(source, /content: fullText \}, responseItems, reasoningContent, provider\)[\s\S]*return finish\(fullText\)/, `${prefix}: stream final answers should scope provider reasoning state`);
     // Behavioural rather than source-shaped: what matters is that encrypted
     // Responses items are billed, not which expression bills them. The old
@@ -56620,6 +56620,284 @@ test('non-stream and stream runs block plain finals and unverified success until
       );
       assert.equal(agent.completionInvariants.has(tabId), false, `${AgentClass.name}/${streaming ? 'stream' : 'non-stream'}: completed run leaked invariant state`);
     }
+  }
+});
+
+test('a plain final that stays blocked fails closed instead of running to the step limit', async () => {
+  const buildResponses = () => [
+    {
+      content: null,
+      toolCalls: [{
+        id: 'stuck_click',
+        function: { name: 'click_ax', arguments: JSON.stringify({ ref_id: 'ref_6' }) },
+      }],
+    },
+    // The model never calls done again; every later turn is plain prose. The
+    // completion invariant re-blocks each one, which before the block budget
+    // burned every remaining step.
+  ];
+
+  for (const streaming of [false, true]) {
+    for (const AgentClass of [AgentCh, AgentFx]) {
+      const responses = buildResponses();
+      const nextResponse = () => responses.shift()
+        || { content: 'I finished the task.', toolCalls: [] };
+      const provider = {
+        supportsTools: true,
+        supportsVision: false,
+        promptTier: 'full',
+        contextWindow: 128000,
+        model: 'test-model',
+        name: 'test-provider',
+        calls: 0,
+      };
+      if (streaming) {
+        provider.chatStream = async function* () {
+          provider.calls++;
+          const next = nextResponse();
+          if (next.content) yield { type: 'text', content: next.content };
+          if (next.toolCalls?.length) {
+            yield {
+              type: 'tool_call',
+              content: next.toolCalls.map((call, index) => ({ index, id: call.id, function: call.function })),
+            };
+          }
+          yield { type: 'done' };
+        };
+      } else {
+        provider.chat = async () => {
+          provider.calls++;
+          return nextResponse();
+        };
+      }
+
+      const agent = new AgentClass({
+        getActive: () => provider,
+        getVisionProvider: async () => null,
+      });
+      const tabId = streaming ? 24822 : 24821;
+      agent.planBeforeAct = false;
+      agent._maybeRunPlannerGate = async () => ({
+        proceed: true,
+        requestKind: 'execute',
+        requiresStateChange: true,
+      });
+      // Deliberately generous: the point is that the budget stops the run long
+      // before the step limit does.
+      agent.maxSteps = 40;
+      agent.autoScreenshot = 'off';
+      agent._skipPermissionGate = true;
+      agent._manageContext = async () => {};
+      agent._enrichUserMessageWithCurrentPage = async (_tabId, _messages, content) => ({ role: 'user', content });
+      agent._maybeReinjectAdapter = async () => {};
+      agent._ensureProgressSessionForCurrentTask = async () => ({ mode: 'inactive' });
+      agent._persist = () => {};
+      agent.executeTool = async (_toolTabId, name) => {
+        if (name === 'click_ax') return { success: true, verified: true, method: 'click_ax' };
+        throw new Error(`unexpected tool ${name}`);
+      };
+
+      const label = `${AgentClass.name}/${streaming ? 'stream' : 'non-stream'}`;
+      const updates = [];
+      const run = streaming ? agent.processMessageStream.bind(agent) : agent.processMessage.bind(agent);
+      const final = await run(tabId, 'perform the action', (type, data) => updates.push({ type, data }), 'act');
+
+      assert.match(
+        final,
+        /blocked attempts to finish with a plain final answer/,
+        `${label}: stuck plain finals did not fail closed`,
+      );
+      assert.match(
+        final,
+        /never closed with an explicit done outcome/,
+        `${label}: failure did not name the outstanding obligation`,
+      );
+      // 1 action turn + 5 blocked attempts (the budget) + the turn that spends it.
+      assert.equal(provider.calls, 7, `${label}: block budget did not bound the run`);
+      assert.equal(
+        updates.some(update => update.type === 'max_steps_reached'),
+        false,
+        `${label}: run still burned every step`,
+      );
+      assert.equal(
+        updates.filter(update => update.type === 'warning' && /completion invariant/i.test(update.data?.message || '')).length,
+        5,
+        `${label}: model did not get its full recovery allowance before the stop`,
+      );
+      const nudges = agent.conversations.get(tabId)
+        .filter(message => message.role === 'user' && /RUNTIME COMPLETION BLOCK/.test(message.content || ''));
+      assert.equal(nudges.length, 5, `${label}: block nudges were not all recorded`);
+      assert.equal(
+        nudges.filter(message => /FINAL ATTEMPT/.test(message.content)).length,
+        1,
+        `${label}: the model was stopped without a single explicit final warning`,
+      );
+      assert.match(nudges.at(-1).content, /FINAL ATTEMPT/, `${label}: the final warning was not on the last allowed turn`);
+      if (streaming) {
+        assert.ok(
+          updates.some(update => update.type === 'text' && update.data?.replace === true && update.data?.content === final),
+          `${label}: streamed prose was not replaced by the failure result`,
+        );
+      }
+      assert.equal(agent._plainFinalBlockGuards.has(tabId), false, `${label}: stopped run leaked block-budget state`);
+      assert.equal(agent.completionInvariants.has(tabId), false, `${label}: stopped run leaked invariant state`);
+    }
+  }
+});
+
+test('a model that complies on its last allowed attempt still completes normally', async () => {
+  const buildResponses = () => [
+    {
+      content: null,
+      toolCalls: [{
+        id: 'late_click',
+        function: { name: 'click_ax', arguments: JSON.stringify({ ref_id: 'ref_6' }) },
+      }],
+    },
+    { content: 'First prose attempt.', toolCalls: [] },
+    { content: 'Second prose attempt.', toolCalls: [] },
+    { content: 'Third prose attempt.', toolCalls: [] },
+    { content: 'Fourth prose attempt.', toolCalls: [] },
+    { content: 'Fifth prose attempt.', toolCalls: [] },
+    {
+      content: null,
+      toolCalls: [{ id: 'late_observe', function: { name: 'read_page', arguments: '{}' } }],
+    },
+    {
+      content: null,
+      toolCalls: [{
+        id: 'late_done',
+        function: { name: 'done', arguments: JSON.stringify({ summary: 'Verified completion.', outcome: 'success' }) },
+      }],
+    },
+  ];
+
+  for (const streaming of [false, true]) {
+    for (const AgentClass of [AgentCh, AgentFx]) {
+      const responses = buildResponses();
+      const provider = {
+        supportsTools: true,
+        supportsVision: false,
+        promptTier: 'full',
+        contextWindow: 128000,
+        model: 'test-model',
+        name: 'test-provider',
+        calls: 0,
+      };
+      if (streaming) {
+        provider.chatStream = async function* () {
+          provider.calls++;
+          const next = responses.shift();
+          assert.ok(next, `${AgentClass.name}: streamed model was called too many times`);
+          if (next.content) yield { type: 'text', content: next.content };
+          if (next.toolCalls?.length) {
+            yield {
+              type: 'tool_call',
+              content: next.toolCalls.map((call, index) => ({ index, id: call.id, function: call.function })),
+            };
+          }
+          yield { type: 'done' };
+        };
+      } else {
+        provider.chat = async () => {
+          provider.calls++;
+          const next = responses.shift();
+          assert.ok(next, `${AgentClass.name}: model was called too many times`);
+          return next;
+        };
+      }
+
+      const agent = new AgentClass({
+        getActive: () => provider,
+        getVisionProvider: async () => null,
+      });
+      const tabId = streaming ? 24824 : 24823;
+      agent.planBeforeAct = false;
+      agent._maybeRunPlannerGate = async () => ({
+        proceed: true,
+        requestKind: 'execute',
+        requiresStateChange: true,
+      });
+      agent.maxSteps = 10;
+      agent.autoScreenshot = 'off';
+      agent._skipPermissionGate = true;
+      agent._manageContext = async () => {};
+      agent._enrichUserMessageWithCurrentPage = async (_tabId, _messages, content) => ({ role: 'user', content });
+      agent._maybeReinjectAdapter = async () => {};
+      agent._ensureProgressSessionForCurrentTask = async () => ({ mode: 'inactive' });
+      agent._persist = () => {};
+      agent.executeTool = async (_toolTabId, name, args) => {
+        if (name === 'click_ax') return { success: true, verified: true, method: 'click_ax' };
+        if (name === 'read_page') return { success: true, content: 'The requested state is now visible.' };
+        if (name === 'done') return { done: true, summary: args.summary, outcome: args.outcome };
+        throw new Error(`unexpected tool ${name}`);
+      };
+
+      const label = `${AgentClass.name}/${streaming ? 'stream' : 'non-stream'}`;
+      const run = streaming ? agent.processMessageStream.bind(agent) : agent.processMessage.bind(agent);
+      const final = await run(tabId, 'perform the action', () => {}, 'act');
+
+      assert.equal(final, 'Verified completion.', `${label}: budget cut off a model that recovered in time`);
+      assert.equal(provider.calls, 8, `${label}: recovery consumed the wrong number of turns`);
+      assert.equal(responses.length, 0, `${label}: not every planned turn ran`);
+    }
+  }
+});
+
+test('the plain-final block budget keys on the outstanding obligation, not on turns', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({
+      getActive: () => ({ contextWindow: 128000, supportsVision: false }),
+      getVisionProvider: async () => null,
+    });
+    const tabId = 24825;
+    const label = AgentClass.name;
+    agent.conversationModes.set(tabId, 'act');
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'Follow every stargazer on this page.' },
+    ]);
+    agent._beginCompletionInvariant(tabId);
+    agent._recordCompletionToolResult(tabId, 'click', { ref_id: 'ref_1' }, { success: true });
+
+    // The same obligation stays recoverable for the whole allowance, and only
+    // the last allowed turn carries the explicit final warning.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const decision = agent._plainFinalBlockDecision(tabId);
+      assert.equal(decision?.retry, true, `${label}: attempt ${attempt} should still nudge`);
+      assert.match(decision.nudge, /RUNTIME COMPLETION BLOCK/, `${label}: attempt ${attempt} lost the block text`);
+      assert.equal(
+        /FINAL ATTEMPT/.test(decision.nudge),
+        attempt === 5,
+        `${label}: attempt ${attempt} had the wrong final-warning state`,
+      );
+    }
+    // A sixth identical block fails closed — the escalated wording on attempt 5
+    // must not have looked like a new obligation.
+    const spent = agent._plainFinalBlockDecision(tabId);
+    assert.equal(spent?.retry, undefined, `${label}: spent budget still nudged`);
+    assert.equal(spent?.status, 'plain_final_blocked', `${label}: spent budget reported the wrong status`);
+
+    // A different obligation is a different block, so the allowance restarts:
+    // the model is being told something new, not repeating itself.
+    agent._progressUpdate(tabId, {
+      items: [{ id: 'stargazer-1', label: 'stargazer-1', action: 'follow', status: 'pending' }],
+    });
+    const changed = agent._plainFinalBlockDecision(tabId);
+    assert.equal(changed?.retry, true, `${label}: a newly added obligation did not restart the allowance`);
+    assert.match(changed.nudge, /PROGRESS LEDGER BLOCK/, `${label}: the new obligation was not surfaced`);
+    assert.equal(agent._plainFinalBlockGuards.get(tabId)?.attempts, 1, `${label}: attempt counter did not reset on a new obligation`);
+
+    // Clearing every obligation drops the guard state entirely.
+    agent._progressUpdate(tabId, { items: [{ id: 'stargazer-1', status: 'processed' }] });
+    agent.completionInvariants.delete(tabId);
+    assert.equal(agent._plainFinalBlockDecision(tabId), null, `${label}: an unblocked final was still rejected`);
+    assert.equal(agent._plainFinalBlockGuards.has(tabId), false, `${label}: cleared run leaked block-budget state`);
+
+    // A fresh run always starts with a full allowance.
+    agent._plainFinalBlockGuards.set(tabId, { signature: 'stale', attempts: 99 });
+    agent._beginCompletionInvariant(tabId);
+    assert.equal(agent._plainFinalBlockGuards.has(tabId), false, `${label}: a new run inherited the previous run's budget`);
   }
 });
 
