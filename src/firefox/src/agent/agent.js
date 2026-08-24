@@ -59,6 +59,7 @@ import {
 // pdfjs (3.2 MB) and mammoth (621 KB) back on the Chrome service worker's
 // cold-start graph, which is exactly what the host exists to prevent.
 import * as decodeHost from '../media/decode-host.js';
+import { costToTokens, jsonCost, textCost } from './context-cost.js';
 import { enqueueDocumentDecode } from '../media/decode-queue.js';
 import { getSharedAttachmentStore, isAttachmentId } from '../media/attachment-store.js';
 import { safeAttachmentDisplayName } from '../media/media-core.js';
@@ -1603,18 +1604,18 @@ export class Agent extends LoopDetector {
   }
 
   _estimateAskStreamUsage(messages, options, content, reasoningContent, toolCalls) {
-    let toolSchemaChars = 0;
-    let toolCallChars = 0;
-    try { toolSchemaChars = JSON.stringify(options?.tools || []).length; } catch {}
-    try { toolCallChars = JSON.stringify(toolCalls || []).length; } catch {}
+    // jsonCost swallows unserializable payloads itself, so the old
+    // try/catch-into-a-preset-zero dance is gone.
+    const toolSchemaChars = jsonCost(options?.tools || []);
+    const toolCallChars = jsonCost(toolCalls || []);
     const promptTokens = Math.max(
       1,
-      Math.ceil((this._estimateContextChars(Array.isArray(messages) ? messages : []) + toolSchemaChars) / 4),
+      costToTokens(this._estimateContextChars(Array.isArray(messages) ? messages : []) + toolSchemaChars),
     );
-    const completionChars = String(content || '').length
-      + String(reasoningContent || '').length
+    const completionChars = textCost(String(content || ''))
+      + textCost(String(reasoningContent || ''))
       + toolCallChars;
-    const completionTokens = completionChars > 0 ? Math.max(1, Math.ceil(completionChars / 4)) : 0;
+    const completionTokens = completionChars > 0 ? Math.max(1, costToTokens(completionChars)) : 0;
     return {
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
@@ -14171,7 +14172,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   static IMAGE_CHAR_COST = 6000; // ≈1.5k tokens
 
   /**
-   * Rough char count of a conversation, used as a cheap token proxy (≈ chars/4).
+   * Rough char-equivalent size of a conversation, used as a cheap token proxy
+   * (≈ cost/4). Non-ASCII characters are weighted up by context-cost.js: a
+   * flat character count under-reads Vietnamese/CJK prompts by roughly 2-4x,
+   * which is the unsafe direction for a compaction trigger. Pure-ASCII text
+   * scores exactly its character count, so English behaviour is unchanged.
    * Counts text verbatim and JSON-stringifies structured content / tool_calls,
    * but does NOT count base64 image data: screenshots are pruned to the single
    * most-recent image before a request is sent (_pruneOldImages, keep=1), and a
@@ -14191,30 +14196,30 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (block && (block.type === 'image_url' || block.type === 'image')) {
             hasImage = true; // billed once below, not by byte size
           } else if (typeof block?.text === 'string') {
-            totalChars += block.text.length;
+            totalChars += textCost(block.text);
           } else {
-            totalChars += JSON.stringify(block || '').length;
+            totalChars += jsonCost(block || '');
           }
         }
       } else if (typeof msg.content === 'string') {
         if (msg.content.includes('data:image/')) {
           hasImage = true;
-          totalChars += msg.content.replace(IMG_DATA_URL, '').length;
+          totalChars += textCost(msg.content.replace(IMG_DATA_URL, ''));
         } else {
-          totalChars += msg.content.length;
+          totalChars += textCost(msg.content);
         }
       } else {
-        totalChars += JSON.stringify(msg.content || '').length;
+        totalChars += jsonCost(msg.content || '');
       }
-      if (msg.tool_calls) totalChars += JSON.stringify(msg.tool_calls).length;
-      if (msg.response_items) totalChars += JSON.stringify(msg.response_items).length;
-      if (typeof msg.reasoning_content === 'string') totalChars += msg.reasoning_content.length;
+      if (msg.tool_calls) totalChars += jsonCost(msg.tool_calls);
+      if (msg.response_items) totalChars += jsonCost(msg.response_items);
+      if (typeof msg.reasoning_content === 'string') totalChars += textCost(msg.reasoning_content);
       const replayContent = msg._reasoning_replay?.providerState?.content;
       if (Array.isArray(replayContent)) {
         // Anthropic sends the native content blocks instead of normalized
         // content/tool_calls. Count the larger representation, never both.
         const normalizedChars = totalChars - messageStartChars;
-        totalChars = messageStartChars + Math.max(normalizedChars, JSON.stringify(replayContent).length);
+        totalChars = messageStartChars + Math.max(normalizedChars, jsonCost(replayContent));
       }
     }
     if (hasImage) totalChars += Agent.IMAGE_CHAR_COST;

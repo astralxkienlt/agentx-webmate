@@ -199,6 +199,10 @@ in browser-free modules in both builds. `Agent` consumes the production logic,
 `test/run.js` imports it directly, and parity assertions keep the Chrome and
 Firefox copies byte-identical.
 
+Also landed: `agent/context-cost.js` (script-aware prompt sizing) follows the
+same shape — pure, byte-identical across trees, imported by both `agent.js`
+copies and asserted directly from `test/run.js`.
+
 **Concrete next steps:**
 1. Move other remaining pure logic into browser-free modules and import those
    modules directly from `agent.js` and `test/run.js`.

@@ -589,6 +589,12 @@ const { resourceBucket, bucketArgsKey, URL_FAMILY_TOOLS } = await import(
 const { resourceBucket: resourceBucketFx, bucketArgsKey: bucketArgsKeyFx } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/agent/loop-bucket.js').replace(/\\/g, '/')
 );
+const contextCostCh = await import(
+  'file://' + path.join(ROOT, 'src/chrome/src/agent/context-cost.js').replace(/\\/g, '/')
+);
+const contextCostFx = await import(
+  'file://' + path.join(ROOT, 'src/firefox/src/agent/context-cost.js').replace(/\\/g, '/')
+);
 const { LoopDetector: LoopDetectorCh } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/agent/loop-detector.js').replace(/\\/g, '/')
 );
@@ -47975,8 +47981,18 @@ test('Agent tool loops preserve provider reasoning state on both execution paths
     assert.match(source, /chunk\.type === 'reasoning'[\s\S]*content: fullText \|\| null,[\s\S]*tool_calls: toolCalls,[\s\S]*}, responseItems, reasoningContent, provider\)/, `${prefix}: stream tool loop should retain provider reasoning state`);
     assert.match(source, /content: fullText \}, responseItems, reasoningContent, provider\)[\s\S]*messages\.push\(\{ role: 'user', content: plainFinalBlocks\.join/, `${prefix}: stream progress continuations should scope provider reasoning state`);
     assert.match(source, /content: fullText \}, responseItems, reasoningContent, provider\)[\s\S]*return finish\(fullText\)/, `${prefix}: stream final answers should scope provider reasoning state`);
-    assert.match(source, /if \(msg\.response_items\) totalChars \+= JSON\.stringify\(msg\.response_items\)\.length/, `${prefix}: context budgeting should include encrypted reasoning Items`);
-    assert.match(source, /if \(typeof msg\.reasoning_content === 'string'\) totalChars \+= msg\.reasoning_content\.length/, `${prefix}: context budgeting should include Chat Completions reasoning content`);
+    // Behavioural rather than source-shaped: what matters is that encrypted
+    // Responses items are billed, not which expression bills them. The old
+    // regex pinned `JSON.stringify(msg.response_items).length` and broke the
+    // moment sizing moved to the script-aware helper in context-cost.js.
+    assert.ok(
+      agent._estimateContextChars([{ role: 'assistant', content: '', response_items: responseItems }])
+        > agent._estimateContextChars([{ role: 'assistant', content: '' }]),
+      `${prefix}: context budgeting should include encrypted reasoning Items`,
+    );
+    // (No source-shape twin for reasoning_content: the behavioural assertion
+    // near the top of this test already proves it is billed, and pinning the
+    // expression only broke when sizing moved to context-cost.js.)
   }
 });
 
@@ -82368,6 +82384,103 @@ test('decode host forwards only options that survive serialization', () => {
   }
   for (const needed of ['fromPage', 'toPage', 'maxChars', 'pages', 'pixelBudget', 'sampleLimit']) {
     assert.ok(allowed.includes(needed), `${needed} must reach the parser`);
+  }
+});
+
+// ── script-aware prompt sizing (context-cost.js) ────────────────────────────
+
+test('context-cost weights non-ASCII text and leaves ASCII byte-for-byte', () => {
+  for (const [label, mod] of [['chrome', contextCostCh], ['firefox', contextCostFx]]) {
+    const { textCost, costToTokens, CHARS_PER_TOKEN, NON_ASCII_CHAR_WEIGHT } = mod;
+
+    // The dominant cohort must be untouched: every threshold in agent.js was
+    // tuned against English, so pure-ASCII text has to score exactly its
+    // character count or this fix would silently retune all of them.
+    const ascii = 'Open the release page and attach the two zip files.';
+    assert.equal(textCost(ascii), ascii.length, `${label}: ASCII text must score its own length`);
+    assert.equal(textCost(''), 0, `${label}: empty string costs nothing`);
+    assert.equal(textCost(null), 0, `${label}: non-strings cost nothing`);
+    assert.equal(textCost(undefined), 0, `${label}: undefined costs nothing`);
+
+    // A non-ASCII character costs about one token, so its weight equals the
+    // chars-per-token ratio. This is the whole calibration, asserted once.
+    assert.equal(NON_ASCII_CHAR_WEIGHT, CHARS_PER_TOKEN, `${label}: weight is one token per non-ASCII char`);
+    assert.equal(textCost('日'), NON_ASCII_CHAR_WEIGHT, `${label}: one CJK char costs one token's worth`);
+    assert.equal(costToTokens(textCost('日'.repeat(10))), 10, `${label}: CJK lands at ~1 char/token`);
+
+    // Vietnamese: the netMind default locale, and the case the flat estimator
+    // under-read. Effective ratio should sit near 2 chars/token, between
+    // English's 4 and CJK's 1 — never back up at 4.
+    const vietnamese = 'Hãy mở trang phát hành và đính kèm hai tệp nén đã tải về máy.';
+    const flatTokens = Math.ceil(vietnamese.length / CHARS_PER_TOKEN);
+    const weightedTokens = costToTokens(textCost(vietnamese));
+    assert.ok(weightedTokens > flatTokens * 1.5,
+      `${label}: Vietnamese must cost markedly more than chars/4 (flat ${flatTokens}, weighted ${weightedTokens})`);
+    const ratio = vietnamese.length / weightedTokens;
+    assert.ok(ratio > 1.5 && ratio < 3,
+      `${label}: Vietnamese should land near 2 chars/token, got ${ratio.toFixed(2)}`);
+
+    // Mixed text must fall between its pure halves, never outside them.
+    assert.ok(textCost(ascii + vietnamese) === textCost(ascii) + textCost(vietnamese),
+      `${label}: cost is additive over concatenation`);
+
+    // jsonCost must survive values JSON.stringify cannot serialize.
+    const cyclic = {};
+    cyclic.self = cyclic;
+    assert.equal(mod.jsonCost(cyclic), 0, `${label}: unserializable values cost nothing instead of throwing`);
+    assert.ok(mod.jsonCost({ a: 'Đ' }) > mod.jsonCost({ a: 'D' }), `${label}: jsonCost weights its payload too`);
+  }
+});
+
+test('context-cost stays byte-identical across browser trees', () => {
+  const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/context-cost.js'), 'utf8');
+  const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/agent/context-cost.js'), 'utf8');
+  assert.equal(chrome, firefox, 'context-cost.js must not drift between trees');
+});
+
+test('a Vietnamese conversation trips the compaction budget an ASCII one of equal length does not', async () => {
+  // The bug this fixes: on the FIRST turn there is no provider-reported
+  // prompt_tokens to correct the estimate, so a long Vietnamese page read was
+  // judged by chars/4 — roughly half its real token cost — sailed past the
+  // context window, and landed in _emergencyTrim instead of a clean compaction.
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const contextWindow = 32768;
+    const agent = new AgentClass({ getActive: () => ({ contextWindow, supportsVision: false }) });
+    const { costToTokens } = AgentClass === AgentCh ? contextCostCh : contextCostFx;
+    const tokenBudget = agent._contextTokenBudget();
+
+    // Same character count, different script. Sized so chars/4 stays under the
+    // budget for both — the old estimator saw no problem with either.
+    const chars = Math.floor(tokenBudget * 3.2);
+    const asciiTurn = { role: 'user', content: 'a'.repeat(chars) };
+    const vietnameseTurn = { role: 'user', content: 'ữ'.repeat(chars) };
+    assert.equal(asciiTurn.content.length, vietnameseTurn.content.length, 'fixtures must match in characters');
+    assert.ok(Math.ceil(chars / 4) < tokenBudget, 'fixture must look safe under the flat chars/4 estimate');
+
+    const asciiTokens = costToTokens(agent._estimateContextChars([asciiTurn]));
+    const vietnameseTokens = costToTokens(agent._estimateContextChars([vietnameseTurn]));
+
+    assert.ok(asciiTokens <= tokenBudget,
+      `${AgentClass.name}: ASCII of this size must still be judged safe (${asciiTokens} vs ${tokenBudget})`);
+    assert.ok(vietnameseTokens > tokenBudget,
+      `${AgentClass.name}: the same length in Vietnamese must trip the budget (${vietnameseTokens} vs ${tokenBudget})`);
+
+    // And the estimator must not have changed what it reports for ASCII.
+    assert.equal(agent._estimateContextChars([asciiTurn]), chars,
+      `${AgentClass.name}: ASCII conversations must estimate exactly as before`);
+  }
+});
+
+test('image cost stays flat and script-independent', async () => {
+  // IMAGE_CHAR_COST is a char-equivalent stand-in for a vision image's
+  // byte-size-independent token price. Weighting must not touch it, or a
+  // screenshot would re-arm compaction on every step (the thrash that
+  // IMAGE_CHAR_COST was introduced to stop).
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const withImage = [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] }];
+    assert.equal(agent._estimateContextChars(withImage), AgentClass.IMAGE_CHAR_COST,
+      `${AgentClass.name}: a lone image bills exactly IMAGE_CHAR_COST`);
   }
 });
 
