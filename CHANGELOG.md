@@ -6,6 +6,8 @@ This changelog was generated from the repository Git history and release tags. V
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-24
+
 ### Added
 - Attachments are now delivered the best way the active model supports: PDFs become native document blocks on Anthropic models, locally extracted text (with per-page coverage warnings) everywhere else, and scanned PDFs render their first pages as images on vision models; DOCX files convert to text locally via a vendored mammoth build, and unrecognized files ride along as references the agent can read on demand.
 - Added a `read_attachment` agent tool (Ask/Mid/Full tiers) that pages through attached files by page range or character cursor, with a vision render mode for scanned pages that counts against the per-turn image budget.
