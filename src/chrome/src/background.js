@@ -92,6 +92,7 @@ import {
   parseUserMemoryExtractionResult,
 } from './agent/user-memory.js';
 import { shouldAutoGroupTabs } from './tab-group-preference.js';
+import { createSidePanelAvailability } from './side-panel-availability.js';
 import {
   CONFIG_STORAGE_KEYS,
   createConfigExport,
@@ -1086,44 +1087,23 @@ chrome.storage.onChanged.addListener((changes) => {
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// Side-panel visibility model — Claude-for-Chrome style
+// Side-panel visibility model
 //
-// We use a per-window "WebBrain" tab group to keep an active sidebar session
-// visually organized. When automatic grouping is enabled and the user clicks
-// the action, the source tab joins (or seeds) that group. Side-panel access is
-// still enabled per tab, so opting out of grouping never disables the panel.
+// Two independent things:
 //
-// Why this and not a per-tab Set?
+//   * WHERE the panel may appear — owned entirely by
+//     side-panel-availability.js, which records the measured Chrome
+//     semantics. Read it before touching any sidePanel.setOptions call.
+//     Short version: opt in per tab, never disable, and never reach for
+//     global options — Chrome already re-shows a per-tab panel when the user
+//     returns to its tab.
 //
-// Chrome's `sidePanel.setOptions({enabled: false})` doesn't actively close
-// an already-open panel — it only prevents future opens. With a per-tab Set
-// the panel was visible on every tab the user had ever clicked the action
-// on, which mounted up across a session. Group membership is observable to
-// the user (they see the colored group label) and matches the agent's own
-// `_addToWebBrainGroup` behaviour for `new_tab` calls — so a sidebar
-// session, an explicitly-opened new_tab, and a target=_blank redirect all
-// land in the same group.
-//
-// `panelTabs` survives as a fallback for old Chromes without `tabGroups`
-// (pre-89, very rare). On modern Chrome the group map is the source of truth.
+//   * The per-window "WebBrain" tab group — purely visual grouping of an
+//     active sidebar session, gated by the auto-group setting. It does not
+//     gate panel visibility, so opting out of grouping never hides the panel.
 // ────────────────────────────────────────────────────────────────────────
 
-// Legacy per-tab fallback (used only if chrome.tabGroups is unavailable).
-const panelTabs = new Set();
-const PANEL_TABS_KEY = 'panelTabs';
-
-async function loadPanelTabs() {
-  try {
-    const stored = await chrome.storage.session.get(PANEL_TABS_KEY);
-    if (Array.isArray(stored[PANEL_TABS_KEY])) {
-      stored[PANEL_TABS_KEY].forEach(id => panelTabs.add(id));
-    }
-  } catch (e) { /* session storage not available */ }
-}
-function savePanelTabs() {
-  chrome.storage.session?.set({ [PANEL_TABS_KEY]: Array.from(panelTabs) }).catch(() => {});
-}
-loadPanelTabs();
+const sidePanelAvailability = createSidePanelAvailability({ browserApi: chrome });
 
 // (Tab recorder state + Whisper-transcription helpers moved to
 // src/recorder/host.js so the agent's prompt-driven tools can share
@@ -1160,37 +1140,28 @@ loadWebBrainGroups();
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 
-// Panel visibility model — opt-in per tab (Cmd+T no longer leaks the panel).
+// Panel visibility model — opt in per tab, never disable.
 //
-// We deliberately do NOT keep `side_panel.default_path` in the manifest and
-// we do NOT proactively call setOptions on tab activation. Both of those
-// would re-enable the panel on every tab and recreate the "Cmd+T opens a
-// new tab and the running agent's progress paints into it" bug.
+// The manifest declares no `side_panel` key and nothing pre-enables tabs, so
+// a tab the user never opened the panel on shows nothing — including a fresh
+// Cmd+T tab. Enabling happens only alongside an explicit open:
 //
-// Enablement happens only on explicit user/agent intent:
+//   * `chrome.action.onClicked` — toolbar icon / Alt+Shift+W. Fires
+//     `enableForTab(tab.id)` and `sidePanel.open({tabId})` back-to-back,
+//     nothing awaited, so the user gesture reaches open().
+//   * context menu + selection shortcut — same pair via
+//     `openSidePanelForContextMenu`.
+//   * the install guide — `install.js` runs the pair inside its own click
+//     handler and reports back with `WB_INSTALL_PANEL_OPENED`.
+//   * `agent.new_tab` — enables the tab it creates, so the user can open the
+//     panel there. Enabling alone never makes the panel appear.
 //
-//   * `chrome.action.onClicked`  — user clicked the toolbar icon on tab X.
-//     The handler fires a fire-and-forget `setOptions({tabId:X, enabled:true})`
-//     and `sidePanel.open({tabId:X})` back-to-back to keep the user gesture
-//     alive for `open()`.
-//   * `agent.new_tab`            — agent created tab Y. The tool handler
-//     also calls `setOptions({tabId:Y, enabled:true})` so if the user
-//     switches to Y manually, the panel is there.
-//
-// We do NOT have a "tab left the WebBrain group → disable panel" path,
-// even though the WB group is still maintained for visual cohesion. That
-// path is exactly what raced with `action.onClicked` in the original
-// version: a fresh enable+open pair couldn't beat a recent disable, so
-// the first click would silently no-op. Skipping the disable entirely
-// avoids the race — the trade-off is that a tab the user manually drags
-// out of the WB group keeps its panel until they close it.
-//
-// Claude's official browser extension uses the same pattern (no
-// `default_path`, never disable, only enable on demand). Verified at
-// https://docs.google.com/...claude_chrome.sidepanel — short version:
-// the race only happens if you actively flip a tab from enabled → disabled
-// → enabled. Stay in the no-default + only-enable lane and there is no
-// race to fight.
+// Chrome hides the panel while the user is on a tab that did not opt in and
+// shows it again when they return to one that did, keeping the same panel
+// document. That is the behaviour we want, so there is nothing to re-assert
+// on tab activation — and nothing may ever disable the panel: an explicit
+// disable racing a gesture's enable+open pair is what used to make the first
+// toolbar click silently no-op.
 
 /**
  * When automatic grouping is enabled, make sure `tab.windowId` has a
@@ -1266,8 +1237,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
   chrome.tabs.get(tabId).then((tab) => {
     if (tab?.url !== installGuideUrl) return;
-    panelTabs.add(tab.id);
-    savePanelTabs();
+    // install.js already enabled this tab inside its own gesture; re-assert it
+    // here so the tab is opted in even if that call lost its race with the
+    // guide's own navigation.
+    sidePanelAvailability.enableForTab(tab.id);
     ensureWebBrainGroup(tab).catch(() => {});
   }).catch(() => {});
 });
@@ -1295,13 +1268,9 @@ function notifySidePanelOfContextMenuPrompt(payload) {
 
 function openSidePanelForContextMenu(tab) {
   if (!tab?.id) return;
-  panelTabs.add(tab.id);
-  savePanelTabs();
-  chrome.sidePanel.setOptions({
-    tabId: tab.id,
-    path: 'src/ui/sidepanel.html',
-    enabled: true,
-  });
+  // enable then open with nothing awaited between them — the gesture that
+  // reached this handler has to survive all the way into open().
+  sidePanelAvailability.enableForTab(tab.id);
   chrome.sidePanel.open({ tabId: tab.id });
   ensureWebBrainGroup(tab).catch(() => {});
 }
@@ -1827,33 +1796,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // silently refuses to open the panel.
 chrome.action.onClicked.addListener((tab) => {
   if (!tab?.id) return;
-  // Legacy fallback: keep panelTabs in sync for browsers without tabGroups.
-  panelTabs.add(tab.id);
-  savePanelTabs();
-  // Fire-and-forget; do NOT await — preserves user gesture for open() below.
-  // This pair (setOptions + open with no await between) is the same pattern
-  // Claude's browser extension uses; it works because we never proactively
-  // flip this tab to enabled:false elsewhere, so the open() call doesn't
-  // observe a stale "disabled" state and silently no-op.
-  chrome.sidePanel.setOptions({
-    tabId: tab.id,
-    path: 'src/ui/sidepanel.html',
-    enabled: true,
-  });
+  // Fire-and-forget; do NOT await — preserves the user gesture for open()
+  // below. Nothing in the extension ever disables the panel, so open() can
+  // never observe a stale "disabled" state and silently no-op.
+  sidePanelAvailability.enableForTab(tab.id);
   chrome.sidePanel.open({ tabId: tab.id });
-  // Now group the source tab so the visibility scope is established
-  // before the user can switch tabs. Async — we already lost the user-
-  // gesture window for sidePanel.open, but ensureWebBrainGroup doesn't
-  // need it.
+  // Async — we already lost the user-gesture window for sidePanel.open, and
+  // grouping doesn't need it.
   ensureWebBrainGroup(tab).catch(() => {});
 });
 
 // (Was: chrome.tabs.onActivated + chrome.tabs.onUpdated listeners that
-// re-asserted enabled:true on every tab switch / group change. Removed
-// because that was the bug — it made the panel auto-enable on Cmd+T'd
-// tabs, leaking a running agent's progress into unrelated tabs. Chrome
-// already preserves per-tab panel state across tab switches; we don't
-// need to re-assert it.)
+// re-asserted `enabled:true` on every tab switch / group change. Removed
+// because that was the bug — it made the panel auto-enable on Cmd+T'd tabs,
+// leaking a running agent's progress into unrelated tabs. Chrome preserves
+// per-tab panel state across tab switches, including re-showing the panel on
+// the tab it was opened on, so there is nothing to re-assert.)
 
 // User ungrouped (or Chrome auto-collapsed) the WebBrain group entirely.
 // Forget the mapping for that window so the next action click can seed
@@ -1877,7 +1835,6 @@ chrome.windows?.onRemoved?.addListener?.((windowId) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  panelTabs.delete(tabId);
   clearRunUiSnapshot(tabId);
   clearDetachedRunFailure(tabId);
   clearTimeout(pendingContextMenuNotifications.get(tabId));
@@ -1889,7 +1846,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   // Pending (never-sent) attachment chips die with their tab; sent records
   // stay until the TTL sweep so read_attachment keeps working.
   attachmentStoreOrNull()?.removeByTab(tabId).catch(() => {});
-  savePanelTabs();
   scheduler.cancelForTab(tabId).catch(() => {});
   agent.clearDevCssPatchesForTab(tabId).catch(() => {});
   try { agent._cleanupTab(tabId); } catch { /* ignore */ }

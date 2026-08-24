@@ -9,6 +9,13 @@ This changelog was generated from the repository Git history and release tags. V
 ### Added
 - Comprehensive agent tracing support with lossless tracing tier, execution evidence, and UI.
 
+### Fixed
+- The composer no longer snaps back to Ask. Act and Dev were held in a variable that died with the panel document, and Chrome gives every tab you open the panel on its own document — so opening the sidebar on a second tab, or closing and reopening it, always came back in Ask. The mode you pick is now remembered and restored, while modes the panel *forces* on you (a selection-scoped conversation, a standalone chat window) no longer overwrite that choice.
+
+### Changed
+- Side-panel visibility is now owned by one module (`src/side-panel-availability.js`) instead of the same `setOptions` payload copied across the service worker, the agent's `new_tab`, and the install page, and it documents the behaviour measured on both engines: the panel shows on a tab only after an `open()` call for that tab, and hides while you are on a tab that never opted in. Behaviour is unchanged; the write-only `panelTabs` bookkeeping it replaced was dead code.
+- Documented an Edge difference worth knowing before "fixing" it: Chrome re-shows the panel when you return to the tab you opened it on, Edge does not, and on Edge a hidden panel cannot be restored from code at all (`sidePanel.open()` requires a user gesture, re-enabling the tab does not help). On Edge the sidebar therefore costs one toolbar click or `Alt+Shift+W` to bring back after visiting an unrelated tab — and thanks to the fix above it returns in the mode you chose, with that tab's conversation. Same-tab navigation and switching between two tabs that both have the panel keep it up on Edge.
+
 ## [0.1.13] - 2026-08-20
 
 ### Added

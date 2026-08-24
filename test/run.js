@@ -24891,7 +24891,7 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
       assert.deepEqual(calls, [
         ['setOptions', { tabId: 42, path: 'src/ui/sidepanel.html', enabled: true }],
         ['open', { tabId: 42 }],
-      ], 'chrome: the install-page click should enable and open the real panel in the same turn');
+      ], 'chrome: the install-page click should opt its tab in and open the real panel in the same turn');
       await installModule.reportInstalledPanelOpened({ build: 'chromium', tabId: 42, chromeApi });
       assert.deepEqual(messages, [
         { type: 'WB_INSTALL_PANEL_OPENED', tabId: 42 },
@@ -24933,7 +24933,7 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
   );
   assert.match(
     chromeBackground,
-    /msg\?\.type !== 'WB_INSTALL_PANEL_OPENED'[\s\S]*?senderUrl !== installGuideUrl[\s\S]*?panelTabs\.add\(tab\.id\);[\s\S]*?savePanelTabs\(\);[\s\S]*?ensureWebBrainGroup\(tab\)/,
+    /msg\?\.type !== 'WB_INSTALL_PANEL_OPENED'[\s\S]*?senderUrl !== installGuideUrl[\s\S]*?sidePanelAvailability\.enableForTab\(tab\.id\);[\s\S]*?ensureWebBrainGroup\(tab\)/,
     'chrome: verified install-page opens should join normal panel and tab-group state',
   );
   assert.match(
@@ -28318,6 +28318,318 @@ test('sidepanel follows its live window when the represented tab is detached', a
   }
 });
 
+test('side-panel visibility is opted into per tab and never disabled', async () => {
+  const modulePath = path.join(ROOT, 'src/chrome/src/side-panel-availability.js');
+  const { createSidePanelAvailability, SIDE_PANEL_PATH } =
+    await import(pathToFileURL(modulePath).href);
+
+  // Measured on a loaded build: Chrome hides a per-tab panel while the user is
+  // on a tab that never opted in and shows it again — same document — when
+  // they return. Global options (no tabId) would instead keep it on screen on
+  // every tab, which is not what "still there when I come back" means.
+  {
+    const calls = [];
+    const availability = createSidePanelAvailability({
+      browserApi: { sidePanel: { setOptions: (options) => { calls.push(options); return Promise.resolve(); } } },
+    });
+
+    availability.enableForTab(7);
+    // Synchronous on purpose: the caller still has to reach sidePanel.open()
+    // inside the same user gesture, so nothing here may await first.
+    assert.deepEqual(calls, [{ tabId: 7, path: SIDE_PANEL_PATH, enabled: true }], 'enableForTab should opt one tab in before returning');
+
+    availability.enableForTab(9);
+    assert.deepEqual(calls[1], { tabId: 9, path: SIDE_PANEL_PATH, enabled: true }, 'a second tab should get its own opt-in');
+    assert.equal(calls.every(call => call.enabled === true), true, 'nothing here may disable the panel');
+    assert.equal(calls.every(call => call.tabId != null), true, 'options must always name a tab, never go global');
+  }
+
+  // A missing tab id is a no-op rather than an accidental global enable.
+  {
+    const calls = [];
+    const availability = createSidePanelAvailability({
+      browserApi: { sidePanel: { setOptions: (options) => { calls.push(options); return Promise.resolve(); } } },
+    });
+    availability.enableForTab(undefined);
+    availability.enableForTab(null);
+    assert.deepEqual(calls, [], 'a missing tab id must not enable the panel globally');
+  }
+
+  // Best-effort: a rejected or throwing setOptions must not break the open
+  // path the caller is about to run.
+  createSidePanelAvailability({
+    browserApi: { sidePanel: { setOptions: () => Promise.reject(new Error('no panel')) } },
+  }).enableForTab(3);
+  createSidePanelAvailability({
+    browserApi: { sidePanel: { setOptions: () => { throw new Error('unsupported'); } } },
+  }).enableForTab(3);
+  createSidePanelAvailability({ browserApi: {} }).enableForTab(3);
+  await new Promise(resolve => setImmediate(resolve));
+});
+
+test('chrome opts the side panel in per tab and never pre-enables or disables it', () => {
+  const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
+  const agent = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
+  const install = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/install.js'), 'utf8');
+  const availability = fs.readFileSync(path.join(ROOT, 'src/chrome/src/side-panel-availability.js'), 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/chrome/manifest.json'), 'utf8'));
+  // The prose in these files explains the very calls this test forbids, so
+  // every scan below runs against code with comments stripped.
+  const withoutComments = (source) => source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+
+  // Every panel option must name a tab and must enable, never disable.
+  // Global options would keep the panel on screen on every tab; a disable
+  // racing a gesture's enable+open pair is the old first-click bug.
+  const optionCallPattern = /setOptions\s*(?:\?\.)?\s*\(\s*\{[\s\S]*?\}\s*\)/g;
+  let optionCalls = 0;
+  for (const [label, source] of [
+    ['background', background],
+    ['agent', agent],
+    ['install', install],
+    ['availability module', availability],
+  ].map(([label, source]) => [label, withoutComments(source)])) {
+    for (const call of source.match(optionCallPattern) || []) {
+      optionCalls += 1;
+      assert.match(call, /tabId/, `${label}: side-panel options must name a tab: ${call}`);
+      assert.equal(/enabled:\s*false/.test(call), false, `${label}: nothing may disable the side panel: ${call}`);
+    }
+  }
+  assert.equal(optionCalls, 3, 'only the availability module, the agent\'s new_tab, and the install page gesture should set panel options');
+
+  // No manifest side_panel key: a tab the user never opened the panel on —
+  // a fresh Cmd+T tab included — has no panel to inherit.
+  assert.equal(Object.prototype.hasOwnProperty.call(manifest, 'side_panel'), false, 'the manifest must not pre-declare a side panel');
+  assert.equal(manifest.permissions.includes('sidePanel'), true, 'the sidePanel permission is still required to call setOptions');
+
+  // Chrome already re-shows a per-tab panel when the user returns to its tab,
+  // so re-asserting options on tab activation only leaks the panel onto tabs
+  // that never opted in.
+  assert.equal(/tabs\.onActivated[\s\S]{0,400}?sidePanel/.test(withoutComments(background)), false, 'tab activation must not touch panel options');
+  assert.equal(/panelTabs/.test(background), false, 'background should not track per-tab panel visibility by hand');
+
+  // enable then open with nothing awaited between them, or Chrome drops the
+  // user gesture and silently refuses to open.
+  const clickHandler = withoutComments(background).match(/chrome\.action\.onClicked\.addListener\(\(tab\) => \{([\s\S]*?)\n\}\);/);
+  assert.ok(clickHandler, 'the action click handler is missing');
+  const enableIdx = clickHandler[1].indexOf('sidePanelAvailability.enableForTab(tab.id);');
+  const openIdx = clickHandler[1].indexOf('chrome.sidePanel.open({ tabId: tab.id });');
+  assert.notEqual(enableIdx, -1, 'the toolbar click should opt its tab in');
+  assert.notEqual(openIdx, -1, 'the toolbar click should open the panel');
+  assert.equal(enableIdx < openIdx, true, 'the tab must be opted in before open()');
+  assert.equal(/await/.test(clickHandler[1].slice(0, openIdx)), false, 'nothing may be awaited before open() — it would spend the user gesture');
+});
+
+test('the composer reopens in the mode the user chose', async () => {
+  const chromeRel = 'src/chrome/src/ui/agent-mode-preference.js';
+  const firefoxRel = 'src/firefox/src/ui/agent-mode-preference.js';
+  assert.equal(
+    fs.readFileSync(path.join(ROOT, firefoxRel), 'utf8'),
+    fs.readFileSync(path.join(ROOT, chromeRel), 'utf8'),
+    'the remembered-mode module should stay mirrored across builds',
+  );
+
+  for (const [label, rel] of [['chrome', chromeRel], ['firefox', firefoxRel]]) {
+    const {
+      AGENT_MODE_STORAGE_KEY,
+      loadAgentModePreference,
+      normalizeAgentModePreference,
+      saveAgentModePreference,
+    } = await import(pathToFileURL(path.join(ROOT, rel)).href);
+
+    assert.equal(normalizeAgentModePreference('act'), 'act', `${label}: Act should round-trip`);
+    assert.equal(normalizeAgentModePreference('dev'), 'dev', `${label}: Dev should round-trip`);
+    for (const rejected of ['ask', 'ACT', 'plan', '', null, undefined, 0, {}, ['act']]) {
+      assert.equal(normalizeAgentModePreference(rejected), 'ask', `${label}: unknown stored modes should fall back to Ask`);
+    }
+
+    const store = {};
+    const area = {
+      get: async (key) => (Object.prototype.hasOwnProperty.call(store, key) ? { [key]: store[key] } : {}),
+      set: async (items) => { Object.assign(store, items); },
+    };
+    assert.equal(await loadAgentModePreference(area), 'ask', `${label}: a first-ever panel should open in Ask`);
+    assert.equal(await saveAgentModePreference(area, 'act'), true, `${label}: an explicit choice should be stored`);
+    assert.deepEqual(store, { [AGENT_MODE_STORAGE_KEY]: 'act' }, `${label}: the stored key should hold the chosen mode`);
+    assert.equal(await loadAgentModePreference(area), 'act', `${label}: a reopened panel should restore Act`);
+
+    await saveAgentModePreference(area, 'nonsense');
+    assert.equal(store[AGENT_MODE_STORAGE_KEY], 'ask', `${label}: writes should be normalized, never stored raw`);
+
+    store[AGENT_MODE_STORAGE_KEY] = 'dev';
+    assert.equal(await loadAgentModePreference(area), 'dev', `${label}: a reopened panel should restore Dev`);
+
+    const failing = {
+      get: () => Promise.reject(new Error('storage gone')),
+      set: () => Promise.reject(new Error('storage gone')),
+    };
+    assert.equal(await loadAgentModePreference(failing), 'ask', `${label}: an unreadable preference should degrade to Ask`);
+    assert.equal(await saveAgentModePreference(failing, 'act'), false, `${label}: a failed write should report failure instead of throwing`);
+    assert.equal(await loadAgentModePreference(undefined), 'ask', `${label}: a missing storage area should degrade to Ask`);
+    assert.equal(await saveAgentModePreference(undefined, 'act'), false, `${label}: a missing storage area should report failure`);
+    assert.equal(await saveAgentModePreference({ set: () => { throw new Error('sync throw'); } }, 'act'), false, `${label}: a throwing storage area should report failure`);
+  }
+});
+
+test('the side panel remembers explicit mode choices and not forced ones', () => {
+  for (const [label, panelRel, api] of [
+    ['chrome', 'src/chrome/src/ui/sidepanel.js', 'chrome'],
+    ['firefox', 'src/firefox/src/ui/sidepanel.js', 'browser'],
+  ]) {
+    const panel = fs.readFileSync(path.join(ROOT, panelRel), 'utf8');
+
+    assert.match(panel, /function setMode\(mode, \{ remember = true, instant = false \} = \{\}\) \{/, `${label}: setMode should take an explicit remember contract`);
+    assert.match(panel, /agentMode = mode;\s*(?:if \(previousMode === 'dev'[\s\S]*?\n  \}\s*)?if \(remember\) rememberAgentMode\(mode\);/, `${label}: setMode should record remembered choices`);
+    assert.match(
+      panel,
+      new RegExp(`function rememberAgentMode\\(mode\\) \\{\\s*if \\(isStandaloneWindow\\) return;\\s*void saveAgentModePreference\\(${api}\\.storage\\.local, mode\\);`),
+      `${label}: an explicit choice should be persisted, except from a standalone window`,
+    );
+
+    // A selection-scoped conversation forces Ask. That is a constraint on one
+    // tab, not a preference, so it must not overwrite the stored choice.
+    assert.match(
+      panel,
+      /if \(scoped && agentMode !== 'ask'\) setMode\('ask', \{ remember: false \}\);/,
+      `${label}: selection-scope forcing should not overwrite the remembered mode`,
+    );
+
+    // Restoring is not a new choice either, and it has to happen before the
+    // conversation restore so a scoped conversation still wins the last word.
+    const initMatch = panel.match(/\n {2}\/\/ Load settings that affect the composer state\.([\s\S]*?)\n {2}\/\/ Normalize restored markup/);
+    assert.ok(initMatch, `${label}: init's composer-settings block is missing`);
+    const initBody = initMatch[1];
+    const restoreIdx = initBody.indexOf(`setMode(await loadAgentModePreference(${api}.storage.local), { remember: false, instant: true })`);
+    const chatRestoreIdx = initBody.indexOf('const restoreTabId = currentTabId;');
+    assert.notEqual(restoreIdx, -1, `${label}: init should reopen in the remembered mode`);
+    assert.notEqual(chatRestoreIdx, -1, `${label}: init's conversation restore is missing`);
+    assert.equal(restoreIdx < chatRestoreIdx, true, `${label}: the mode should be restored before the conversation that can constrain it`);
+
+    // The restore runs before the first paint, so the pill must land on the
+    // restored mode rather than sliding over from Ask every time.
+    assert.match(panel, /positionModeHighlight\(activeBtn, \{ instant \}\);/, `${label}: setMode should pass its instant flag through to the highlight`);
+
+    // The sliding pill has to follow whatever mode init restored.
+    assert.match(
+      panel,
+      /requestAnimationFrame\(\(\) => \{\s*positionModeHighlight\(modeToggleEl\?\.querySelector\('\.mode-btn\.active'\) \|\| modeAskBtn, \{ instant: true \}\);\s*\}\);/,
+      `${label}: the initial highlight should follow the active button, not assume Ask`,
+    );
+    assert.match(panel, /import \{\s*loadAgentModePreference,\s*saveAgentModePreference,\s*\} from '\.\/agent-mode-preference\.js';/, `${label}: the panel should use the shared mode-preference module`);
+  }
+});
+
+test('the real setMode stores explicit choices and survives the panel closing', async () => {
+  for (const [label, panelRel, moduleRel, api] of [
+    ['chrome', 'src/chrome/src/ui/sidepanel.js', 'src/chrome/src/ui/agent-mode-preference.js', 'chrome'],
+    ['firefox', 'src/firefox/src/ui/sidepanel.js', 'src/firefox/src/ui/agent-mode-preference.js', 'browser'],
+  ]) {
+    const panel = fs.readFileSync(path.join(ROOT, panelRel), 'utf8');
+    const { AGENT_MODE_STORAGE_KEY, loadAgentModePreference, saveAgentModePreference } =
+      await import(pathToFileURL(path.join(ROOT, moduleRel)).href);
+
+    const blockStart = panel.indexOf('function rememberAgentMode(mode) {');
+    const blockEnd = panel.indexOf('\n}\n', panel.indexOf('function normalizeAgentMode(mode) {')) + 3;
+    assert.ok(blockStart >= 0 && blockEnd > blockStart, `${label}: the mode-toggle block is missing`);
+    const modeBlock = panel.slice(blockStart, blockEnd);
+
+    const fakeClassList = () => {
+      const names = new Set();
+      return {
+        names,
+        add: (name) => names.add(name),
+        remove: (name) => names.delete(name),
+        toggle: (name, force) => (force === undefined
+          ? (names.has(name) ? names.delete(name) : names.add(name))
+          : (force ? names.add(name) : names.delete(name))),
+      };
+    };
+    const fakeButton = (offsetLeft) => ({ classList: fakeClassList(), offsetWidth: 60, offsetLeft });
+
+    const buildPanel = ({ standalone = false, store = {} } = {}) => {
+      const askBtn = fakeButton(0);
+      const actBtn = fakeButton(60);
+      const devBtn = fakeButton(120);
+      const context = {
+        agentMode: 'ask',
+        isStandaloneWindow: standalone,
+        saveAgentModePreference,
+        modeAskBtn: askBtn,
+        modeActBtn: actBtn,
+        modeDevBtn: devBtn,
+        inputArea: { classList: fakeClassList() },
+        modeToggleHighlight: { classList: fakeClassList(), style: {} },
+        requestAnimationFrame: (fn) => fn(),
+        sendToBackground: async () => ({}),
+        updateActWarning: () => {},
+        resetInputPlaceholderRotation: () => {},
+        [api]: {
+          storage: {
+            local: {
+              get: async (key) => (Object.prototype.hasOwnProperty.call(store, key) ? { [key]: store[key] } : {}),
+              set: async (items) => { Object.assign(store, items); },
+            },
+          },
+        },
+      };
+      const setMode = vm.runInNewContext(`(() => { ${modeBlock}; return setMode; })()`, context);
+      return { setMode, context, store, askBtn, actBtn, devBtn };
+    };
+
+    const settle = () => new Promise(resolve => setImmediate(resolve));
+
+    // An explicit switch to Act is the user's choice and has to outlive the
+    // panel document, which Chrome tears down on every close.
+    {
+      const panelState = buildPanel();
+      panelState.setMode('act');
+      await settle();
+      assert.equal(panelState.context.agentMode, 'act', `${label}: setMode should apply Act`);
+      assert.equal(panelState.actBtn.classList.names.has('active'), true, `${label}: the Act button should read as active`);
+      assert.deepEqual(panelState.store, { [AGENT_MODE_STORAGE_KEY]: 'act' }, `${label}: an explicit Act should be stored`);
+      assert.equal(await loadAgentModePreference(panelState.context[api].storage.local), 'act', `${label}: a reopened panel should come back in Act`);
+
+      // The panel forcing Ask on a selection-scoped tab is a constraint, not a
+      // new choice: the composer changes, the remembered mode must not.
+      panelState.setMode('ask', { remember: false });
+      await settle();
+      assert.equal(panelState.context.agentMode, 'ask', `${label}: a forced Ask should still apply`);
+      assert.equal(panelState.store[AGENT_MODE_STORAGE_KEY], 'act', `${label}: a forced Ask must not overwrite the remembered Act`);
+
+      panelState.setMode('dev');
+      await settle();
+      assert.equal(panelState.store[AGENT_MODE_STORAGE_KEY], 'dev', `${label}: an explicit Dev should be stored`);
+
+      panelState.setMode('ask');
+      await settle();
+      assert.equal(panelState.store[AGENT_MODE_STORAGE_KEY], 'ask', `${label}: an explicit Ask should be stored`);
+    }
+
+    // A standalone chat window is pinned to Ask for its whole lifetime, so it
+    // must not write that Ask over the panel's real preference.
+    {
+      const panelState = buildPanel({ standalone: true, store: { [AGENT_MODE_STORAGE_KEY]: 'act' } });
+      panelState.setMode('act');
+      await settle();
+      assert.equal(panelState.context.agentMode, 'ask', `${label}: a standalone window stays in Ask`);
+      assert.equal(panelState.store[AGENT_MODE_STORAGE_KEY], 'act', `${label}: a standalone window must not clobber the remembered mode`);
+    }
+
+    // Restoring is applied through the same normalization, so a corrupted or
+    // retired stored value can only ever land in Ask.
+    {
+      const panelState = buildPanel({ store: { [AGENT_MODE_STORAGE_KEY]: 'plan' } });
+      panelState.setMode(await loadAgentModePreference(panelState.context[api].storage.local), { remember: false, instant: true });
+      await settle();
+      assert.equal(panelState.context.agentMode, 'ask', `${label}: an unknown stored mode should restore as Ask`);
+      assert.equal(panelState.askBtn.classList.names.has('active'), true, `${label}: the Ask button should read as active`);
+    }
+
+    await saveAgentModePreference(undefined, 'act');
+  }
+});
+
 test('sidepanel drops stale recommended-action refreshes after tab changes or run start', () => {
   for (const [label, panelRel] of [
     ['chrome', 'src/chrome/src/ui/sidepanel.js'],
@@ -31141,7 +31453,8 @@ test('standalone window transport, sizing, and translations are mirrored', async
     assert.match(bootstrap, /params\.get\('standalone'\) === 'true'[\s\S]*?setAttribute\('data-standalone', 'true'\)/, `${label}: standalone mode is not marked before first paint`);
     assert.match(css, /html\[data-standalone="true"\] #mode-toggle \{\s*display: none;/, `${label}: standalone window still shows the mode selector`);
     assert.match(panel, /function normalizeAgentMode\(mode\) \{\s*if \(isStandaloneWindow\) return 'ask';/, `${label}: standalone mode is not pinned to Ask`);
-    assert.match(panel, /function setMode\(mode\) \{\s*mode = normalizeAgentMode\(mode\);/, `${label}: visible mode changes bypass the standalone Ask boundary`);
+    assert.match(panel, /function setMode\(mode, \{ remember = true, instant = false \} = \{\}\) \{\s*mode = normalizeAgentMode\(mode\);/, `${label}: visible mode changes bypass the standalone Ask boundary`);
+    assert.match(panel, /function rememberAgentMode\(mode\) \{\s*if \(isStandaloneWindow\) return;/, `${label}: a standalone window's forced Ask can overwrite the panel's remembered mode`);
     assert.match(panel, /function modeForMessageText\(text\) \{\s*if \(isStandaloneWindow\) return 'ask';/, `${label}: slash commands can change standalone mode`);
     assert.match(panel, /async function sendMessage\(extraChatParams = \{\}\) \{\s*if \(isStandaloneWindow\) \{\s*if \(extraChatParams\?\.workflowId\) \{\s*rejectStandaloneWorkflowRun\(\);\s*return false;[\s\S]*?__mode: 'ask',[\s\S]*?__retry: \{ \.\.\.retryOptions, mode: 'ask' \}/, `${label}: standalone starts, retries, or workflow replays can escape Ask mode`);
     assert.match(panel, /async function continueAgent\(options = \{\}\) \{\s*if \(isStandaloneWindow\) options = \{ \.\.\.options, mode: 'ask' \};/, `${label}: standalone continuations can escape Ask mode`);

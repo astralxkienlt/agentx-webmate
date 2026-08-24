@@ -70,6 +70,11 @@ export function openInstalledPanel({ build, tabId, chromeApi = globalThis.chrome
   if (tabId == null || !chromeApi?.sidePanel?.open) {
     throw new Error('Side panel API unavailable');
   }
+  // Opt this tab in, then open — the same pair the background worker's own
+  // open paths run, and never global options (see
+  // src/side-panel-availability.js for why). The path is inlined rather than
+  // imported because install.js is shared verbatim with the Firefox build,
+  // which has no chrome.sidePanel at all.
   chromeApi.sidePanel.setOptions({
     tabId,
     path: 'src/ui/sidepanel.html',

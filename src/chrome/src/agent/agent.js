@@ -19478,12 +19478,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
 
       const tab = await chrome.tabs.create(createProps);
-      // Enable the side panel for this new tab. Background.js no longer
-      // pre-enables every tab (that was the bug — it leaked the agent's
-      // progress into unrelated Cmd+T tabs), so any tab we want the user
-      // to be able to inspect with the side panel has to be enabled
-      // explicitly. The agent created this tab as part of its work, so
-      // it's a "WebBrain tab" and gets the panel.
+      // Opt this new tab in so the user can open the panel on it. Nothing
+      // pre-enables tabs (that was the Cmd+T leak), and enabling alone never
+      // makes the panel appear — Chrome shows it only after an open() call for
+      // that tab. See src/side-panel-availability.js.
       try {
         chrome.sidePanel?.setOptions?.({
           tabId: tab.id,

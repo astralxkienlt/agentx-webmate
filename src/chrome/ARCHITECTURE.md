@@ -749,10 +749,56 @@ Adapters may also opt into narrow runtime enforcement. On Douyin `/chat`, an `ac
 
 ## Side Panel UI
 
+### Visibility (Chrome)
+The manifest declares no `side_panel` key and nothing pre-enables tabs, so the
+panel appears only where the user asked for it. `setOptions({tabId, path,
+enabled: true})` runs alongside every explicit open — toolbar icon,
+`Alt+Shift+W`, context menu, selection shortcut, the install guide — and for
+each tab `agent.new_tab` creates. `src/side-panel-availability.js` owns that
+call and records the measured Chrome semantics.
+
+Measured on a loaded build, reading the panel document's own
+`document.visibilityState`: the panel shows on a tab only after an `open()`
+call for that tab; switching to a tab that never opted in hides it; switching
+back shows it again, with the same panel document. A tab that only has options
+set stays hidden, which is why enabling an agent-created tab is safe. So there
+is nothing to re-assert on tab activation — the listeners that once did leaked
+the panel onto `Cmd+T` tabs. Global options (no `tabId`) are the wrong lever
+for "keep my panel when I come back": they keep it on screen on *every* tab.
+
+Nothing ever disables the panel; an explicit disable racing a gesture's
+enable+open pair is what used to make the first toolbar click silently no-op.
+A panel the user closes stays closed until the next explicit open. Firefox is
+unaffected: `sidebarAction` is window-level, with no per-tab equivalent.
+
+**Edge** (measured on 151) ships the same API but does not remember the open
+state per tab: the panel stays up only while every tab the user activates is
+itself enabled, and once it hides it cannot be restored from code —
+`sidePanel.open()` outside a user gesture is rejected, re-enabling the active
+tab does not re-show it, and neither does global availability. Same-tab
+navigation and hops between two opted-in tabs keep it up, so the cost is one
+toolbar click (or `Alt+Shift+W`) after visiting an unrelated tab. The reopened
+panel lands on the remembered mode with that tab's conversation, which is why
+per-tab visibility is still the right default: the alternative is a sidebar
+that follows the user onto every tab.
+
+The per-window "WebBrain" tab group (gated by the auto-group setting) is
+visual grouping only and does not gate panel visibility.
+
 ### Modes
 - **Ask** — read-only tools, analysis / Q&A.
 - **Act** — selected provider tier's normal browser-action tools.
 - **Dev** — Mid/Full action mode for source/style/page-debugging work; adds Dev tools and is blocked for Compact-tier providers.
+
+An explicit mode choice is remembered in `storage.local` (`agentMode`) and
+restored when a panel document is created, so closing and reopening the
+sidebar — or opening it on a second tab, which Chrome serves with its own
+document — does not snap the composer back to Ask. Modes the panel forces are
+constraints rather than preferences and are never stored: a selection-scoped
+conversation pins the tab to Ask, and a standalone chat window is pinned to Ask
+for its whole lifetime. A stored Dev is restored as-is — the agent already
+refuses Dev on a compact-tier provider with an explanatory reply, the same way
+it does when the user switches provider without leaving Dev.
 
 ### Verbose mode
 - **Normal** — compact step labels.
