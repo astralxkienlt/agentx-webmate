@@ -78,7 +78,7 @@ import {
 } from './cloudflare-managed-challenge.js';
 import { getRecordingStateFresh as recorderStateFresh } from '../recorder/host.js';
 import { Capability, CAPABILITY_LABEL, capabilitiesFor, requiredHosts, frameHostMatches, isNetworkMutation, normalizeHost, PermissionManager, UNTRUSTED_CONTENT_TOOLS } from './permission-gate.js';
-import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeSkipsAllGates } from './permission-mode.js';
+import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeSkipsAllGates } from './permission-mode.js';
 import {
   buildPlannerMessages,
   buildPlannerIntentMessages,
@@ -5804,11 +5804,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
       const scheduledPolicy = this.scheduledRunPolicies.get(tabId);
       const scheduledBypassesGate = scheduledPolicy?.requireConsequentialConfirmation === false;
-      // WebMCP callbacks can run arbitrary page logic. Unlike ordinary browser
-      // actions, their documented two-gate boundary is mandatory: no permission
-      // mode — not even `bypass` — and no unattended scheduled-run policy may
-      // suppress the fresh invocation confirmation or the frame-host grant.
-      const requiresMandatoryWebMCPGates = fnName === 'execute_webmcp_tool';
+      // WebMCP callbacks can run arbitrary page logic, so their documented
+      // two-gate boundary outranks the middle of the ladder: `auto` and
+      // `page_actions` pre-approve the agent's own typing and clicking, never a
+      // callback the PAGE wrote, and an unattended scheduled-run policy may not
+      // suppress the fresh invocation confirmation or the frame-host grant
+      // either. `bypass` is the one mode above it, because by then the agent
+      // may already run execute_js unprompted on this page — strictly more
+      // authority than invoking a tool the page chose to expose — so a card
+      // here would buy no safety and would only break what the mode's name
+      // promises. Recomputed from the live mode rather than captured, so
+      // widening to `bypass` while a WebMCP card is open releases it too.
+      const requiresMandatoryWebMCPGates = fnName === 'execute_webmcp_tool'
+        && !permissionModeSkipsAllGates(this._permissionMode);
       // Two thresholds, not one. `page_actions` accepts form submits while its
       // capability gate still asks before downloads, uploads, API writes and
       // scheduled work, so the submit card and the capability gate can no
@@ -5878,7 +5886,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         let failClosed = false;
         let gateDisabled = false;
         for (const capability of capabilities) {
-          if (!requiresMandatoryWebMCPGates && permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
+          if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
           // /allow-api waives ONLY write-method network egress.
           if (capability === Capability.NETWORK && isNetworkMutation(fnName, fnArgs) && apiMutationsAllowedForRun()) continue;
           // Every distinct host the call touches must be granted. Usually one,
@@ -5887,7 +5895,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const hosts = requiredHosts(capability, gateArgs, curUrl, fnName);
           if (hosts.length === 0) { failClosed = true; break; }
           for (const host of hosts) {
-            if (!requiresMandatoryWebMCPGates && permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
+            if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
             const verdict = this.permissions.check(host, capability, tabId, {
               requireExplicitGrant: requiresMandatoryWebMCPGates,
             });
@@ -11144,11 +11152,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const canonicalVerboseMarkdown = formatPlanMarkdown(plan, { verbose: true });
       const scheduledPolicy = this.scheduledRunPolicies.get(tabId);
       const scheduledAutoApprove = scheduledPolicy?.autoApprovePlanReview === true;
-      if (scheduledAutoApprove || !this._shouldReviewPlan(plan)) {
-        // Confidence-gated skips leave a visible trace in the conversation so
-        // the run isn't silent; scheduled runs stay quiet as before.
+      // The plan card stops the run to collect an approval, so the mode that
+      // promises to accept everything and ask nothing has to cover it as well —
+      // otherwise `bypass` still blocks on a question before the first tool
+      // call, which is the opposite of what the user picked. The mode is read
+      // here rather than taken from the cached field: the planner runs BEFORE
+      // the tool loop, so on a cold service worker nothing has loaded it yet.
+      const permissionMode = await this._ensurePermissionMode();
+      const modeAutoApprove = permissionModeAutoApprovesPlanReview(permissionMode);
+      if (scheduledAutoApprove || modeAutoApprove || !this._shouldReviewPlan(plan)) {
+        // Confidence- and mode-gated skips leave a visible trace in the
+        // conversation so the run isn't silent; scheduled runs stay quiet as
+        // before. The note says WHICH of the two approved it, because
+        // "confidence 0.42" under a mode the user chose reads as a bug.
         if (!scheduledAutoApprove) {
-          onUpdate('plan_auto_approved', { planId, confidence: plan.confidence });
+          onUpdate('plan_auto_approved', modeAutoApprove
+            ? { planId, confidence: plan.confidence, reason: 'permission_mode', mode: permissionMode }
+            : { planId, confidence: plan.confidence });
         }
         const approvedScratchpadText = formatPlanScratchpad(plan, '', canonicalVerboseMarkdown);
         this._armReadCompletenessFromPlan(tabId, plan);

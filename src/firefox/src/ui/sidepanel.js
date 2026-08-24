@@ -10623,10 +10623,20 @@ function addMessage(role, content, options = {}) {
 function addPlanAutoApprovedNote(data) {
   const note = document.createElement('div');
   note.className = 'plan-auto-approved-note';
-  const confidence = planReviewConfidenceText(data) || '—';
-  note.textContent = typeof t === 'function'
-    ? t('sp.plan.auto_approved', { confidence })
-    : `Plan auto-approved (confidence ${confidence}) — running…`;
+  // Two different things land here. A confidence-gated skip is a statement
+  // about the plan; a permission-mode skip is a statement about the standing
+  // authority the user handed over, and quoting a confidence score for it
+  // would send them hunting for a threshold that had no say in it.
+  if (data?.reason === 'permission_mode') {
+    note.textContent = t('sp.plan.auto_approved_mode', {
+      mode: t(permissionModeLabelKey(data?.mode || permissionMode)),
+    });
+  } else {
+    const confidence = planReviewConfidenceText(data) || '—';
+    note.textContent = typeof t === 'function'
+      ? t('sp.plan.auto_approved', { confidence })
+      : `Plan auto-approved (confidence ${confidence}) — running…`;
+  }
   const stepsContainer = getOrCreateStepsContainer();
   if (stepsContainer) {
     stepsContainer.appendChild(note);

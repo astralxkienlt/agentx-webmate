@@ -156,6 +156,19 @@ Settings → Permissions shows the same value.
 2. A gated action on a site with **no** grant executes with no card.
 3. Even a site you previously denied acts — Bypass is documented as accepting
    all permissions. Narrow the mode again and the deny is back in force.
+4. **The plan card is gone too.** Set Settings → Display → "Plan before acting"
+   to **Strict planning** (or plan review to *always*), then send a task in
+   Act. **Expect** no "Review plan" card: the conversation shows a
+   *"Plan auto-approved by permission mode “Bypass permissions”"* note and the
+   run continues. Narrow the mode back and the review card returns on the next
+   turn — nothing about the plan setting was overwritten.
+5. **A WebMCP page callback runs too** (Chrome only). On a page that registers
+   WebMCP tools, ask for one. **Expect** no invocation card and no frame-host
+   card. In **Auto** and **Accept page actions** the same call must still raise
+   the card — that gate only yields to Bypass.
+6. What Bypass does **not** silence: a `clarify()` question from the model
+   ("which of these two accounts?"). That is a question about the task, not a
+   permission, and no mode answers it.
 
 ### 5e. Narrowing restores prompts immediately
 1. From Auto, go back to **Ask every time** and repeat the click from 5b.
@@ -196,6 +209,9 @@ untrusted-wrapping behaviour, independent of the mode).
   non-English locales (1a.4).
 - Allow-once and Always **proceed**; Don't-allow **blocks** (1b–1d).
 - Grants are per-capability+host (Test 2).
+- Bypass raises **no** card at all: no capability card, no submit card, no
+  WebMCP card, and no plan review — even with plan review pinned to *always*
+  (5d).
 - Permissions tab lists/revokes/clears correctly; a revoke causes an immediate
   re-prompt (Test 3).
 - Grants persist across reload (Test 4).
