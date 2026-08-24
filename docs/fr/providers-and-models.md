@@ -46,6 +46,7 @@ class BaseLLMProvider {
 | `localai` | `openai` | local | (modèle chargé) | Métadonnées auto / surcharge |
 | `gpt4all` | `openai` | local | (modèle chargé) | Oui (activé par défaut) |
 | `local_openai_proxy` | `openai` | local | (requis) | Désactivée / bascule manuelle |
+| `webgpu` (Chromium) | `webgpu` | local | LFM2.5 2.6B (valeur par défaut) ou Bonsai 27B en option ; dépôt HF ONNX personnalisé expérimental | Non |
 | `azure_openai` | `azure_openai` | cloud | (déploiement) | Bascule manuelle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (ID de modèle) | Non |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Regex nom de modèle |
@@ -71,8 +72,9 @@ class BaseLLMProvider {
 WebBrain ajoute 76 cartes désactivées par défaut depuis l’instantané du
 catalogue OpenCode au commit
 `62e4641235d7847dadc60da37cca8a023dd54fc1`. Avec les cartes existantes,
-les Paramètres proposent **105 fournisseurs intégrés** sur Chromium comme sur
-Firefox. La liste exacte des identifiants est :
+les Paramètres proposent **106 fournisseurs intégrés sur Chromium** et **105
+sur Firefox** ; la différence est le moteur WebGPU local à Chromium. La liste
+exacte des identifiants est :
 
 `302ai`, `abacus`, `aihubmix`, `alibaba-coding-plan`,
 `alibaba-coding-plan-cn`, `azure-cognitive-services`, `bailing`, `baseten`,
@@ -114,6 +116,15 @@ Entrées volontairement exclues : `github-models` (retrait de GitHub Models le
 `sap-ai-core` (authentification, découverte et protocoles spécifiques).
 
 ### Fournisseurs Locaux
+
+Sur Chromium, **WebGPU (dans le navigateur)** est un fournisseur local sans
+point de terminaison. Le sélecteur Apocalypse propose deux préréglages
+embarqués : **LFM2.5 2.6B** (`q4f16`, environ 1,55 Go) via Transformers.js /
+ONNX, toujours le défaut et téléchargé à l’activation d’Apocalypse ; et
+**Bonsai 27B** (`Q1_0`, environ 3,8 Go) via un worker bitgpu optionnel, jamais
+téléchargé automatiquement. Bonsai exige un GPU haut de gamme (16 Go+ de
+RAM/VRAM recommandés). LFM et Bonsai ne sont jamais résidents GPU en même
+temps. Firefox n’expose pas cette carte.
 
 Neuf fournisseurs à terminaison locale sont activés par défaut. Les moteurs de
 modèles n'exigent pas de clé sauf si le serveur utilise l'authentification ; la
