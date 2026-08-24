@@ -119,7 +119,11 @@ Notably **missing** vs Chrome: `debugger`, `sidePanel`, `scripting`, `offscreen`
 - No `offscreen` → no HTTP fetch proxy; direct fetch from background page only
 - No `offscreen` fetch proxy → localhost LLM servers must send CORS headers themselves
 - `webRequest` is used for the same opt-in in-memory API shortcut observer as Chrome. The setting is off by default.
-- Uses `sidebar_action` (MV2) instead of `side_panel` (MV3)
+- Uses `sidebar_action` (MV2) instead of `side_panel` (MV3). `sidebarAction` is
+  window-level, so there is no per-tab opt-in to mirror from Chrome's
+  `src/side-panel-availability.js` — the sidebar stays where the user puts it.
+  The composer's remembered Ask/Act/Dev choice is shared:
+  `ui/agent-mode-preference.js` is mirrored from the Chrome build
 - Uses `browser.tabs.executeScript()` / `browser.tabs.sendMessage()` instead of `chrome.scripting.executeScript()`
 
 `unlimitedStorage` supports the optional IndexedDB trace recorder, matching Chrome's trace storage model.

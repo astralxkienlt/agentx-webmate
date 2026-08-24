@@ -53,6 +53,10 @@ import {
 import { providerIconUrl } from './provider-icons.js';
 import { parseWatchSlashCommand, WATCH_COMMAND_USAGE } from './watch-command.js';
 import { createSidePanelWindowScope } from './sidepanel-window-scope.js';
+import {
+  loadAgentModePreference,
+  saveAgentModePreference,
+} from './agent-mode-preference.js';
 import { visionProviderKind } from '../providers/vision-capabilities.js';
 import {
   clearStagedScreenshots,
@@ -1110,7 +1114,7 @@ function syncSelectionScopeUi() {
       ? t('sp.selection_scope.description')
       : t(button === modeActBtn ? 'sp.mode.act.title' : 'sp.mode.dev.title');
   }
-  if (scoped && agentMode !== 'ask') setMode('ask');
+  if (scoped && agentMode !== 'ask') setMode('ask', { remember: false });
   else resetInputPlaceholderRotation();
 }
 
@@ -4109,6 +4113,14 @@ async function init() {
   verboseMode = stored.verboseMode || false;
   alwaysAllowApiMutations = stored.alwaysAllowApiMutations === true;
   syncApiMutationsAllowedForCurrentTab();
+
+  // Reopen in the mode the user last chose instead of snapping back to Ask.
+  // `remember: false` because restoring is not a new choice — writing here
+  // would let a standalone window's forced Ask overwrite the real preference.
+  // A stored Dev is applied as-is: the agent already blocks Dev on
+  // compact-tier providers with an explanatory reply, exactly as it does when
+  // the user switches provider without leaving Dev.
+  setMode(await loadAgentModePreference(chrome.storage.local), { remember: false, instant: true });
 
   // Restore prior conversation for this tab (if any) — survives close/reopen.
   const restoreTabId = currentTabId;
@@ -11691,6 +11703,16 @@ async function handleGlobalKeydown(e) {
 
 // --- Mode Toggle ---
 
+/**
+ * Persist an explicit mode choice. Standalone chat windows are pinned to Ask
+ * by normalizeAgentMode(), so they must never write — their forced Ask would
+ * erase the panel's real preference.
+ */
+function rememberAgentMode(mode) {
+  if (isStandaloneWindow) return;
+  void saveAgentModePreference(chrome.storage.local, mode);
+}
+
 function positionModeHighlight(btn, { instant = false } = {}) {
   if (!modeToggleHighlight || !btn) return;
   if (instant) modeToggleHighlight.classList.add('instant');
@@ -11699,10 +11721,18 @@ function positionModeHighlight(btn, { instant = false } = {}) {
   if (instant) requestAnimationFrame(() => modeToggleHighlight.classList.remove('instant'));
 }
 
-function setMode(mode) {
+/**
+ * Apply a mode to the composer. `remember` records it as the user's choice so
+ * the next panel document opens in it; pass `false` for modes the panel forces
+ * on the user (selection-scoped conversations), which are constraints rather
+ * than preferences and must not overwrite what they picked. `instant` skips the
+ * pill's slide animation, for the restore that runs before the first paint.
+ */
+function setMode(mode, { remember = true, instant = false } = {}) {
   mode = normalizeAgentMode(mode);
   const previousMode = agentMode;
   agentMode = mode;
+  if (remember) rememberAgentMode(mode);
   if (previousMode === 'dev' && mode !== 'dev') {
     // Dev mode is panel-wide, while diagnostics may be active on a tab the
     // user switched away from. Ask the background to drain its tracked set
@@ -11721,7 +11751,7 @@ function setMode(mode) {
   // Slide the highlight pill to the active button
   const activeBtn = mode === 'ask' ? modeAskBtn : mode === 'act' ? modeActBtn : modeDevBtn;
   modeToggleHighlight?.classList.toggle('act', mode !== 'ask');
-  positionModeHighlight(activeBtn);
+  positionModeHighlight(activeBtn, { instant });
 
   updateActWarning();
   resetInputPlaceholderRotation();
@@ -11774,8 +11804,12 @@ modeDevBtn?.addEventListener('click', async () => {
   await ensureDevMode();
 });
 
-// Set initial highlight position without animation
-requestAnimationFrame(() => positionModeHighlight(modeAskBtn, { instant: true }));
+// Set initial highlight position without animation. Read the active button
+// rather than assuming Ask — init() may already have restored Act or Dev, and
+// this frame can land on either side of that.
+requestAnimationFrame(() => {
+  positionModeHighlight(modeToggleEl?.querySelector('.mode-btn.active') || modeAskBtn, { instant: true });
+});
 
 // Recalculate highlight when the toggle resizes (e.g. side panel drag)
 if (modeToggleEl) {
