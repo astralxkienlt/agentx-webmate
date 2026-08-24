@@ -23642,6 +23642,88 @@ test('all locales cover English keys and preserve interpolation placeholders', a
    }
 });
 
+// The reverse direction of the test above. That one only proves every locale
+// covers en.js; it cannot see a key the CODE uses that en.js never defined —
+// and en.js is t()'s last-resort fallback, so such a key renders as its own
+// raw dotted name in the UI. Commit 0a05902b5 deleted 25 'sp.attach.*' /
+// 'st.attach.*' keys from en.js and 9 other locales while the sidepanel and
+// settings page kept referencing them, which shipped literal "st.attach.heading"
+// as a Settings section heading on every install whose locale was one of those
+// ten (English and Vietnamese included). Nothing failed, because parity was
+// still internally consistent — en.js was simply missing the keys too.
+test('every i18n key referenced in code is defined in en.js', async () => {
+  // Strings shaped like an i18n key that are not one. Both are site-adapter
+  // hostnames whose first label collides with the 'sp.'/'st.' namespaces. The
+  // scan is deliberately repo-wide rather than scoped to src/ui/, because a
+  // key can be built in one module (message-info.js) and translated in
+  // another; a missed real key is far worse than adding a line here.
+  const KEY_SHAPED_NON_KEYS = new Set(['sp.kub2091.ru', 'st.transbus.social']);
+  const KEY_SHAPE = /^(?:sp|st|tool)\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$/;
+  const QUOTED = /(['"])([a-z][a-z0-9_.]*)\1/gi;
+  const I18N_ATTR = /data-i18n(?:-[a-z-]+)?="([^"]+)"/gi;
+  // t(`prefix.${expr}`) and t('prefix.' + expr): the suffix is only known at
+  // runtime, so assert the family exists rather than one member of it.
+  const TEMPLATE_PREFIX = /`((?:sp|st|tool)\.[a-z0-9_.]*?)\$\{/gi;
+  const CONCAT_PREFIX = /'((?:sp|st|tool)\.[a-z0-9_.]*?\.)'\s*\+/gi;
+
+  const collect = (dir) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!/[\\/](vendor|locales)$/.test(full)) out.push(...collect(full));
+      } else if (/\.(js|html)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  };
+
+  for (const [label, tree] of [['chrome', 'src/chrome'], ['firefox', 'src/firefox']]) {
+    const en = (await import('file://' + path.join(ROOT, tree, 'src/ui/locales/en.js').replace(/\\/g, '/'))).default;
+    const enKeys = Object.keys(en);
+    const referenced = new Map(); // key -> first file that references it
+    const prefixes = new Map();   // dynamic prefix -> first file
+
+    for (const file of collect(path.join(ROOT, tree, 'src'))) {
+      const source = fs.readFileSync(file, 'utf8');
+      const rel = path.relative(ROOT, file);
+      const note = (map, value) => { if (!map.has(value)) map.set(value, rel); };
+      for (const match of source.matchAll(QUOTED)) {
+        if (KEY_SHAPE.test(match[2]) && !KEY_SHAPED_NON_KEYS.has(match[2])) note(referenced, match[2]);
+      }
+      for (const match of source.matchAll(I18N_ATTR)) {
+        if (KEY_SHAPE.test(match[1])) note(referenced, match[1]);
+      }
+      for (const re of [TEMPLATE_PREFIX, CONCAT_PREFIX]) {
+        for (const match of source.matchAll(re)) note(prefixes, match[1]);
+      }
+    }
+
+    assert.ok(referenced.size > 500, `${label}: key scan found only ${referenced.size} keys — the detector is broken, not the locales`);
+
+    const undefinedKeys = [...referenced.entries()]
+      .filter(([key]) => !Object.hasOwn(en, key))
+      .map(([key, rel]) => `${key} (referenced in ${rel})`)
+      .sort();
+    assert.deepEqual(
+      undefinedKeys,
+      [],
+      `${label}: these keys are used in code but missing from en.js, so t() would render the raw key`,
+    );
+
+    const emptyFamilies = [...prefixes.entries()]
+      .filter(([prefix]) => !enKeys.some((key) => key.startsWith(prefix)))
+      .map(([prefix, rel]) => `${prefix}* (built in ${rel})`)
+      .sort();
+    assert.deepEqual(
+      emptyFamilies,
+      [],
+      `${label}: these dynamic key families have no member in en.js`,
+    );
+  }
+});
+
 test('every permission-gate capability has an English verb and a sidepanel fallback', () => {
   for (const [label, Cap, LABEL, prefix] of [
     ['chrome', CapabilityCh, CAPABILITY_LABEL_CH, 'src/chrome'],
