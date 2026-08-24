@@ -79,6 +79,7 @@ import {
   normalizeCloudflareManagedChallengeState,
 } from './cloudflare-managed-challenge.js';
 import { Capability, CAPABILITY_LABEL, capabilitiesFor, requiredHosts, frameHostMatches, isNetworkMutation, normalizeHost, PermissionManager, UNTRUSTED_CONTENT_TOOLS } from './permission-gate.js';
+import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeSkipsAllGates } from './permission-mode.js';
 import {
   buildPlannerMessages,
   buildPlannerIntentMessages,
@@ -615,24 +616,36 @@ export class Agent extends LoopDetector {
       save: async (grants) => {
         try { await browser.storage.local.set({ wb_permissions: grants }); } catch { /* best-effort */ }
       },
+      // Standing permission-mode policy for a (capability, host) pair the user
+      // has not answered yet. Consulted only after the grant lookup misses, so
+      // an explicit "don't allow" still wins.
+      autoAllow: (capability) => permissionModeAutoAllows(this._permissionMode, capability),
+      // `bypass` ("accepts all permissions") is applied by the tool loop, not
+      // here: the one boundary that outranks it — a WebMCP page callback's
+      // mandatory gate — is only knowable per call, so a blanket skip inside
+      // the manager would silently swallow it.
     });
-    // Master switch (Settings → Permissions): when the user turns OFF "Ask
-    // before consequential actions", the permission gate is bypassed entirely
-    // for fast/trusted usage. Default ON. Layers 1 & 2 (untrusted-content
-    // wrapping + system-prompt contract) stay active regardless — they cost
-    // nothing and are the part that protects against injected page content.
-    this._skipPermissionGate = false;
-    this._gateSettingLoaded = false;
+    // Permission MODE (permission-mode.js) — chosen in the sidebar's mode menu
+    // or Settings → Permissions. It is the standing amount of authority the
+    // user has handed over: `manual` (default) asks before every consequential
+    // action, `auto` and `page_actions` pre-approve part of the ladder,
+    // `bypass` is the old all-or-nothing master switch turned off. Layers 1 & 2
+    // (untrusted-content wrapping + system-prompt contract) stay active in
+    // EVERY mode — they cost nothing and are the part that protects against
+    // injected page content.
+    this._permissionMode = DEFAULT_PERMISSION_MODE;
+    this._permissionModeLoaded = false;
     // Keep in-memory state in sync when storage changes out-of-band — a grant
-    // revoked in Settings, or the master switch toggled.
+    // revoked in Settings, or the permission mode changed.
     try {
       browser.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local') return;
         if (changes.wb_permissions) {
           this.permissions.hydrateFrom(changes.wb_permissions.newValue || []);
         }
-        if (changes.askBeforeConsequentialActions) {
-          this._skipPermissionGate = changes.askBeforeConsequentialActions.newValue === false;
+        if (changes[PERMISSION_MODE_STORAGE_KEY]) {
+          this._permissionMode = normalizePermissionMode(changes[PERMISSION_MODE_STORAGE_KEY].newValue);
+          this._permissionModeLoaded = true;
         }
       });
     } catch { /* storage API unavailable in this context */ }
@@ -1507,16 +1520,20 @@ export class Agent extends LoopDetector {
     this.scheduledRunPolicies.delete(tabId);
   }
 
-  /** Lazily load the "ask before consequential actions" master switch. */
-  async _ensureGateSetting(options = {}) {
+  /**
+   * Lazily load the standing permission mode, migrating an install that still
+   * carries only the pre-modes boolean. `force` re-reads storage: used right
+   * after a permission card is answered, so a mode the user widened WHILE the
+   * card was open applies to the very action that raised it.
+   */
+  async _ensurePermissionMode(options = {}) {
     const force = options?.force === true;
-    if (this._gateSettingLoaded && !force) return this._skipPermissionGate;
-    this._gateSettingLoaded = true;
+    if (this._permissionModeLoaded && !force) return this._permissionMode;
+    this._permissionModeLoaded = true;
     try {
-      const o = await browser.storage.local.get('askBeforeConsequentialActions');
-      this._skipPermissionGate = o?.askBeforeConsequentialActions === false;
-    } catch { /* default: gate on */ }
-    return this._skipPermissionGate;
+      this._permissionMode = await loadPermissionMode(browser.storage.local);
+    } catch { /* storage unavailable in this context → keep asking every time */ }
+    return this._permissionMode;
   }
 
   _isLocalIpv4Host(host) {
@@ -4641,7 +4658,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         return { action: 'continue' };
       }
-      await this._ensureGateSetting();
+      await this._ensurePermissionMode();
       const skillEndpointRedirect = this._skillEndpointToolRedirect(fnName, fnArgs, tabId);
       if (skillEndpointRedirect) {
         messages.push({
@@ -4726,7 +4743,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
       const scheduledPolicy = this.scheduledRunPolicies.get(tabId);
       const scheduledBypassesGate = scheduledPolicy?.requireConsequentialConfirmation === false;
-      if (!this._skipPermissionGate && !scheduledBypassesGate) {
+      // Two thresholds, not one. `page_actions` accepts form submits while its
+      // capability gate still asks before downloads, uploads, API writes and
+      // scheduled work, so the submit card and the capability gate can no
+      // longer share a single "skip everything" flag.
+      const bypassesSubmitConfirmation = permissionModeAutoAcceptsSubmit(this._permissionMode)
+        || scheduledBypassesGate;
+      const bypassesCapabilityGate = permissionModeSkipsAllGates(this._permissionMode)
+        || scheduledBypassesGate;
+      if (!bypassesSubmitConfirmation) {
         const submitConfirmation = detectedSubmitAction || await this._detectLikelySubmitAction(tabId, fnName, fnArgs);
         detectedSubmitAction = submitConfirmation;
         if (submitConfirmation?.isSubmit) {
@@ -4772,15 +4797,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         && formValidationBefore.length === 0
         && (
           detectedSubmitAction?.isSubmit
-          || this._skipPermissionGate
-          || scheduledBypassesGate
+          || bypassesSubmitConfirmation
         )
       ) {
         formValidationBefore = await this._captureFormValidationState(tabId, {
           allFrames: formValidationAllFrames,
         });
       }
-      if (capabilities.length && !this._skipPermissionGate && !scheduledBypassesGate) {
+      if (capabilities.length && !bypassesCapabilityGate) {
         await this.permissions.hydrate();
         const curUrl = await this._currentUrl(tabId);
         let blocked = null;     // { capability, host }
@@ -4788,7 +4812,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         let failClosed = false;
         let gateDisabled = false;
         for (const capability of capabilities) {
-          if (this._skipPermissionGate) { gateDisabled = true; break; }
+          if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
           // /allow-api waives ONLY write-method network egress.
           if (capability === Capability.NETWORK && isNetworkMutation(fnName, fnArgs) && this.isApiMutationsAllowed(tabId)) continue;
           // Every distinct host the call touches must be granted. Usually one,
@@ -4797,8 +4821,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const hosts = requiredHosts(capability, gateArgs, curUrl, fnName);
           if (hosts.length === 0) { failClosed = true; break; }
           for (const host of hosts) {
-            if (this._skipPermissionGate) { gateDisabled = true; break; }
-            const verdict = this.permissions.check(host, capability, tabId);
+            if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
+            const verdict = this.permissions.check(host, capability, tabId, {
+              requireExplicitGrant: fnName === 'execute_webmcp_tool',
+            });
             if (verdict.allowed) continue;
             const choice = verdict.needsPrompt
               ? await this._promptPermission(tabId, capability, host, onUpdate)
@@ -4809,10 +4835,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               blocked = { capability, host };
               break;
             }
-            if (await this._ensureGateSetting({ force: true })) {
-              gateDisabled = true;
-              break;
-            }
+            // The user may have widened the mode while the card was open (the
+            // sidebar's mode menu, /dangerously-skip-permissions). Re-read it
+            // so this very action rides the new mode instead of recording a
+            // grant for a question the mode now answers — those auto-resolved
+            // cards answer 'once', so no explicit "always" choice is lost.
+            const freshMode = await this._ensurePermissionMode({ force: true });
+            if (permissionModeSkipsAllGates(freshMode)) { gateDisabled = true; break; }
+            if (permissionModeAutoAllows(freshMode, capability)) continue;
             await this.permissions.record(host, capability, 'allow', choice, tabId); // 'once' | 'always'
           }
           if (gateDisabled || aborted || blocked) break;

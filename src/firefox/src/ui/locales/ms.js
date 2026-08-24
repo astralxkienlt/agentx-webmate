@@ -1,7 +1,6 @@
 // Malay (ms).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   'sp.message_info.sent': 'sent {time}',
   'sp.message_info.speed': '{rate} tok/sec',
@@ -38,7 +37,6 @@ export default {
   'st.tab.permissions': "Kebenaran",
   'st.perms.revoke': "Batalkan",
   'st.perms.clear_all': "Kosongkan semua kebenaran",
-  'st.perms.gate.label': "Tanya sebelum tindakan penting",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain dipasang',
@@ -435,8 +433,11 @@ export default {
   "sp.vision.error": "Togol penglihatan gagal: {msg}",
   "st.tab.multimodal": "Multimodal",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "Disyorkan. Apabila dihidupkan, WebBrain meminta kebenaran kali pertama ia mengklik, menaip, menavigasi, menjalankan JavaScript, memuat naik, memuat turun atau merakam pada sesuatu laman (kemudian mengingati pilihan anda). Matikan untuk penggunaan pantas tanpa gesaan pada laman yang anda percayai sepenuhnya.",
+
   "st.perms.gate.warning": "⚠️ Gesaan kebenaran DIMATIKAN. WebBrain akan mengklik, menaip, menavigasi, menjalankan JavaScript, memuat naik, memuat turun dan merakam pada mana-mana laman TANPA bertanya — termasuk pada halaman yang kandungannya mungkin dikawal oleh penyerang. Kandungan halaman masih dianggap tidak dipercayai secara dalaman, tetapi tiada apa-apa akan menghalang arahan yang disuntik daripada mencetuskan tindakan. Biarkan ini dimatikan hanya jika anda mempercayai sepenuhnya setiap laman tempat anda menggunakan pembantu ini.",
+  'st.perms.mode.label': 'Mod kebenaran',
+  'st.perms.mode.desc': 'Sebanyak mana WebBrain boleh bertindak tanpa bertanya. Setiap tahap meluluskan satu lagi kelas tindakan lebih awal; laman yang anda benarkan satu demi satu disenaraikan di bawah.',
+  'st.perms.mode.wide_warning': '⚠️ Penghantaran borang diterima secara automatik. WebBrain akan mengklik, menaip, menghantar borang dan menjalankan skrip halaman di mana-mana laman TANPA bertanya — termasuk halaman yang kandungannya mungkin dikawal penyerang. Ia masih bertanya sebelum muat turun, muat naik, penulisan API dan kerja berjadual.',
   "st.perms.desc": "Laman yang anda telah benarkan WebBrain bertindak. Setiap entri ialah satu keupayaan (klik, taip, navigasi, jalankan JavaScript, dll.) yang diberikan kepada laman tertentu. Buang mana-mana yang anda tidak mahukan lagi — WebBrain akan bertanya semula lain kali ia memerlukannya.",
   "st.perms.empty": "Belum ada kebenaran laman diberikan. WebBrain bertanya sebelum ia mengklik, menaip, menavigasi, memuat naik, memuat turun, merakam atau menjalankan kod pada sesuatu laman, dan mengingati pilihan anda di sini apabila anda memilih “Sentiasa benarkan”.",
   "st.perms.allowed": "Dibenarkan {verb}",
@@ -585,6 +586,17 @@ export default {
   'sp.scratchpad.error': 'Pad nota tidak tersedia: {msg}',
   'sp.perm.verb.schedule': 'menjadualkan kerja masa hadapan untuk',
   'sp.perm.verb.window': 'menukar saiz tetingkap pelayar pada',
+  'sp.permmode.open': 'Mod kebenaran',
+  'sp.permmode.heading': 'Kebenaran',
+  'sp.permmode.changed': 'Mod kebenaran: {mode}',
+  'sp.permmode.manual': 'Tanya setiap kali',
+  'sp.permmode.manual.desc': 'WebBrain bertanya kali pertama ia mengklik, menaip, menavigasi, memuat turun, memuat naik atau menjadualkan kerja di sesuatu laman.',
+  'sp.permmode.auto': 'Automatik',
+  'sp.permmode.auto.desc': 'WebBrain menavigasi, mengklik dan menaip sendiri. Ia masih bertanya sebelum menghantar borang, memuat turun, memuat naik, menulis ke API atau menjadualkan kerja.',
+  'sp.permmode.page_actions': 'Tindakan halaman',
+  'sp.permmode.page_actions.desc': 'Penghantaran borang dan skrip halaman turut diterima. WebBrain masih bertanya sebelum memuat turun, memuat naik, menulis ke API atau menjadualkan kerja.',
+  'sp.permmode.bypass': 'Langkau kebenaran',
+  'sp.permmode.bypass.desc': 'Menerima semua kebenaran, di semua laman.',
   'tool.schedule_resume': 'Menjadualkan sambungan semula',
   'tool.schedule_task': 'Menjadualkan tugas',
   'st.display.scheduled_tasks.label': 'Tugas berjadual',
@@ -619,7 +631,6 @@ export default {
   'sp.compact.failed': 'Pemadatan konteks gagal: {error}',
   'tool.inspect_element_styles': 'Memeriksa gaya',
   'tool.read_page_source': 'Membaca sumber halaman',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'Kemahiran',
@@ -959,7 +970,7 @@ export default {
   "sp.import_config.done": "{count} nilai Tetapan telah diimport. Kunci penyedia dan konfigurasi kini aktif.",
   "sp.import_config.error": "Tidak dapat mengimport konfigurasi: {error}",
   "sp.input.placeholder_tip.skip_permissions": "Mod tanpa permintaan izin: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "Mahukan lebih sedikit gangguan? “Sentiasa benarkan” mengingati laman ini. Perintah di bawah mematikan permintaan izin WebBrain di semua laman.",
+  'sp.perm.skip_hint': 'Mahu kurang gangguan? “Sentiasa benarkan” mengingati laman ini, dan mod kebenaran di atas kotak mesej meluluskan seluruh kelas tindakan lebih awal. Perintah di bawah mematikan permintaan kebenaran WebBrain di semua laman.',
   "sp.perm.insert_skip_command": "Sisipkan /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "Draf anda tidak berubah. Kosongkannya sebelum menyisipkan perintah.",
   "ob.act.permissions_tip": "Permintaan izin dihidupkan secara lalai. Pengguna lanjutan boleh mematikannya secara global dengan /dangerously-skip-permissions dan menghidupkannya semula di Tetapan → Izin.",

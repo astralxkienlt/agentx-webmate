@@ -1,7 +1,6 @@
 // Indonesian (id).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   'sp.message_info.sent': 'sent {time}',
   'sp.message_info.speed': '{rate} tok/sec',
@@ -38,7 +37,6 @@ export default {
   'st.tab.permissions': "Izin",
   'st.perms.revoke': "Cabut",
   'st.perms.clear_all': "Hapus semua izin",
-  'st.perms.gate.label': "Tanya sebelum tindakan penting",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain terpasang',
@@ -444,8 +442,11 @@ export default {
   "sp.vision.error": "Pengalihan visi gagal: {msg}",
   "st.tab.multimodal": "Multimodal",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "Disarankan. Saat aktif, WebBrain meminta izin pertama kali ia mengeklik, mengetik, menavigasi, menjalankan JavaScript, mengunggah, mengunduh, atau merekam pada sebuah situs (lalu mengingat pilihan Anda). Matikan untuk penggunaan cepat tanpa konfirmasi pada situs yang sepenuhnya Anda percayai.",
+
   "st.perms.gate.warning": "⚠️ Konfirmasi izin NONAKTIF. WebBrain akan mengeklik, mengetik, menavigasi, menjalankan JavaScript, mengunggah, mengunduh, dan merekam pada situs apa pun TANPA bertanya — termasuk pada halaman yang kontennya mungkin dikendalikan penyerang. Konten halaman tetap diperlakukan sebagai tidak tepercaya secara internal, tetapi tidak ada yang akan mencegah instruksi yang disisipkan memicu sebuah tindakan. Biarkan nonaktif hanya jika Anda sepenuhnya memercayai setiap situs tempat Anda memakai asisten ini.",
+  'st.perms.mode.label': 'Mode izin',
+  'st.perms.mode.desc': 'Seberapa banyak yang boleh dilakukan WebBrain tanpa bertanya. Setiap tingkat menyetujui satu kelas aksi lagi di muka; situs yang Anda izinkan satu per satu tercantum di bawah.',
+  'st.perms.mode.wide_warning': '⚠️ Pengiriman formulir diterima otomatis. WebBrain akan mengeklik, mengetik, mengirim formulir, dan menjalankan skrip halaman di situs apa pun TANPA bertanya — termasuk di halaman yang isinya mungkin dikendalikan penyerang. WebBrain tetap bertanya sebelum unduhan, unggahan, penulisan API, dan pekerjaan terjadwal.',
   "st.perms.desc": "Situs yang telah Anda izinkan untuk ditindaklanjuti WebBrain. Setiap entri adalah satu kapabilitas (mengeklik, mengetik, menavigasi, menjalankan JavaScript, dll.) yang diberikan ke situs tertentu. Hapus yang tak lagi Anda inginkan — WebBrain akan bertanya lagi saat berikutnya membutuhkannya.",
   "st.perms.empty": "Belum ada izin situs yang diberikan. WebBrain bertanya sebelum mengeklik, mengetik, menavigasi, mengunggah, mengunduh, merekam, atau menjalankan kode pada sebuah situs, dan mengingat pilihan Anda di sini saat Anda memilih “Selalu izinkan”.",
   "st.perms.allowed": "Diizinkan untuk {verb}",
@@ -594,6 +595,17 @@ export default {
   'sp.scratchpad.error': 'Bak pasir tidak tersedia: {msg}',
   'sp.perm.verb.schedule': 'menjadwalkan pekerjaan mendatang untuk',
   'sp.perm.verb.window': 'mengubah ukuran jendela browser di',
+  'sp.permmode.open': 'Mode izin',
+  'sp.permmode.heading': 'Izin',
+  'sp.permmode.changed': 'Mode izin: {mode}',
+  'sp.permmode.manual': 'Tanya setiap kali',
+  'sp.permmode.manual.desc': 'WebBrain bertanya saat pertama kali mengeklik, mengetik, menjelajah, mengunduh, mengunggah, atau menjadwalkan pekerjaan di sebuah situs.',
+  'sp.permmode.auto': 'Otomatis',
+  'sp.permmode.auto.desc': 'WebBrain menjelajah, mengeklik, dan mengetik sendiri. WebBrain tetap bertanya sebelum mengirim formulir, mengunduh, mengunggah, menulis ke API, atau menjadwalkan pekerjaan.',
+  'sp.permmode.page_actions': 'Aksi halaman',
+  'sp.permmode.page_actions.desc': 'Pengiriman formulir dan skrip halaman juga diterima. WebBrain tetap bertanya sebelum mengunduh, mengunggah, menulis ke API, atau menjadwalkan pekerjaan.',
+  'sp.permmode.bypass': 'Lewati izin',
+  'sp.permmode.bypass.desc': 'Menerima semua izin, di semua situs.',
   'tool.schedule_resume': 'Menjadwalkan lanjutan',
   'tool.schedule_task': 'Menjadwalkan tugas',
   'st.display.scheduled_tasks.label': 'Tugas terjadwal',
@@ -628,7 +640,6 @@ export default {
   'sp.compact.failed': 'Kompaksi konteks gagal: {error}',
   'tool.inspect_element_styles': 'Memeriksa gaya',
   'tool.read_page_source': 'Membaca sumber halaman',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'Keterampilan',
@@ -973,7 +984,7 @@ export default {
   "sp.import_config.done": "Berhasil mengimpor {count} nilai Pengaturan. Kunci penyedia dan konfigurasi sudah aktif.",
   "sp.import_config.error": "Tidak dapat mengimpor konfigurasi: {error}",
   "sp.input.placeholder_tip.skip_permissions": "Mode tanpa permintaan izin: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "Ingin lebih sedikit gangguan? “Selalu izinkan” mengingat situs ini. Perintah di bawah menonaktifkan permintaan izin WebBrain di semua situs.",
+  'sp.perm.skip_hint': 'Ingin lebih sedikit gangguan? “Selalu izinkan” mengingat situs ini, dan mode izin di atas kotak pesan menyetujui seluruh kelas aksi di muka. Perintah di bawah mematikan permintaan izin WebBrain di semua situs.',
   "sp.perm.insert_skip_command": "Sisipkan /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "Draf Anda tidak berubah. Kosongkan sebelum menyisipkan perintah.",
   "ob.act.permissions_tip": "Permintaan izin aktif secara default. Pengguna tingkat lanjut dapat menonaktifkannya secara global dengan /dangerously-skip-permissions dan mengaktifkannya kembali di Pengaturan → Izin.",

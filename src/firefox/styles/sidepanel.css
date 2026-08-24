@@ -2499,7 +2499,8 @@ body {
    ASK / ACT MODE TOGGLE
    ========================================================================== */
 
-html[data-standalone="true"] #mode-toggle {
+html[data-standalone="true"] #mode-toggle,
+html[data-standalone="true"] #composer-footer {
   display: none;
 }
 
@@ -2569,6 +2570,175 @@ html[data-standalone="true"] #mode-toggle {
 }
 
 .mode-btn.active.act {
+  color: var(--warning);
+}
+
+/* ==========================================================================
+   PERMISSION MODE CHIP + MENU
+   How much authority the agent has without asking (src/agent/permission-mode.js).
+   A small corner under the composer: it is the anchor for the pop-up menu, and
+   the only row whose width the mode name can affect — so a long name in any
+   locale can never reflow the input or the Ask/Act/Dev pill.
+   ========================================================================== */
+
+#composer-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-height: 22px;
+}
+
+.permission-mode-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 7px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.permission-mode-chip:hover,
+.permission-mode-chip[aria-expanded="true"] {
+  color: var(--text-secondary);
+  border-color: var(--border);
+  background: var(--tint-soft);
+}
+
+.permission-mode-chip:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 1px;
+}
+
+.permission-mode-chip[data-wide="true"]:focus-visible {
+  outline-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.permission-mode-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-mode-chip-caret {
+  flex-shrink: 0;
+  transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.permission-mode-chip[aria-expanded="true"] .permission-mode-chip-caret {
+  transform: rotate(180deg);
+}
+
+/* Anything past on-page interaction is a standing risk the user should be able
+   to spot without opening the menu. */
+.permission-mode-chip[data-wide="true"] {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.permission-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  width: max-content;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  /* Tall enough for the whole ladder, but never taller than the window: the
+     menu grows UPWARD from the chip, so in a short panel it would otherwise
+     run off the top edge instead of scrolling. */
+  max-height: min(340px, 60vh);
+  overflow-y: auto;
+}
+
+.permission-mode-menu.hidden {
+  display: none;
+}
+
+.permission-mode-menu-heading {
+  padding: 4px 8px 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.permission-mode-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.permission-mode-item:hover {
+  background: var(--tint-soft);
+}
+
+.permission-mode-item:focus-visible {
+  background: var(--tint-soft);
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: -2px;
+}
+
+.permission-mode-item-label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.permission-mode-item-desc {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.permission-mode-item-shortcut {
+  grid-row: 1;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.permission-mode-item[aria-checked="true"] .permission-mode-item-check {
+  color: var(--accent);
+}
+
+.permission-mode-item-check {
+  color: transparent;
+  font-weight: 700;
+}
+
+.permission-mode-item[data-mode="bypass"] .permission-mode-item-label {
   color: var(--warning);
 }
 

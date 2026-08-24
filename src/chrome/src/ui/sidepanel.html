@@ -385,6 +385,27 @@
           </svg>
         </button>
       </div>
+      <!-- Composer footer. The permission-mode chip lives in one fixed spot
+           under the input, so switching modes can never reflow the composer no
+           matter how long the mode's name is in the active locale. Its menu is
+           absolutely positioned above the chip and its rows are built in JS
+           from PERMISSION_MODES, so the ladder is defined once
+           (src/agent/permission-mode.js) instead of twice per browser. -->
+      <div id="composer-footer">
+        <div id="permission-mode-menu" class="permission-mode-menu hidden" role="menu"
+             data-i18n-aria-label="sp.permmode.open"></div>
+        <button id="btn-permission-mode" class="permission-mode-chip" type="button"
+                aria-haspopup="menu" aria-expanded="false" aria-controls="permission-mode-menu"
+                data-i18n-title="sp.permmode.open" data-i18n-aria-label="sp.permmode.open">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <span id="permission-mode-chip-label" class="permission-mode-chip-label"></span>
+          <svg class="permission-mode-chip-caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 15 6-6 6 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 

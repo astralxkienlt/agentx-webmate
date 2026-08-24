@@ -8,6 +8,17 @@ import { THEME_MODES, applyMode, loadMode, watch } from './theme.js';
 import { renderSkillMarkdown } from './skill-markdown.js';
 import { CAPABILITY_LABEL } from '../agent/permission-gate.js';
 import {
+  PERMISSION_MODES,
+  PERMISSION_MODE_STORAGE_KEY,
+  loadPermissionMode,
+  normalizePermissionMode,
+  permissionModeDescKey,
+  permissionModeIsWide,
+  permissionModeLabelKey,
+  permissionModeSkipsAllGates,
+  savePermissionMode,
+} from '../agent/permission-mode.js';
+import {
   CUSTOM_SKILLS_STORAGE_KEY,
   DEFAULT_SKILL_SOURCES,
   DEFAULT_SKILLS_REMOVED_STORAGE_KEY,
@@ -287,6 +298,7 @@ if (languageSelect) {
     if (providersContainer) renderProviders();
     renderSkills();
     renderPermissions();
+    renderPermissionModeOptions();
   });
 }
 globalThis.addEventListener('focus', () => {
@@ -726,8 +738,8 @@ async function init() {
 
   await loadCustomSkills();
 
-  // Load site permissions (capability × origin grants) + the master switch
-  await initPermissionGateToggle();
+  // Load the permission mode + the per-site (capability × origin) grants
+  await initPermissionModeSelect();
   await renderPermissions();
   await initScreenshotRedactionToggle();
 
@@ -741,19 +753,56 @@ async function init() {
 // --- Site permissions (capability × origin grants) ---
 
 const PERMISSIONS_KEY = 'wb_permissions';
-const GATE_KEY = 'askBeforeConsequentialActions';
 
-async function initPermissionGateToggle() {
-  const toggle = document.getElementById('toggle-permission-gate');
+// The permission MODE: how much the agent may do without asking, from `manual`
+// (a card before every consequential action) to `bypass` (the old master
+// switch turned off). The ladder lives in src/agent/permission-mode.js — this
+// page only renders it, so Settings and the side panel cannot disagree.
+function renderPermissionModeSelection(mode) {
+  const select = document.getElementById('select-permission-mode');
+  const desc = document.getElementById('permission-mode-desc');
   const warning = document.getElementById('permission-gate-warning');
-  if (!toggle) return;
-  const stored = await chrome.storage.local.get(GATE_KEY);
-  const askBefore = stored[GATE_KEY] ?? true; // gate ON by default
-  toggle.checked = askBefore;
-  if (warning) warning.style.display = askBefore ? 'none' : '';
-  toggle.addEventListener('change', async () => {
-    await chrome.storage.local.set({ [GATE_KEY]: toggle.checked });
-    if (warning) warning.style.display = toggle.checked ? 'none' : '';
+  const normalized = normalizePermissionMode(mode);
+  if (select) select.value = normalized;
+  // The description of the SELECTED mode, so the trade-off is readable without
+  // opening the dropdown.
+  if (desc) desc.textContent = t(permissionModeDescKey(normalized));
+  if (warning) {
+    // Two different claims: bypass drops every prompt, while page_actions only
+    // pre-accepts on-page interaction and still gates files and API writes.
+    const wideWarning = permissionModeSkipsAllGates(normalized)
+      ? t('st.perms.gate.warning')
+      : (permissionModeIsWide(normalized) ? t('st.perms.mode.wide_warning') : '');
+    warning.textContent = wideWarning;
+    warning.style.display = wideWarning ? '' : 'none';
+  }
+}
+
+// Option labels come from JS, so a locale change has to rebuild them; the
+// current selection is preserved across the rebuild.
+function renderPermissionModeOptions() {
+  const select = document.getElementById('select-permission-mode');
+  if (!select) return;
+  const current = select.value;
+  select.textContent = '';
+  for (const mode of PERMISSION_MODES) {
+    const option = document.createElement('option');
+    option.value = mode;
+    option.textContent = t(permissionModeLabelKey(mode));
+    select.appendChild(option);
+  }
+  renderPermissionModeSelection(current);
+}
+
+async function initPermissionModeSelect() {
+  const select = document.getElementById('select-permission-mode');
+  if (!select) return;
+  renderPermissionModeOptions();
+  renderPermissionModeSelection(await loadPermissionMode(chrome.storage.local));
+  select.addEventListener('change', async () => {
+    const mode = normalizePermissionMode(select.value);
+    renderPermissionModeSelection(mode);
+    await savePermissionMode(chrome.storage.local, mode);
   });
 }
 
@@ -824,7 +873,7 @@ document.getElementById('btn-clear-all-permissions')?.addEventListener('click', 
   renderPermissions();
 });
 
-// Live-sync the Permissions tab when grants (or the master switch) change
+// Live-sync the Permissions tab when grants (or the permission mode) change
 // elsewhere while this page is open — e.g. the agent records a new "Always
 // allow" grant from the side-panel permission card. Without this the list
 // shows a stale snapshot until a manual refresh.
@@ -832,12 +881,8 @@ if (globalThis.chrome?.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[PERMISSIONS_KEY]) renderPermissions();
-    if (changes[GATE_KEY]) {
-      const toggle = document.getElementById('toggle-permission-gate');
-      const warning = document.getElementById('permission-gate-warning');
-      const askBefore = changes[GATE_KEY].newValue ?? true;
-      if (toggle) toggle.checked = askBefore;
-      if (warning) warning.style.display = askBefore ? 'none' : '';
+    if (changes[PERMISSION_MODE_STORAGE_KEY]) {
+      renderPermissionModeSelection(changes[PERMISSION_MODE_STORAGE_KEY].newValue);
     }
   });
 }

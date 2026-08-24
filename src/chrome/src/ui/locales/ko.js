@@ -1,7 +1,6 @@
 // Korean (ko).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   'sp.message_info.sent': 'sent {time}',
   'sp.message_info.speed': '{rate} tok/sec',
@@ -38,7 +37,6 @@ export default {
   'st.tab.permissions': "권한",
   'st.perms.revoke': "취소",
   'st.perms.clear_all': "모든 권한 지우기",
-  'st.perms.gate.label': "중요한 작업 전에 확인",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain 설치 완료',
@@ -444,8 +442,11 @@ export default {
   "sp.vision.error": "비전 전환에 실패했습니다: {msg}",
   "st.tab.multimodal": "멀티모달",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "권장됩니다. 켜져 있으면 WebBrain이 사이트에서 처음으로 클릭, 입력, 이동, JavaScript 실행, 업로드, 다운로드 또는 녹화할 때 권한을 요청합니다(이후 선택을 기억합니다). 완전히 신뢰하는 사이트에서 확인 없이 빠르게 사용하려면 끄세요.",
+
   "st.perms.gate.warning": "⚠️ 권한 확인이 꺼져 있습니다. WebBrain이 어떤 사이트에서든 — 콘텐츠가 공격자에 의해 조작될 수 있는 페이지를 포함해 — 묻지 않고 클릭, 입력, 이동, JavaScript 실행, 업로드, 다운로드, 녹화를 수행합니다. 페이지 콘텐츠는 내부적으로 여전히 신뢰할 수 없는 것으로 취급되지만, 주입된 지시가 동작을 유발하는 것을 막을 수는 없습니다. 어시스턴트를 사용하는 모든 사이트를 완전히 신뢰하는 경우에만 끈 채로 두세요.",
+  'st.perms.mode.label': '권한 모드',
+  'st.perms.mode.desc': 'WebBrain이 확인 없이 할 수 있는 범위입니다. 한 단계 올릴 때마다 작업 한 종류를 미리 승인합니다. 개별적으로 허용한 사이트는 아래에 표시됩니다.',
+  'st.perms.mode.wide_warning': '⚠️ 양식 제출이 자동으로 허용됩니다. WebBrain이 확인 없이 어떤 사이트에서든 클릭, 입력, 양식 제출, 페이지 스크립트 실행을 합니다. 공격자가 내용을 조작할 수 있는 페이지도 포함됩니다. 다운로드, 업로드, API 쓰기, 작업 예약 전에는 여전히 확인합니다.',
   "st.perms.desc": "WebBrain이 동작하도록 허용한 사이트입니다. 각 항목은 특정 사이트에 부여된 하나의 기능(클릭, 입력, 이동, JavaScript 실행 등)입니다. 더 이상 원하지 않는 항목은 제거하세요 — WebBrain이 다음에 필요할 때 다시 요청합니다.",
   "st.perms.empty": "아직 부여된 사이트 권한이 없습니다. WebBrain은 사이트에서 클릭, 입력, 이동, 업로드, 다운로드, 녹화 또는 코드를 실행하기 전에 묻고, “항상 허용”을 선택하면 여기에 선택을 기억합니다.",
   "st.perms.allowed": "{verb} 허용됨",
@@ -594,6 +595,17 @@ export default {
   'sp.scratchpad.error': '스크래치패드를 사용할 수 없습니다: {msg}',
   'sp.perm.verb.schedule': '미래 작업 예약',
   'sp.perm.verb.window': '브라우저 창 크기 조절',
+  'sp.permmode.open': '권한 모드',
+  'sp.permmode.heading': '권한',
+  'sp.permmode.changed': '권한 모드: {mode}',
+  'sp.permmode.manual': '매번 확인',
+  'sp.permmode.manual.desc': 'WebBrain이 사이트에서 처음 클릭, 입력, 이동, 다운로드, 업로드하거나 작업을 예약할 때 확인합니다.',
+  'sp.permmode.auto': '자동',
+  'sp.permmode.auto.desc': 'WebBrain이 스스로 이동하고 클릭하고 입력합니다. 양식 제출, 다운로드, 업로드, API 쓰기, 작업 예약 전에는 여전히 확인합니다.',
+  'sp.permmode.page_actions': '페이지 작업',
+  'sp.permmode.page_actions.desc': '양식 제출과 페이지 스크립트도 허용합니다. 다운로드, 업로드, API 쓰기, 작업 예약 전에는 여전히 확인합니다.',
+  'sp.permmode.bypass': '권한 확인 건너뛰기',
+  'sp.permmode.bypass.desc': '모든 사이트에서 모든 권한을 허용합니다.',
   'tool.schedule_resume': '재개 예약 중',
   'tool.schedule_task': '작업 예약 중',
   'st.display.scheduled_tasks.label': '예약된 작업',
@@ -628,7 +640,6 @@ export default {
   'sp.compact.failed': '컨텍스트 압축 실패: {error}',
   'tool.inspect_element_styles': '스타일 검사 중',
   'tool.read_page_source': '페이지 소스 읽는 중',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': '스킬',
@@ -973,7 +984,7 @@ export default {
   "sp.import_config.done": "설정 값 {count}개를 가져왔습니다. 공급자 키와 구성이 활성화되었습니다.",
   "sp.import_config.error": "구성을 가져올 수 없습니다: {error}",
   "sp.input.placeholder_tip.skip_permissions": "권한 확인 없는 모드: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "방해를 줄이고 싶으신가요? “항상 허용”은 이 사이트를 기억합니다. 아래 명령은 모든 사이트에서 WebBrain 권한 확인을 끕니다.",
+  'sp.perm.skip_hint': '방해를 줄이고 싶나요? “항상 허용”은 이 사이트를 기억하고, 입력창 위의 권한 모드는 작업 묶음을 미리 승인할 수 있습니다. 아래 명령은 모든 사이트에서 WebBrain 권한 확인을 끕니다.',
   "sp.perm.insert_skip_command": "/dangerously-skip-permissions 입력",
   "sp.perm.skip_hint_draft": "초안은 변경되지 않았습니다. 명령을 입력하기 전에 비워 주세요.",
   "ob.act.permissions_tip": "권한 확인은 기본적으로 켜져 있습니다. 고급 사용자는 /dangerously-skip-permissions로 모든 사이트의 확인을 끄고 설정 → 권한에서 다시 켤 수 있습니다.",

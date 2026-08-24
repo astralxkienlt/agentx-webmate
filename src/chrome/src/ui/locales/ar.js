@@ -1,7 +1,6 @@
 // Arabic (ar).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   'sp.message_info.sent': 'sent {time}',
   'sp.message_info.speed': '{rate} tok/sec',
@@ -38,7 +37,6 @@ export default {
   'st.tab.permissions': "الأذونات",
   'st.perms.revoke': "إلغاء",
   'st.perms.clear_all': "مسح كل الأذونات",
-  'st.perms.gate.label': "السؤال قبل الإجراءات المهمة",
 
   'brand': 'WebBrain',
   'install.page_title': 'تم تثبيت WebBrain',
@@ -444,8 +442,11 @@ export default {
   "sp.vision.error": "فشل تبديل وضع الرؤية: {msg}",
   "st.tab.multimodal": "متعدّد الوسائط",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "موصى به. عند تفعيله، يطلب WebBrain الإذن في أول مرّة ينقر فيها أو يكتب أو يتنقّل أو يُشغّل JavaScript أو يرفع أو يُنزّل أو يُسجّل على موقع (ثم يتذكّر اختيارك). عطّله للاستخدام السريع دون مطالبات على المواقع التي تثق بها تمامًا.",
+
   "st.perms.gate.warning": "⚠️ مطالبات الأذونات مُعطّلة. سينقر WebBrain ويكتب ويتنقّل ويُشغّل JavaScript ويرفع ويُنزّل ويُسجّل على أي موقع دون أن يسأل — بما في ذلك على الصفحات التي قد يتحكّم في محتواها مهاجم. لا يزال محتوى الصفحة يُعامَل داخليًا كغير موثوق، لكن لا شيء سيمنع تعليمة محقونة من تشغيل إجراء. لا تُبقِ هذا معطّلًا إلا إذا كنت تثق تمامًا بكل موقع تستخدم المساعد عليه.",
+  'st.perms.mode.label': 'وضع الأذونات',
+  'st.perms.mode.desc': 'مقدار ما يمكن لـ WebBrain فعله دون سؤال. كل درجة أعلى تمنح مسبقًا فئة إجراءات إضافية، والمواقع التي سمحت لها واحدًا واحدًا مدرجة أدناه.',
+  'st.perms.mode.wide_warning': '⚠️ يتم قبول إرسال النماذج تلقائيًا. سينقر WebBrain ويكتب ويرسل النماذج وينفّذ نصوص الصفحة على أي موقع دون سؤال — بما في ذلك صفحات قد يتحكم مهاجم في محتواها. ولا يزال يسأل قبل التنزيل والرفع والكتابة عبر واجهة برمجية والعمل المجدول.',
   "st.perms.desc": "المواقع التي سمحت لـ WebBrain بالتصرّف عليها. كل إدخال هو قدرة واحدة (نقر، كتابة، تنقّل، تشغيل JavaScript، إلخ) ممنوحة لموقع محدّد. أزل أي قدرة لم تعد تريدها — وسيسأل WebBrain مجدّدًا في المرّة القادمة التي يحتاجها فيها.",
   "st.perms.empty": "لم تُمنح أي أذونات لمواقع بعد. يسأل WebBrain قبل أن ينقر أو يكتب أو يتنقّل أو يرفع أو يُنزّل أو يُسجّل أو يُشغّل كودًا على موقع، ويتذكّر اختيارك هنا عند اختيارك «السماح دائمًا».",
   "st.perms.allowed": "مسموح له أن {verb}",
@@ -594,6 +595,17 @@ export default {
   'sp.scratchpad.error': 'منطقة المسودة غير متاحة: {msg}',
   'sp.perm.verb.schedule': 'جدولة عمل مستقبلي لـ',
   'sp.perm.verb.window': 'تغيير حجم نافذة المتصفح على',
+  'sp.permmode.open': 'وضع الأذونات',
+  'sp.permmode.heading': 'الأذونات',
+  'sp.permmode.changed': 'وضع الأذونات: {mode}',
+  'sp.permmode.manual': 'اسأل في كل مرة',
+  'sp.permmode.manual.desc': 'يسأل WebBrain في أول مرة ينقر أو يكتب أو ينتقل أو ينزّل أو يرفع ملفًا أو يجدول عملًا على موقع.',
+  'sp.permmode.auto': 'تلقائي',
+  'sp.permmode.auto.desc': 'ينتقل WebBrain وينقر ويكتب من تلقاء نفسه، ولا يزال يسأل قبل إرسال نموذج أو التنزيل أو الرفع أو الكتابة عبر واجهة برمجية أو جدولة عمل.',
+  'sp.permmode.page_actions': 'إجراءات الصفحة',
+  'sp.permmode.page_actions.desc': 'يُقبل أيضًا إرسال النماذج وتنفيذ نصوص الصفحة، ولا يزال WebBrain يسأل قبل التنزيل أو الرفع أو الكتابة عبر واجهة برمجية أو جدولة عمل.',
+  'sp.permmode.bypass': 'تجاوز الأذونات',
+  'sp.permmode.bypass.desc': 'يقبل كل الأذونات على كل المواقع.',
   'tool.schedule_resume': 'جدولة استئناف',
   'tool.schedule_task': 'جدولة مهمة',
   'st.display.scheduled_tasks.label': 'المهام المجدوَلة',
@@ -628,7 +640,6 @@ export default {
   'sp.compact.failed': 'فشل ضغط السياق: {error}',
   'tool.inspect_element_styles': 'فحص الأنماط',
   'tool.read_page_source': 'قراءة مصدر الصفحة',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'المهارات',
@@ -973,7 +984,7 @@ export default {
   "sp.import_config.done": "تم استيراد {count} من قيم الإعدادات. مفاتيح موفري الخدمة والإعداد مفعّلة الآن.",
   "sp.import_config.error": "تعذر استيراد الإعداد: {error}",
   "sp.input.placeholder_tip.skip_permissions": "وضع بلا مطالبات: /dangerously-skip-permissions",
-  "sp.perm.skip_hint": "هل تريد مقاطعات أقل؟ يتذكر خيار «السماح دائمًا» هذا الموقع. يعطّل الأمر أدناه مطالبات أذونات WebBrain على جميع المواقع.",
+  'sp.perm.skip_hint': 'تريد مقاطعات أقل؟ خيار «السماح دائمًا» يتذكر هذا الموقع، ووضع الأذونات فوق مربع الرسالة يمنح مسبقًا فئات كاملة من الإجراءات. الأمر أدناه يوقف مطالبات أذونات WebBrain على كل المواقع.',
   "sp.perm.insert_skip_command": "إدراج /dangerously-skip-permissions",
   "sp.perm.skip_hint_draft": "لم تتغير مسودتك. امسحها قبل إدراج الأمر.",
   "ob.act.permissions_tip": "تكون مطالبات الأذونات مفعّلة افتراضيًا. يمكن للمستخدمين المتقدمين تعطيلها عالميًا باستخدام /dangerously-skip-permissions وإعادة تفعيلها من الإعدادات ← الأذونات.",

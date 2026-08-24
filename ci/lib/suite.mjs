@@ -124,6 +124,10 @@ export function buildSessionSettings(capsolverApiKey = '', overrides = {}) {
     requestTimeoutMs: 180_000,
     verboseMode: true,
     enableAllPackagedSkills: true,
+    // Unattended runs have nobody to answer a permission card. `permissionMode`
+    // is what the extension reads; the pre-modes boolean rides along so an
+    // older cloud build still applies the same intent.
+    permissionMode: 'bypass',
     askBeforeConsequentialActions: false,
     captchaSolverEnabled: Boolean(capsolverApiKey),
     ...(capsolverApiKey ? { capsolverApiKey } : {}),

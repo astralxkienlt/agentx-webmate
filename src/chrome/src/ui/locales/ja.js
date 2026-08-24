@@ -1,7 +1,6 @@
 // Japanese (ja).
 import chromeWebStoreLocale from './chrome-web-store.mjs';
 
-
 export default {
   'sp.message_info.sent': 'sent {time}',
   'sp.message_info.speed': '{rate} tok/sec',
@@ -38,7 +37,6 @@ export default {
   'st.tab.permissions': "権限",
   'st.perms.revoke': "取り消す",
   'st.perms.clear_all': "すべての権限を消去",
-  'st.perms.gate.label': "重要な操作の前に確認する",
 
   'brand': 'WebBrain',
   'install.page_title': 'WebBrain をインストールしました',
@@ -444,8 +442,11 @@ export default {
   "sp.vision.error": "画像認識の切り替えに失敗しました: {msg}",
   "st.tab.multimodal": "マルチモーダル",
   "st.tab.captcha": "CAPTCHA",
-  "st.perms.gate.desc": "推奨。オンにすると、WebBrain はサイトで初めてクリック・入力・移動・JavaScript の実行・アップロード・ダウンロード・録画を行うときに権限を尋ねます（その後はあなたの選択を記憶します）。完全に信頼できるサイトで、確認なしに素早く使いたい場合はオフにしてください。",
+
   "st.perms.gate.warning": "⚠️ 権限の確認がオフです。WebBrain はあらゆるサイトで確認なしにクリック・入力・移動・JavaScript の実行・アップロード・ダウンロード・録画を行います — 内容が攻撃者に操作されている可能性のあるページでも同様です。ページの内容は内部的には引き続き信頼できないものとして扱われますが、注入された指示が操作を引き起こすのを止めるものは何もありません。アシスタントを使うすべてのサイトを完全に信頼できる場合にのみ、これをオフのままにしてください。",
+  'st.perms.mode.label': '権限モード',
+  'st.perms.mode.desc': 'WebBrain が確認なしに行える範囲です。1 段上げるごとに操作の 1 分類を事前許可します。個別に許可したサイトは下に一覧表示されます。',
+  'st.perms.mode.wide_warning': '⚠️ フォーム送信が自動的に許可されます。WebBrain は確認なしに、どのサイトでもクリック・入力・フォーム送信・ページスクリプト実行を行います（攻撃者が内容を操作できるページも含みます）。ダウンロード、アップロード、API への書き込み、予定登録の前には確認します。',
   "st.perms.desc": "WebBrain に操作を許可したサイトです。各項目は、特定のサイトに付与された 1 つの機能（クリック・入力・移動・JavaScript の実行など）です。不要になったものは削除してください — 次に必要になったとき、WebBrain は改めて確認します。",
   "st.perms.empty": "まだサイトの権限は付与されていません。WebBrain はサイトでクリック・入力・移動・アップロード・ダウンロード・録画・コードの実行を行う前に確認し、「常に許可」を選ぶとここに選択を記憶します。",
   "st.perms.allowed": "{verb}許可済み",
@@ -594,6 +595,17 @@ export default {
   'sp.scratchpad.error': 'スクラッチパッドを取得できませんでした: {msg}',
   'sp.perm.verb.schedule': 'での将来の作業のスケジュールを',
   'sp.perm.verb.window': 'でのブラウザウィンドウのサイズ変更を',
+  'sp.permmode.open': '権限モード',
+  'sp.permmode.heading': '権限',
+  'sp.permmode.changed': '権限モード: {mode}',
+  'sp.permmode.manual': '毎回確認する',
+  'sp.permmode.manual.desc': 'WebBrain がサイト上で初めてクリック・入力・移動・ダウンロード・アップロード・予定登録を行うときに確認します。',
+  'sp.permmode.auto': '自動',
+  'sp.permmode.auto.desc': 'WebBrain が自分で移動・クリック・入力します。フォーム送信、ダウンロード、アップロード、API への書き込み、予定登録の前には確認します。',
+  'sp.permmode.page_actions': 'ページ操作',
+  'sp.permmode.page_actions.desc': 'フォーム送信とページスクリプトも許可します。ダウンロード、アップロード、API への書き込み、予定登録の前には確認します。',
+  'sp.permmode.bypass': '権限確認をスキップ',
+  'sp.permmode.bypass.desc': 'すべてのサイトで、すべての権限を許可します。',
   'tool.schedule_resume': '再開をスケジュール中',
   'tool.schedule_task': 'タスクをスケジュール中',
   'st.display.scheduled_tasks.label': 'スケジュールタスク',
@@ -628,7 +640,6 @@ export default {
   'sp.compact.failed': 'コンテキストのコンパクト化に失敗しました: {error}',
   'tool.inspect_element_styles': 'スタイルを検査中',
   'tool.read_page_source': 'ページソースを読み込み中',
-
 
   // --- Missing translations added by translation script ---
   'st.tab.skills': 'スキル',
@@ -973,7 +984,7 @@ export default {
   "sp.import_config.done": "{count} 件の設定値をインポートしました。プロバイダーキーと設定は有効です。",
   "sp.import_config.error": "設定をインポートできませんでした: {error}",
   "sp.input.placeholder_tip.skip_permissions": "許可確認なしモード：/dangerously-skip-permissions",
-  "sp.perm.skip_hint": "中断を減らしますか？「常に許可」はこのサイトを記憶します。以下のコマンドは、すべてのサイトで WebBrain の許可確認を無効にします。",
+  'sp.perm.skip_hint': '中断を減らしますか？「常に許可」はこのサイトを記憶し、入力欄の上にある権限モードは操作のまとまりを事前に許可できます。以下のコマンドは、すべてのサイトで WebBrain の許可確認を無効にします。',
   "sp.perm.insert_skip_command": "/dangerously-skip-permissions を入力",
   "sp.perm.skip_hint_draft": "下書きは変更されていません。コマンドを入力する前に消去してください。",
   "ob.act.permissions_tip": "許可確認は既定で有効です。上級ユーザーは /dangerously-skip-permissions ですべてのサイトの確認を無効にし、設定 → 権限から再び有効にできます。",

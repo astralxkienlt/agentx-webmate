@@ -121,6 +121,11 @@ see the [full catalog](docs/providers-and-models.md#extended-provider-catalog).
   elements, via the accessibility tree rather than brittle selectors
 - **Acts on it** — click, type, scroll, navigate, upload, download, and verify
   forms, with per-site permission prompts before consequential actions
+- **Permission modes** — one small control under the composer decides how much
+  runs without asking: ask every time (default), auto-approve reversible on-page
+  actions, also accept form submits and page scripts, or bypass everything.
+  Downloads, uploads, outbound requests and scheduled work keep asking in every
+  mode but the last
 - **Plan before Act** — Act and Dev can generate a structured plan, show it for
   approval, and pin the approved plan to the scratchpad before any tool runs
 - **Multi-step agent** — autonomous tool-use loop, configurable up to 195 steps

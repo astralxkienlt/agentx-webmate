@@ -118,6 +118,7 @@ The primary threat: a malicious page crafts content that, when read by the agent
 |---|---|
 | **Untrusted-content wrapping** | Page-derived tool results are wrapped in `<untrusted_page_content>` markers (`_wrapUntrusted` + `UNTRUSTED_CONTENT_TOOLS`) so the model treats them as data, not instructions. See [prompt-injection-defense.md](prompt-injection-defense.md). |
 | **Capability × origin gate** | Before a consequential tool runs (click/type/navigate/execute_js/network/download/…), the agent requires a `(capability, host)` grant — Allow once / Always / Deny. Language-agnostic, deterministic, human-in-the-loop (`permission-gate.js`). |
+| **Permission mode** | The standing answer for pairs the user has not been asked about: `manual` (default) asks for every consequential action, `auto` pre-approves reversible on-page interaction while still confirming form submits, `page_actions` adds submits and `execute_js`, `bypass` accepts everything (`permission-mode.js`). The mode is set only by the user — the composer chip, Settings → Permissions, or `/dangerously-skip-permissions` — and never inferred from page content or model output. An explicit "Don't allow" outranks every mode except `bypass`, a mode decision is never recorded as a grant (so a stricter mode restores the prompts at once), and a mandatory gate such as a WebMCP invocation still asks in every mode. Downloads, uploads, outbound requests and scheduled work stay behind a card in all but `bypass`. |
 | **Tool result cap** | Individual tool results truncated at 8,000 chars (`_limitToolResult`). Injected text beyond that is silently dropped. |
 | **Ask/Act/Dev mode** | Ask mode exposes only semantic read-only tools. The user must explicitly switch to an action mode for clicks/types/navigation. Act exposes the selected provider tier's normal tools. Dev requires Mid/Full tier and adds source/style/page-inspection tools for developer debugging. |
 | **Tiered tool exposure** | Provider tiers (`compact | mid | full`) limit the normal browser-agent surface for smaller models. Compact gets the smallest action surface; Mid adds common task tools; Full adds advanced UI/DOM fallbacks. Compact Dev is blocked. |
@@ -221,9 +222,10 @@ Firefox has no CDP (`debugger` permission), so:
 - No slash-driven tab/screen recording (Chrome's capture APIs and `recorder/` are absent)
 - No duplicate-submit guard (the timestamp Map is declared but unwired)
 
-Everything else — the permission gate, untrusted-content wrapping, credential
-detection, loop detection, adapter system, and the **trace recorder** (it ships
-identically in `src/firefox/src/trace/recorder.js`) — is the same.
+Everything else — the permission gate and its mode ladder, untrusted-content
+wrapping, credential detection, loop detection, adapter system, and the
+**trace recorder** (it ships identically in `src/firefox/src/trace/recorder.js`)
+— is the same.
 
 ---
 

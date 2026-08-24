@@ -34,6 +34,7 @@ This doc covers the shared architecture and calls out where the builds diverge.
 │         ├─ planner.js — Plan-before-Act JSON planner │
 │         ├─ adapters.js— per-site guidance            │
 │         ├─ permission-gate.js — capability grants     │
+│         ├─ permission-mode.js — standing ask-ladder  │
 │         ├─ credential-fields.js — secret detection   │
 │         ├─ rich-text-toolbar-guard.js — obligations  │
 │         ├─ rich-text-toolbar-probe.js — page probes  │

@@ -10,6 +10,14 @@ import {
   USER_MEMORY_MAX_PROMPT_CHARS_KEY,
   USER_MEMORY_STORAGE_KEY,
 } from './agent/user-memory.js';
+import {
+  DEFAULT_PERMISSION_MODE,
+  LEGACY_PERMISSION_GATE_KEY,
+  PERMISSION_MODE_STORAGE_KEY,
+  legacyGateValueForMode,
+  normalizePermissionMode,
+  permissionModeFromLegacyGate,
+} from './agent/permission-mode.js';
 import { AUTO_GROUP_TABS_KEY } from './tab-group-preference.js';
 
 export const CONFIG_SCHEMA = 'webbrain-config/1';
@@ -50,7 +58,13 @@ export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
   scheduledRequireConsequentialConfirmation: true,
   providerFilter: 'all',
   screenshotRedaction: false,
-  askBeforeConsequentialActions: true,
+  [PERMISSION_MODE_STORAGE_KEY]: DEFAULT_PERMISSION_MODE,
+  // Kept in the snapshot purely as the pre-modes MIRROR of permissionMode, so
+  // a file written here still lands correctly in a build that predates modes
+  // (and a file written there still imports here). reconcilePermissionMode
+  // below keeps the two from ever disagreeing; runtime code reads only
+  // permissionMode.
+  [LEGACY_PERMISSION_GATE_KEY]: true,
   wb_permissions: [],
   providers: {},
   activeProvider: 'webbrain_cloud',
@@ -94,7 +108,7 @@ const BOOLEAN_KEYS = new Set([
   'scheduledTasksEnabled',
   'scheduledRequireConsequentialConfirmation',
   'screenshotRedaction',
-  'askBeforeConsequentialActions',
+  LEGACY_PERMISSION_GATE_KEY,
   'profileEnabled',
   USER_MEMORY_ENABLED_KEY,
   USER_MEMORY_AUTO_CAPTURE_KEY,
@@ -111,6 +125,7 @@ const NUMBER_KEYS = new Set([
 ]);
 const STRING_KEYS = new Set([
   'wbLocale',
+  PERMISSION_MODE_STORAGE_KEY,
   'themeMode',
   'autoScreenshot',
   'planBeforeActMode',
@@ -162,6 +177,25 @@ function validSettingValue(key, value) {
   return true;
 }
 
+/**
+ * Settle permissionMode against its legacy mirror. An export written by a
+ * build that predates modes carries only the boolean, so honour it; anything
+ * carrying the mode lets the mode win. The mirror is then always rewritten
+ * FROM the resolved mode, so the two can never travel in disagreement.
+ */
+function reconcilePermissionMode(settings, source) {
+  const hasMode = isPlainObject(source) && Object.hasOwn(source, PERMISSION_MODE_STORAGE_KEY)
+    && typeof source[PERMISSION_MODE_STORAGE_KEY] === 'string';
+  const mode = hasMode
+    ? normalizePermissionMode(source[PERMISSION_MODE_STORAGE_KEY])
+    : permissionModeFromLegacyGate(
+      isPlainObject(source) ? source[LEGACY_PERMISSION_GATE_KEY] : undefined,
+    );
+  settings[PERMISSION_MODE_STORAGE_KEY] = mode;
+  settings[LEGACY_PERMISSION_GATE_KEY] = legacyGateValueForMode(mode);
+  return settings;
+}
+
 function normalizeSettings(source, { strict = false } = {}) {
   const settings = clone(DEFAULT_CONFIG_SETTINGS);
   if (!isPlainObject(source)) {
@@ -179,7 +213,7 @@ function normalizeSettings(source, { strict = false } = {}) {
     settings[key] = clone(value);
   }
   settings.providers = sanitizeProviders(settings.providers, { strict });
-  return settings;
+  return reconcilePermissionMode(settings, source);
 }
 
 export function createConfigExport(stored = {}, options = {}) {
@@ -252,6 +286,16 @@ export function parseConfigPatchImport(json) {
     settings[key] = key === 'providers'
       ? sanitizeProviders(value, { strict: true })
       : clone(value);
+  }
+  // A PATCH is sparse, so reconcilePermissionMode's full-snapshot logic does
+  // not apply. Two fixes are still needed here: normalize an explicit mode,
+  // and derive one from a patch that carries only the pre-modes boolean —
+  // runtime code reads permissionMode, so such a patch would otherwise be
+  // silently ignored on any install that already migrated.
+  if (typeof settings[PERMISSION_MODE_STORAGE_KEY] === 'string') {
+    settings[PERMISSION_MODE_STORAGE_KEY] = normalizePermissionMode(settings[PERMISSION_MODE_STORAGE_KEY]);
+  } else if (Object.hasOwn(settings, LEGACY_PERMISSION_GATE_KEY)) {
+    settings[PERMISSION_MODE_STORAGE_KEY] = permissionModeFromLegacyGate(settings[LEGACY_PERMISSION_GATE_KEY]);
   }
   return {
     settings,
