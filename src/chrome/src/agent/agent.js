@@ -181,6 +181,11 @@ function savedWorkflowProtectedMessagingStepIndex(workflow, startUrl = '') {
 // that intentional gap keeps model scoring conservative without over-pausing.
 const PLAN_REVIEW_CONFIDENCE_DEFAULT = 0.75;
 const DONE_OUTCOMES = new Set(['success', 'partial', 'failed']);
+// How many consecutive times a runtime block may reject the same plain final
+// answer before the run fails closed. See _plainFinalBlockDecision. Set
+// generously: two extra blocked turns cost far less than cutting off a model
+// that was one nudge away from finishing properly.
+const PLAIN_FINAL_BLOCK_BUDGET = 5;
 const LOCAL_CANCELLATION_ASSISTANT_RE = /^\[?Stopped by user(?: before (?:the run started|executing requested tool calls))?\.?\]?$/;
 // Appended to the system prompt of every selection-grounded model request.
 // The scope hides the page and disables tools, so the model must explain the
@@ -696,6 +701,7 @@ export class Agent extends LoopDetector {
     // on every executeTool call within a turn.
     this._isPdfTabCache = new Map(); // tabId -> { url, isPdf }
     this._doneBlockCount = new Map(); // tabId -> consecutive done-blocks
+    this._plainFinalBlockGuards = new Map(); // tabId -> { signature, attempts } for rejected plain finals
     this._completionSubmitStates = new Map(); // tabId -> trusted submit transition metadata
     this._recentSubmitClicks = new Map(); // tabId -> recent submit click timestamps
     this._formValidationBlocks = new Map(); // tabId -> validation state that must change before another submit
@@ -722,6 +728,7 @@ export class Agent extends LoopDetector {
     this.completionInvariants.set(tabId, createCompletionInvariantState(token));
     this._completionSubmitStates.delete(tabId);
     this._doneBlockCount.delete(tabId);
+    this._plainFinalBlockGuards.delete(tabId);
     return token;
   }
 
@@ -730,6 +737,7 @@ export class Agent extends LoopDetector {
     if (!state) return;
     if (runToken && state.runToken !== runToken) return;
     this.completionInvariants.delete(tabId);
+    this._plainFinalBlockGuards.delete(tabId);
   }
 
   async _beginReadCompleteness(tabId, userMessage, runOptions = {}) {
@@ -13690,6 +13698,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._lastInteractionRect.delete(tabId);
     this._clarificationAuthorizationGuards.delete(tabId);
     this._doneBlockCount.delete(tabId);
+    this._plainFinalBlockGuards.delete(tabId);
     this._completionSubmitStates.delete(tabId);
     this._recentSubmitClicks.delete(tabId);
     this._formValidationBlocks.delete(tabId);
@@ -15965,6 +15974,76 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       : `Agent hit consecutive stalled outputs; scheduled a resume for ${result.scheduledAt}.`;
     onUpdate('warning', { message });
     return { ...result, message };
+  }
+
+  /**
+   * Bounded continuation for the runtime blocks that reject a plain final
+   * answer: the progress ledger, the completion invariant, and read
+   * completeness.
+   *
+   * Each block is individually recoverable — the model discharges the
+   * obligation and then finishes properly. But completionPlainFinalBlock only
+   * tests hadAction, so once a run has performed any action it re-fires on
+   * every turn until an explicit done arrives. A model that answers in prose
+   * instead of calling done therefore re-triggers the identical block forever,
+   * and because this check runs ahead of _planOnlyTerminalDecision it also
+   * shadows that guard's own one-shot recovery. With the step limit set to the
+   * "unlimited" sentinel nothing else bounds the run.
+   *
+   * The attempt counter keys on the block text rather than counting turns, so
+   * a model that is genuinely working through its obligations (each attempt
+   * produces a different block — resolved ledger rows, newly covered pages)
+   * keeps its full allowance, while one repeating the identical block fails
+   * closed after PLAIN_FINAL_BLOCK_BUDGET attempts.
+   *
+   * Returns null when nothing blocks the final answer, { retry, nudge,
+   * warning, clearRenderedText } while the budget lasts, and
+   * { failure, status } once it is spent. Only the streaming loop acts on
+   * clearRenderedText — the non-streaming loop has not emitted the rejected
+   * text yet, so clearing there would just push an empty bubble at the user.
+   */
+  _plainFinalBlockDecision(tabId) {
+    const progressFinalBlock = this._plainFinalProgressBlock(tabId);
+    const completionFinalBlock = this._completionPlainFinalBlock(tabId);
+    const readFinalBlock = this._readCompletenessBlock(tabId);
+    const blocks = [progressFinalBlock, completionFinalBlock, readFinalBlock].filter(Boolean);
+    if (!blocks.length) {
+      this._plainFinalBlockGuards.delete(tabId);
+      return null;
+    }
+    // Key on the base block text, never on the emitted nudge: the final-attempt
+    // escalation below changes the nudge, and counting that as a new obligation
+    // would hand the model a fresh budget on every turn.
+    const signature = blocks.join('\n\n');
+    const previous = this._plainFinalBlockGuards.get(tabId);
+    const attempts = previous?.signature === signature ? previous.attempts + 1 : 1;
+    this._plainFinalBlockGuards.set(tabId, { signature, attempts });
+    if (attempts > PLAIN_FINAL_BLOCK_BUDGET) {
+      const reason = readFinalBlock
+        ? 'the requested read scope was never fully covered'
+        : completionFinalBlock
+          ? 'this run performed a consequential action that was never closed with an explicit done outcome'
+          : 'the progress ledger still has unresolved rows';
+      return {
+        failure: `[Agent stopped after ${PLAIN_FINAL_BLOCK_BUDGET} blocked attempts to finish with a plain final answer: ${reason}. Page changes already made were not rolled back, so check the page before retrying. A stronger model, or a smaller task, is more likely to complete this protocol.]`,
+        status: 'plain_final_blocked',
+      };
+    }
+    return {
+      retry: true,
+      // Spend the last chance well: tell the model plainly that this turn is
+      // its final one, so a stop is never the first thing it hears about the
+      // deadline.
+      nudge: attempts < PLAIN_FINAL_BLOCK_BUDGET
+        ? signature
+        : `${signature}\n\n[FINAL ATTEMPT: This is the last turn before the run stops. Resolve the obligation above and call done with an explicit outcome now. If you cannot, call done with outcome="partial" or outcome="failed" and say what is missing.]`,
+      warning: readFinalBlock
+        ? 'Whole-thread answer blocked until every read page is covered.'
+        : completionFinalBlock
+          ? 'Runtime completion invariant requires an explicit done outcome.'
+          : 'Progress ledger has unresolved rows; continuing.',
+      clearRenderedText: !!(completionFinalBlock || readFinalBlock),
+    };
   }
 
   _plainFinalProgressBlock(tabId) {
@@ -26281,20 +26360,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         await this._persistNow(tabId);
         return finalResponse;
       }
-      const progressFinalBlock = this._plainFinalProgressBlock(tabId);
-      const completionFinalBlock = this._completionPlainFinalBlock(tabId);
-      const readFinalBlock = this._readCompletenessBlock(tabId);
-      const plainFinalBlocks = [progressFinalBlock, completionFinalBlock, readFinalBlock].filter(Boolean);
-      if (plainFinalBlocks.length) {
+      const plainFinalDecision = this._plainFinalBlockDecision(tabId);
+      if (plainFinalDecision?.retry) {
         messages.push(this._withResponseItems({ role: 'assistant', content: result.content }, result.responseItems, result.reasoningContent, provider));
-        messages.push({ role: 'user', content: plainFinalBlocks.join('\n\n') });
-        onUpdate('warning', { message: readFinalBlock
-          ? 'Whole-thread answer blocked until every read page is covered.'
-          : completionFinalBlock
-            ? 'Runtime completion invariant requires an explicit done outcome.'
-            : 'Progress ledger has unresolved rows; continuing.' });
+        messages.push({ role: 'user', content: plainFinalDecision.nudge });
+        onUpdate('warning', { message: plainFinalDecision.warning });
         this._persist(tabId);
         continue;
+      }
+      if (plainFinalDecision?.failure) {
+        finalResponse = plainFinalDecision.failure;
+        _traceStatus = plainFinalDecision.status;
+        messages.push({ role: 'assistant', content: finalResponse });
+        onUpdate('warning', { message: finalResponse });
+        break;
       }
       const planOnlyDecision = this._planOnlyTerminalDecision(tabId, result.content);
       if (planOnlyDecision?.retry) {
@@ -26906,21 +26985,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         // Preserve the progress ledger's purpose-built continuation before
         // treating other plain terminal text as unverified.
-        const progressFinalBlock = this._plainFinalProgressBlock(tabId);
-        const completionFinalBlock = this._completionPlainFinalBlock(tabId);
-        const readFinalBlock = this._readCompletenessBlock(tabId);
-        const plainFinalBlocks = [progressFinalBlock, completionFinalBlock, readFinalBlock].filter(Boolean);
-        if (plainFinalBlocks.length) {
+        const plainFinalDecision = this._plainFinalBlockDecision(tabId);
+        if (plainFinalDecision?.retry) {
           messages.push(this._withResponseItems({ role: 'assistant', content: fullText }, responseItems, reasoningContent, provider));
-          messages.push({ role: 'user', content: plainFinalBlocks.join('\n\n') });
-          if (completionFinalBlock || readFinalBlock) onUpdate('text', { content: '', replace: true });
-          onUpdate('warning', { message: readFinalBlock
-            ? 'Whole-thread answer blocked until every read page is covered.'
-            : completionFinalBlock
-              ? 'Runtime completion invariant requires an explicit done outcome.'
-              : 'Progress ledger has unresolved rows; continuing.' });
+          messages.push({ role: 'user', content: plainFinalDecision.nudge });
+          if (plainFinalDecision.clearRenderedText) onUpdate('text', { content: '', replace: true });
+          onUpdate('warning', { message: plainFinalDecision.warning });
           this._persist(tabId);
           continue;
+        }
+        if (plainFinalDecision?.failure) {
+          messages.push({ role: 'assistant', content: plainFinalDecision.failure });
+          // Replace any plain final already emitted as streaming deltas so the
+          // visible terminal content matches the failed run result.
+          onUpdate('text', { content: plainFinalDecision.failure, replace: true });
+          onUpdate('warning', { message: plainFinalDecision.failure });
+          this._persist(tabId);
+          return finish(plainFinalDecision.failure, plainFinalDecision.status);
         }
         const planOnlyDecision = this._planOnlyTerminalDecision(tabId, fullText);
         if (planOnlyDecision?.retry) {
