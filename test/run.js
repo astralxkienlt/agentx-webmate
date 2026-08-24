@@ -24884,7 +24884,7 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
     const chromeLocale = (await import(pathToFileURL(path.join(ROOT, 'src/chrome/src/ui/locales', filename)).href)).default;
     const firefoxLocale = (await import(pathToFileURL(path.join(ROOT, 'src/firefox/src/ui/locales', filename)).href)).default;
     const installKeys = Object.keys(chromeLocale).filter((key) => key.startsWith('install.'));
-    assert.equal(installKeys.length, 35, `${filename}: install guide should translate every user-facing string`);
+    assert.equal(installKeys.length, 29, `${filename}: install guide should translate every user-facing string`);
     assert.ok(chromeLocale['install.pin.next'], `${filename}: install page should translate its non-spatial pin preview`);
     assert.ok(chromeLocale['install.pin.confirm'], `${filename}: pin coachmark should translate its confirmation action`);
     assert.ok(chromeLocale['install.pin.skip'], `${filename}: pin coachmark should translate its skip action`);

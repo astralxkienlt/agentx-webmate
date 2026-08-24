@@ -862,6 +862,8 @@ export default {
   "hist.confirm_delete": "Xóa cuộc trò chuyện đã lưu này?",
   "hist.confirm_clear_all": "Xóa TẤT CẢ cuộc trò chuyện đã lưu? Việc này không hoàn tác được.",
   "tr.title": "Nhật ký chạy WebBrain",
+  'tr.lossless.badge': 'Sensitive debug tier',
+  'tr.lossless.warning': 'This run contains full request content. Review it for secrets before exporting or sharing.',
   "tr.runs": "{n} lần chạy",
   "tr.run": "{n} lần chạy",
   "tr.btn.refresh": "↻ Làm mới",
