@@ -4,6 +4,11 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [Unreleased]
+
+### Fixed
+- **Loading the social-media downloader twice into one page no longer throws.** The v4 auto-arm block left a top-level `const` after the library's IIFE, so the second evaluation in the same main-world realm — the `document_start` content script plus the injection every `download_social_media` call performs, or two tool runs on one tab — died at parse time with `Identifier '_SMD_MSE_AUTOARM_HOSTS' has already been declared`, an uncaught SyntaxError logged on every supported social host. The block now lives in its own IIFE, so a re-evaluation cleanly replaces `window.SocialMediaDownloader` (the refresh that un-stales an old copy after an extension update), and a regression test evaluates the file twice in one realm to keep it that way.
+
 ## [0.1.16] - 2026-08-25
 
 ### Added
