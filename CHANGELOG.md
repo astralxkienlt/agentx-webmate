@@ -6,6 +6,9 @@ This changelog was generated from the repository Git history and release tags. V
 
 ## [Unreleased]
 
+### Fixed
+- **Loading the social-media downloader twice into one page no longer throws.** The v4 auto-arm block left a top-level `const` after the library's IIFE, so the second evaluation in the same main-world realm — the `document_start` content script plus the injection every `download_social_media` call performs, or two tool runs on one tab — died at parse time with `Identifier '_SMD_MSE_AUTOARM_HOSTS' has already been declared`, an uncaught SyntaxError logged on every supported social host. The block now lives in its own IIFE, so a re-evaluation cleanly replaces `window.SocialMediaDownloader` (the refresh that un-stales an old copy after an extension update), and a regression test evaluates the file twice in one realm to keep it that way.
+
 ## [1.0.2] - 2026-08-25
 
 ### Added
