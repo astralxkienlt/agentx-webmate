@@ -1814,13 +1814,19 @@ window.SocialMediaDownloader = (() => {
 // when SMD is registered as a content_script at document_start: patches
 // are installed before the page's player ever calls addSourceBuffer,
 // so the init segment is captured and saveMse() produces playable bytes.
-const _SMD_MSE_AUTOARM_HOSTS =
-  /(?:^|\.)(?:facebook|fb|instagram|x|twitter|linkedin|reddit|youtube)\.com$|(?:^|\.)youtu\.be$/i;
-try {
-  if (_SMD_MSE_AUTOARM_HOSTS.test(location.hostname)) {
-    SocialMediaDownloader.armMseRecorder();
-  }
-} catch (_) { /* never block on auto-arm */ }
+// Scoped in an IIFE: this file is evaluated repeatedly in the SAME
+// main-world realm (document_start content_script + executeScript on
+// every download_social_media call), so a top-level const/let here makes
+// the second evaluation throw "already been declared" at parse time.
+(() => {
+  const _SMD_MSE_AUTOARM_HOSTS =
+    /(?:^|\.)(?:facebook|fb|instagram|x|twitter|linkedin|reddit|youtube)\.com$|(?:^|\.)youtu\.be$/i;
+  try {
+    if (_SMD_MSE_AUTOARM_HOSTS.test(location.hostname)) {
+      SocialMediaDownloader.armMseRecorder();
+    }
+  } catch (_) { /* never block on auto-arm */ }
+})();
 
 // Log once per realm. Re-injection on the same page (which happens every
 // time the chrome extension calls the download_social_media tool) used
