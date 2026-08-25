@@ -325,6 +325,9 @@ export class ProviderManager {
       );
     });
     const hadLegacyClaudeSubscription = Object.hasOwn(storedProviders, 'claude_subscription');
+    // Detect migrations against what storage actually holds, so dropping a
+    // corrupted entry also rewrites the cleaned snapshot.
+    const rawStoredProviders = data.providers || {};
     const stored = this._migrateStoredProviderConfigs(storedProviders);
     const legacyActiveProviderId = ['webbrain', 'openai_subscription'].includes(data.activeProvider)
       ? WEBBRAIN_CLOUD_PROVIDER_ID
@@ -334,7 +337,9 @@ export class ProviderManager {
     // without dropping keys that don't exist in stored.
     const defaults = this._defaultConfigs();
     const configs = {};
-    let providerStateMigrated = ollamaVisionConfigMigrated || genericVisionConfigMigrated;
+    let providerStateMigrated = ollamaVisionConfigMigrated
+      || genericVisionConfigMigrated
+      || this._storedProviderConfigsChanged(rawStoredProviders, stored);
     for (const [id, config] of Object.entries(defaults)) {
       const storedConfig = stored[id];
       const hasConfiguredMarker = !!storedConfig && Object.hasOwn(storedConfig, 'configured');
@@ -981,6 +986,7 @@ export class ProviderManager {
 
   _migrateUntouchedShippedDefaults(migrated) {
     const defaults = this._defaultConfigs();
+    let changed = false;
     for (const { id, fromModel, fromCosts, fromContextWindow } of UNTOUCHED_DEFAULT_MIGRATIONS) {
       const stored = migrated[id];
       const next = defaults[id];
@@ -989,7 +995,19 @@ export class ProviderManager {
         applyCosts: !!fromCosts,
         fromContextWindow,
       });
+      changed = true;
     }
+    return changed;
+  }
+
+  _storedProviderConfigsChanged(before, after) {
+    const previous = before && typeof before === 'object' ? before : {};
+    const next = after && typeof after === 'object' ? after : {};
+    const ids = new Set([...Object.keys(previous), ...Object.keys(next)]);
+    for (const id of ids) {
+      if (previous[id] !== next[id]) return true;
+    }
+    return false;
   }
 
   _storedDefaultOverride(defaultConfig, storedConfig) {
