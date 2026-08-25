@@ -313,10 +313,36 @@
 
     <!-- Input Area -->
     <div id="input-area">
+      <!-- Labels live in inner spans (not on the buttons) because
+           applyDOMTranslations writes textContent, which would erase the
+           mode icons on every locale pass. -->
       <div id="mode-toggle">
-        <button id="btn-mode-ask" class="mode-btn active" data-i18n="sp.mode.ask" data-i18n-title="sp.mode.ask.title"></button>
-        <button id="btn-mode-act" class="mode-btn" data-i18n="sp.mode.act" data-i18n-title="sp.mode.act.title"></button>
-        <button id="btn-mode-dev" class="mode-btn" data-i18n="sp.mode.dev" data-i18n-title="sp.mode.dev.title"></button>
+        <button id="btn-mode-ask" class="mode-btn active" aria-pressed="true" data-i18n-title="sp.mode.ask.title">
+          <svg class="mode-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <path d="M12 17h.01"/>
+          </svg>
+          <span class="mode-btn-label" data-i18n="sp.mode.ask"></span>
+        </button>
+        <button id="btn-mode-act" class="mode-btn" aria-pressed="false" data-i18n-title="sp.mode.act.title">
+          <svg class="mode-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 4.1 12 6"/>
+            <path d="m5.1 8-2.9-.8"/>
+            <path d="m6 12-1.9 2"/>
+            <path d="M7.2 2.2 8 5.1"/>
+            <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>
+          </svg>
+          <span class="mode-btn-label" data-i18n="sp.mode.act"></span>
+        </button>
+        <button id="btn-mode-dev" class="mode-btn" aria-pressed="false" data-i18n-title="sp.mode.dev.title">
+          <svg class="mode-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m18 16 4-4-4-4"/>
+            <path d="m6 8-4 4 4 4"/>
+            <path d="m14.5 4-5 16"/>
+          </svg>
+          <span class="mode-btn-label" data-i18n="sp.mode.dev"></span>
+        </button>
       </div>
       <div id="queued-messages" class="queued-messages hidden" role="list" aria-live="polite"></div>
       <div id="slash-command-menu" class="slash-command-menu hidden" role="listbox" data-i18n-aria-label="sp.slash.commands_label"></div>
@@ -362,8 +388,15 @@
         <button id="btn-permission-mode" class="permission-mode-chip" type="button"
                 aria-haspopup="menu" aria-expanded="false" aria-controls="permission-mode-menu"
                 data-i18n-title="sp.permmode.open" data-i18n-aria-label="sp.permmode.open">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <!-- Two icons, CSS-swapped on data-mode: an intact shield for the
+               graded modes, a struck-through one while bypass is standing. -->
+          <svg class="permission-mode-icon-guard" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <svg class="permission-mode-icon-off" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19.7 14a6.9 6.9 0 0 0 .3-2V5l-8-3-3.2 1.2"/>
+            <path d="M4.7 4.7 4 5v7c0 6 8 10 8 10a20.3 20.3 0 0 0 5.6-4.3"/>
+            <path d="m2 2 20 20"/>
           </svg>
           <span id="permission-mode-chip-label" class="permission-mode-chip-label"></span>
           <svg class="permission-mode-chip-caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
