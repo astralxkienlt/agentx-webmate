@@ -576,7 +576,7 @@ export default {
   'st.display.cloud_bridge.label': 'پل ابری',
   'st.display.cloud_bridge.desc': 'یک کنترل‌کننده محلی را به این نمایه Chromium متصل کنید. برای سرویس‌گیرنده‌های MCP از درگاه 17374، برای افزونه LM Studio از 17375 یا برای یک سرویس اجرای ابری از 17373 استفاده کنید. فقط یک پل می‌تواند فعال باشد؛ درخواست‌های معمول مجوز همچنان اعمال می‌شوند.',
   'st.display.cloud_bridge.url_label': 'نشانی WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'از یک نشانی محلی ws:// با 127.0.0.1، localhost یا ::1 استفاده کنید.',
   'st.display.cloud_bridge.status_disabled': 'پل غیرفعال است',
   'st.display.cloud_bridge.status_connecting': 'در حال اتصال…',

@@ -796,7 +796,7 @@ export default {
   'st.display.cloud_bridge.label': '클라우드 브리지',
   'st.display.cloud_bridge.desc': '로컬 컨트롤러 하나를 이 Chromium 프로필에 연결합니다. MCP 클라이언트는 포트 17374, LM Studio 플러그인은 17375, 클라우드 실행 서비스는 17373을 사용하세요. 브리지는 하나만 활성화할 수 있으며 일반 권한 확인은 계속 적용됩니다.',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': '127.0.0.1, localhost 또는 ::1을 사용하는 로컬 ws:// URL을 입력하세요.',
   'st.display.cloud_bridge.status_disabled': '브리지 비활성화됨',
   'st.display.cloud_bridge.status_connecting': '연결 중…',

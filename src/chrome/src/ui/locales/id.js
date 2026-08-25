@@ -796,7 +796,7 @@ export default {
   'st.display.cloud_bridge.label': 'Bridge cloud',
   'st.display.cloud_bridge.desc': 'Hubungkan satu pengontrol lokal ke profil Chromium ini. Gunakan port 17374 untuk klien MCP, 17375 untuk plugin LM Studio, atau 17373 untuk layanan cloud run. Hanya satu bridge yang dapat aktif; permintaan izin normal tetap berlaku.',
   'st.display.cloud_bridge.url_label': 'URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Gunakan URL ws:// lokal dengan 127.0.0.1, localhost, atau ::1.',
   'st.display.cloud_bridge.status_disabled': 'Bridge dinonaktifkan',
   'st.display.cloud_bridge.status_connecting': 'Menghubungkan…',

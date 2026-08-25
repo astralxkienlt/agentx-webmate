@@ -576,7 +576,7 @@ export default {
   'st.display.cloud_bridge.label': 'Cầu nối đám mây',
   'st.display.cloud_bridge.desc': 'Kết nối một bộ điều khiển cục bộ với hồ sơ Chromium này. Dùng cổng 17374 cho ứng dụng MCP, 17375 cho plugin LM Studio hoặc 17373 cho dịch vụ chạy trên đám mây. Chỉ một cầu nối có thể hoạt động; các lời nhắc cấp quyền thông thường vẫn được áp dụng.',
   'st.display.cloud_bridge.url_label': 'URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Hãy dùng URL ws:// cục bộ với 127.0.0.1, localhost hoặc ::1.',
   'st.display.cloud_bridge.status_disabled': 'Cầu nối đã tắt',
   'st.display.cloud_bridge.status_connecting': 'Đang kết nối…',

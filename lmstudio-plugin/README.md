@@ -112,14 +112,16 @@ Firefox, `browser_task` will always return the not-connected response.
 `fetch_url` and `research_url` are unaffected and work everywhere.
 
 1. Install the extension and open your browser.
-2. In **WebBrain → Settings → General → Advanced → Cloud bridge**, set the URL to
-   `ws://127.0.0.1:17375/extension` and enable it.
+2. In **WebBrain → Settings → General → Advanced → Cloud bridge**, change the URL
+   to `ws://127.0.0.1:17375/extension`. The bridge is already enabled — it just
+   ships pointed at the MCP server's port (`17374`), and one socket serves one
+   destination.
 3. Ask the model to call `browser_status` to confirm.
 
 > **One bridge at a time.** The extension holds exactly one outbound bridge
-> socket. Pointing it here means it is *not* pointed at WebBrain Cloud
-> (`17373`) or the MCP server (`17374`). Override the port with
-> `WEBBRAIN_BRIDGE_PORT`.
+> socket, and it ships pointed at the MCP server (`17374`). Pointing it here
+> means it is *not* pointed there or at WebBrain Cloud (`17373`). Override the
+> port with `WEBBRAIN_BRIDGE_PORT`.
 
 Try it:
 

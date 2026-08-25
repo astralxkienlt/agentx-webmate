@@ -576,7 +576,7 @@ export default {
   'st.display.cloud_bridge.label': 'क्लाउड ब्रिज',
   'st.display.cloud_bridge.desc': 'एक स्थानीय कंट्रोलर को इस Chromium प्रोफ़ाइल से कनेक्ट करें। MCP क्लाइंट के लिए पोर्ट 17374, LM Studio प्लगइन के लिए 17375 या क्लाउड रन सेवा के लिए 17373 इस्तेमाल करें। एक समय में केवल एक ब्रिज सक्रिय हो सकता है; सामान्य अनुमति संकेत लागू रहेंगे।',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': '127.0.0.1, localhost या ::1 वाला स्थानीय ws:// URL इस्तेमाल करें।',
   'st.display.cloud_bridge.status_disabled': 'ब्रिज बंद है',
   'st.display.cloud_bridge.status_connecting': 'कनेक्ट हो रहा है…',

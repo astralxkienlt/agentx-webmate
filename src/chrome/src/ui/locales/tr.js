@@ -801,7 +801,7 @@ export default {
   'st.display.cloud_bridge.label': 'Cloud köprüsü',
   'st.display.cloud_bridge.desc': 'Bu Chromium profiline tek bir yerel denetleyici bağlayın. MCP istemcileri için 17374, LM Studio eklentisi için 17375 veya bir bulut çalıştırma servisi için 17373 portunu kullanın. Aynı anda yalnızca bir köprü etkin olabilir; normal izin istemleri geçerliliğini korur.',
   'st.display.cloud_bridge.url_label': 'WebSocket URL’si',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': '127.0.0.1, localhost veya ::1 kullanan yerel bir ws:// URL’si girin.',
   'st.display.cloud_bridge.status_disabled': 'Köprü devre dışı',
   'st.display.cloud_bridge.status_connecting': 'Bağlanıyor…',

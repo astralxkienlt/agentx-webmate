@@ -796,7 +796,7 @@ export default {
   'st.display.cloud_bridge.label': 'บริดจ์คลาวด์',
   'st.display.cloud_bridge.desc': 'เชื่อมต่อตัวควบคุมภายในเครื่องหนึ่งตัวกับโปรไฟล์ Chromium นี้ ใช้พอร์ต 17374 สำหรับไคลเอนต์ MCP, 17375 สำหรับปลั๊กอิน LM Studio หรือ 17373 สำหรับบริการรันบนคลาวด์ เปิดใช้บริดจ์ได้ครั้งละหนึ่งตัวเท่านั้น และยังคงมีการขอสิทธิ์ตามปกติ',
   'st.display.cloud_bridge.url_label': 'URL ของ WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'ใช้ URL ws:// ภายในเครื่องกับ 127.0.0.1, localhost หรือ ::1',
   'st.display.cloud_bridge.status_disabled': 'ปิดใช้บริดจ์แล้ว',
   'st.display.cloud_bridge.status_connecting': 'กำลังเชื่อมต่อ…',

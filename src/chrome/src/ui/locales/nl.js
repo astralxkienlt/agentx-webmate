@@ -555,7 +555,7 @@ export default {
   'st.display.cloud_bridge.label': 'Cloudbridge',
   'st.display.cloud_bridge.desc': 'Verbind één lokale controller met dit Chromium-profiel. Gebruik poort 17374 voor MCP-clients, 17375 voor de LM Studio-plug-in of 17373 voor een cloudrun-service. Er kan maar één bridge actief zijn; de normale toestemmingsvragen blijven gelden.',
   'st.display.cloud_bridge.url_label': 'WebSocket-URL',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Gebruik een lokale ws://-URL met 127.0.0.1, localhost of ::1.',
   'st.display.cloud_bridge.status_disabled': 'Bridge uitgeschakeld',
   'st.display.cloud_bridge.status_connecting': 'Verbinden…',

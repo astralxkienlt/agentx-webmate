@@ -421,6 +421,15 @@ const {
 const { buildCloudPersistenceRows, createCloudRunController, normalizeCloudBridgeUrl } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/cloud-runs.js').replace(/\\/g, '/')
 );
+const {
+  CLOUD_BRIDGE_ENABLED_KEY,
+  CLOUD_BRIDGE_URL_KEY,
+  DEFAULT_CLOUD_BRIDGE_URL,
+  cloudBridgeUrlFrom,
+  isCloudBridgeEnabled,
+} = await import(
+  'file://' + path.join(ROOT, 'src/chrome/src/cloud-bridge-config.js').replace(/\\/g, '/')
+);
 const { handleDoneJson: handleDoneJsonCh } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/agent/cloud-output.js').replace(/\\/g, '/')
 );
@@ -18123,6 +18132,58 @@ test('cloud run default IDs use cryptographically secure randomness', () => {
   assert.doesNotMatch(controllerBody, /Math\.random\(/);
 });
 
+test('cloud bridge ships enabled on the MCP port and is disabled only by an explicit false', () => {
+  assert.equal(DEFAULT_CLOUD_BRIDGE_URL, 'ws://127.0.0.1:17374/extension');
+  // An untouched profile has neither key. It must still answer an MCP client,
+  // so absence reads as enabled and the URL falls back to the MCP port.
+  assert.equal(isCloudBridgeEnabled({}), true);
+  assert.equal(cloudBridgeUrlFrom({}), DEFAULT_CLOUD_BRIDGE_URL);
+  assert.equal(isCloudBridgeEnabled({ [CLOUD_BRIDGE_ENABLED_KEY]: true }), true);
+  assert.equal(isCloudBridgeEnabled({ [CLOUD_BRIDGE_ENABLED_KEY]: false }), false);
+  // Only `false` disables — a stray undefined/null must not silently detach a
+  // browser an agent is driving.
+  assert.equal(isCloudBridgeEnabled({ [CLOUD_BRIDGE_ENABLED_KEY]: undefined }), true);
+  assert.equal(isCloudBridgeEnabled({ [CLOUD_BRIDGE_ENABLED_KEY]: null }), true);
+  assert.equal(
+    cloudBridgeUrlFrom({ [CLOUD_BRIDGE_URL_KEY]: 'ws://127.0.0.1:17373/extension' }),
+    'ws://127.0.0.1:17373/extension',
+  );
+});
+
+test('syncBridge starts an untouched profile and stops only a disabled one', async () => {
+  const runFor = async (stored) => {
+    const sent = [];
+    let offscreenCalls = 0;
+    const controller = createCloudRunController({
+      chromeApi: {
+        storage: {
+          local: { get: async () => stored },
+          session: { get: async () => ({}), set: async () => {} },
+        },
+        runtime: { sendMessage: async message => { sent.push(message); return { enabled: true }; } },
+        tabs: { query: async () => [] },
+        windows: { update: async () => ({}) },
+      },
+      agent: { isRunning: () => false, abort: () => {} },
+      ensureOffscreen: async () => { offscreenCalls += 1; },
+      makeRunId: () => 'run_sync',
+    });
+    await controller.syncBridge();
+    return { sent, offscreenCalls };
+  };
+
+  const fresh = await runFor({});
+  assert.deepEqual(fresh.sent, [{ type: 'cloud-bridge-start', url: DEFAULT_CLOUD_BRIDGE_URL }]);
+  assert.equal(fresh.offscreenCalls, 1, 'starting the bridge must guarantee the offscreen host exists');
+
+  const custom = await runFor({ [CLOUD_BRIDGE_URL_KEY]: 'ws://localhost:17373/extension' });
+  assert.deepEqual(custom.sent, [{ type: 'cloud-bridge-start', url: 'ws://localhost:17373/extension' }]);
+
+  const off = await runFor({ [CLOUD_BRIDGE_ENABLED_KEY]: false });
+  assert.deepEqual(off.sent, [{ type: 'cloud-bridge-stop' }]);
+  assert.equal(off.offscreenCalls, 0, 'stopping must not resurrect the offscreen document');
+});
+
 test('cloud bridge accepts only loopback WebSocket URLs', () => {
   assert.equal(normalizeCloudBridgeUrl('ws://127.0.0.1:17373/extension'), 'ws://127.0.0.1:17373/extension');
   assert.equal(normalizeCloudBridgeUrl('ws://localhost:17373/extension'), 'ws://localhost:17373/extension');
@@ -18172,15 +18233,33 @@ function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), clo
         },
       },
     },
-    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
-    clearTimeout: () => {},
+    // Real clearTimeout semantics matter here: the bridge now cancels its
+    // connect-timeout on open and cancels a pending backoff when an explicit
+    // start arrives, and a no-op stub would hide both.
+    setTimeout: (callback, delay) => {
+      timers.push({ callback, delay, cleared: false, fired: false });
+      return timers.length;
+    },
+    clearTimeout: (id) => {
+      const entry = timers[Number(id) - 1];
+      if (entry) entry.cleared = true;
+    },
   });
 
-  return { listener: (...args) => listener(...args), runtimeCalls, sockets, timers };
+  const pendingTimers = () => timers.filter(entry => !entry.cleared && !entry.fired);
+  const runTimer = (entry) => { entry.fired = true; entry.callback(); };
+  return {
+    listener: (...args) => listener(...args),
+    runtimeCalls,
+    sockets,
+    timers,
+    pendingTimers,
+    runTimer,
+  };
 }
 
 test('offscreen cloud bridge reconnects with backoff and rejects remote control URLs', () => {
-  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness();
+  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
 
   let started;
   listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, value => { started = value; });
@@ -18194,8 +18273,10 @@ test('offscreen cloud bridge reconnects with backoff and rejects remote control 
     ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1'],
   );
   sockets[0].close();
-  assert.equal(timers[0].delay, 500);
-  timers[0].callback();
+  const [backoff, ...extraTimers] = pendingTimers();
+  assert.equal(extraTimers.length, 0, 'the connect-timeout must be cleared once the socket closes');
+  assert.equal(backoff.delay, 500);
+  runTimer(backoff);
   assert.equal(sockets.length, 2);
 
   let rejected;
@@ -18293,8 +18374,96 @@ test('offscreen cloud bridge preserves failed run envelopes and rejects unauthor
   );
 });
 
+test('offscreen cloud bridge retries at once when an explicit start lands mid-backoff', () => {
+  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+
+  // Walk the backoff up to its ceiling the way a controller that is down for a
+  // while would: every failed attempt doubles the wait.
+  const delays = [];
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    sockets[sockets.length - 1].close();
+    const backoff = pendingTimers().find(entry => entry.delay > 0);
+    delays.push(backoff.delay);
+    runTimer(backoff);
+  }
+  assert.deepEqual(delays, [500, 1000, 2000, 4000, 8000, 10000, 10000, 10000], 'backoff must double and then hold at its ceiling');
+
+  // Socket is down and a 10s backoff is armed. The watchdog alarm re-sends
+  // start; the bridge must dial now rather than sit out the remaining wait.
+  sockets[sockets.length - 1].close();
+  const armed = pendingTimers().find(entry => entry.delay === 10000);
+  assert.ok(armed, 'a ceiling-length backoff should be pending');
+  const socketsBefore = sockets.length;
+
+  let restarted;
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, value => { restarted = value; });
+  assert.equal(sockets.length, socketsBefore + 1, 'an explicit start must dial immediately');
+  assert.equal(armed.cleared, true, 'the superseded backoff timer must be cancelled, not left to double-dial');
+  assert.equal(restarted.reconnectAttempt, 0, 'an explicit start resets the backoff');
+
+  sockets[sockets.length - 1].emit('open');
+  assert.equal(sockets.length, socketsBefore + 1, 'no duplicate socket after the immediate retry');
+});
+
+test('offscreen cloud bridge does not start a second socket while one is already dialling', () => {
+  const { listener, sockets, pendingTimers } = createOffscreenCloudBridgeHarness();
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  assert.equal(sockets.length, 1);
+
+  // The watchdog fires while the first dial is still CONNECTING.
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  assert.equal(sockets.length, 1, 'a start during CONNECTING must not open a competing socket');
+
+  sockets[0].emit('open');
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  assert.equal(sockets.length, 1, 'a start on an open socket must be a no-op');
+  assert.equal(sockets[0].sent.filter(message => message.type === 'hello').length, 1);
+  assert.equal(pendingTimers().length, 0, 'an open socket leaves no timers armed');
+});
+
+test('offscreen cloud bridge abandons a handshake that never completes', () => {
+  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
+  let status;
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  const stalled = sockets[0];
+
+  // Something accepted the TCP connection and then went silent, so the socket
+  // sits in CONNECTING forever. Without the connect-timeout, connect() would
+  // short-circuit on CONNECTING and the bridge would wedge for good.
+  const connectTimeout = pendingTimers().find(entry => entry.delay === 10000);
+  assert.ok(connectTimeout, 'a connect-timeout must be armed alongside every dial');
+  runTimer(connectTimeout);
+
+  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
+  assert.equal(status.connected, false);
+  assert.match(status.lastError, /handshake did not complete/i);
+
+  const backoff = pendingTimers().find(entry => entry.delay === 500);
+  assert.ok(backoff, 'abandoning a stalled dial must schedule a retry');
+  runTimer(backoff);
+  assert.equal(sockets.length, 2, 'the retry must open a fresh socket');
+  assert.notEqual(sockets[1], stalled);
+});
+
+test('offscreen cloud bridge reports when it connected', () => {
+  const { listener, sockets } = createOffscreenCloudBridgeHarness();
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  let status;
+  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
+  assert.equal(status.connectedAt, null);
+
+  sockets[0].emit('open');
+  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
+  assert.equal(typeof status.connectedAt, 'number');
+
+  sockets[0].close();
+  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
+  assert.equal(status.connectedAt, null, 'a dropped socket must not keep advertising a connection time');
+});
+
 test('offscreen cloud bridge ignores asynchronous close events from replaced sockets', () => {
-  const { listener, sockets, timers } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
+  const { listener, sockets, pendingTimers } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
   listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
   const first = sockets[0];
   first.emit('open');
@@ -18307,7 +18476,7 @@ test('offscreen cloud bridge ignores asynchronous close events from replaced soc
   replacement.emit('open');
 
   assert.equal(sockets.length, 2, 'stale close must not create a duplicate connection');
-  assert.equal(timers.length, 0, 'stale close must not schedule reconnect for the replacement');
+  assert.equal(pendingTimers().length, 0, 'stale close must not schedule reconnect for the replacement');
   assert.equal(replacement.sent.filter(message => message.type === 'hello').length, 1, 'replacement socket should remain current and announce itself');
 });
 
@@ -41195,16 +41364,31 @@ test('Cloud bridge settings are Chromium-only, live under Advanced, and keep set
   assert.match(generalPanel, /id="toggle-cloud-bridge"/, 'Chrome Advanced should expose the bridge toggle');
   assert.match(generalPanel, /id="input-cloud-bridge-url"/, 'Chrome Advanced should expose the bridge URL');
   assert.match(generalPanel, /id="cloud-bridge-status"[^>]*role="status"[^>]*aria-live="polite"/, 'bridge status should be announced accessibly');
-  assert.doesNotMatch(generalPanel, /id="toggle-cloud-bridge"\s+checked/, 'Cloud bridge must default off');
+  // The toggle's rendered state comes from initCloudBridgeSettings, which reads
+  // the opt-out default. A hardcoded `checked` in the markup would show "on" for
+  // a profile that turned the bridge off, until the script caught up.
+  assert.doesNotMatch(generalPanel, /id="toggle-cloud-bridge"\s+checked/, 'the toggle state must come from stored settings, not the markup');
   assert.match(chromeHtml, /prefers-reduced-motion: reduce[\s\S]*cloud-bridge-status/, 'waiting animation should respect reduced-motion preferences');
 
   assert.doesNotMatch(firefoxHtml, /cloud-bridge-setting|toggle-cloud-bridge|input-cloud-bridge-url/, 'Firefox should not show unsupported bridge controls');
   assert.doesNotMatch(firefoxSettings, /webbrainCloudBridgeEnabled|webbrainCloudBridgeUrl|cloud_bridge_status/, 'Firefox settings should not wire the Chromium bridge');
   assert.doesNotMatch(firefoxLocale, /st\.display\.cloud_bridge/, 'Firefox should not ship copy for an unavailable setting');
 
-  assert.match(chromeSettings, /const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';/, 'Chrome settings should use the runtime bridge enable key');
-  assert.match(chromeSettings, /const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';/, 'Chrome settings should use the runtime bridge URL key');
-  assert.match(chromeSettings, /cloudBridgeToggle\.checked = stored\[CLOUD_BRIDGE_ENABLED_KEY\] === true/, 'bridge should hydrate only explicit opt-in');
+  // Storage keys and the enabled/URL defaults live in one module so the
+  // Settings page and the background controller cannot drift apart — a
+  // disagreement there shows up as a toggle that reads "on" over a bridge that
+  // never started, or the reverse.
+  const bridgeConfig = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cloud-bridge-config.js'), 'utf8');
+  assert.match(bridgeConfig, /const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';/, 'shared config should own the runtime bridge enable key');
+  assert.match(bridgeConfig, /const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';/, 'shared config should own the runtime bridge URL key');
+  assert.match(bridgeConfig, /const DEFAULT_CLOUD_BRIDGE_URL = 'ws:\/\/127\.0\.0\.1:17374\/extension';/, 'the shipped default should target the MCP port');
+  assert.match(bridgeConfig, /stored\[CLOUD_BRIDGE_ENABLED_KEY\] !== false/, 'the bridge is opt-out: only an explicit false disables it');
+  for (const [label, source] of [['Chrome settings', chromeSettings], ['cloud-runs', fs.readFileSync(path.join(ROOT, 'src/chrome/src/cloud-runs.js'), 'utf8')]]) {
+    assert.match(source, /from '\.[./]*\/?cloud-bridge-config\.js'/, `${label} should read the bridge defaults from the shared module`);
+    assert.doesNotMatch(source, /CLOUD_BRIDGE_ENABLED_KEY\]\s*===\s*true|webbrainCloudBridgeEnabled\s*===\s*true|!stored\.webbrainCloudBridgeEnabled/, `${label} must not re-derive the enable default as opt-in`);
+  }
+  assert.match(chromeSettings, /cloudBridgeToggle\.checked = isCloudBridgeEnabled\(stored\)/, 'the toggle should hydrate from the shared opt-out default');
+  assert.match(chromeSettings, /changes\[CLOUD_BRIDGE_ENABLED_KEY\]\.newValue !== false/, 'a live storage change should apply the same opt-out default');
   assert.match(chromeSettings, /sendToBackground\('cloud_bridge_start', \{ url: normalized \}\)/, 'bridge controls should start the configured endpoint');
   assert.match(chromeSettings, /sendToBackground\('cloud_bridge_stop'\)/, 'bridge controls should stop the endpoint');
   assert.match(chromeSettings, /sendToBackground\('cloud_bridge_status'\)/, 'bridge controls should report live connection status');
@@ -41216,6 +41400,14 @@ test('Cloud bridge settings are Chromium-only, live under Advanced, and keep set
   assert.match(chromeSettings, /url\.protocol !== 'ws:'[\s\S]*127\.0\.0\.1[\s\S]*localhost[\s\S]*\[::1\]/, 'settings should reject non-loopback bridge URLs before saving');
   assert.match(chromeLocale, /'st\.display\.cloud_bridge\.label': 'Cloud bridge'/, 'Chrome English bridge label missing');
   assert.match(chromeLocale, /Point it at port 17374 for MCP clients, 17375 for the LM Studio plugin, or 17373 for a cloud run service/, 'bridge copy should lead with the MCP socket and name the alternatives generically');
+  // The placeholder is the hint a user sees after clearing the field; it has to
+  // name the same destination the product actually ships with.
+  for (const localeFile of fs.readdirSync(path.join(ROOT, 'src/chrome/src/ui/locales')).filter(name => /^[a-z]{2}\.js$/.test(name))) {
+    const locale = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/locales', localeFile), 'utf8');
+    const placeholder = locale.match(/'st\.display\.cloud_bridge\.url_placeholder': '([^']+)'/);
+    if (!placeholder) continue;
+    assert.equal(placeholder[1], 'ws://127.0.0.1:17374/extension', `${localeFile}: bridge placeholder should match the shipped default`);
+  }
 
   for (const rel of ['README.md', 'mcp-server/README.md', 'lmstudio-plugin/README.md']) {
     const readme = fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -41228,6 +41420,13 @@ test('Cloud bridge settings are Chromium-only, live under Advanced, and keep set
     assert.match(readme, /Connection error: WebSocket error/, `${label}: should explain the generic listener failure`);
     assert.match(readme, /17373[\s\S]*17374[\s\S]*17375/, `${label}: should distinguish the three bridge destinations`);
   }
+  // The offscreen document reconnects on its own but cannot survive its own
+  // teardown, so the background worker re-syncs on a periodic alarm.
+  const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
+  assert.match(background, /chrome\.alarms\.create\(CLOUD_BRIDGE_WATCHDOG_ALARM/, 'background should arm a bridge watchdog alarm');
+  assert.match(background, /alarm\?\.name === CLOUD_BRIDGE_WATCHDOG_ALARM[\s\S]{0,120}syncBridge\(\)/, 'the watchdog alarm should re-sync the bridge');
+  assert.match(background, /chrome\.alarms\.clear\(CLOUD_BRIDGE_WATCHDOG_ALARM\)/, 'disabling the bridge should retire its watchdog');
+
   const mcpBridge = fs.readFileSync(path.join(ROOT, 'mcp-server/src/bridge.ts'), 'utf8');
   const mcpIndex = fs.readFileSync(path.join(ROOT, 'mcp-server/src/index.ts'), 'utf8');
   const lmBridge = fs.readFileSync(path.join(ROOT, 'lmstudio-plugin/src/util/bridgeClient.ts'), 'utf8');

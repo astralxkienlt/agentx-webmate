@@ -286,8 +286,10 @@ open (press `Ctrl+C` to stop it):
 node mcp-server/dist/index.js
 ```
 
-Once the server is running, open **WebBrain → Settings → General → Advanced →
-Cloud bridge**, set the URL to `ws://127.0.0.1:17374/extension`, and enable it.
+Nothing to configure on the browser side: the bridge ships enabled and pointed
+at `ws://127.0.0.1:17374/extension`, so the extension attaches within seconds of
+the server coming up. **WebBrain → Settings → General → Advanced → Cloud bridge**
+shows the live status, and is where to switch ports or turn the bridge off.
 **Chromium only** — the control and bridge runtime use the extension's off-screen
 document, which the Firefox build does not have.
 
@@ -318,8 +320,11 @@ examples, safety boundaries, and troubleshooting guide live at
 [`web/docs/mcp/`](web/docs/mcp/).
 
 > The extension holds **one** bridge socket at a time — WebBrain Cloud (17373),
-> the MCP server (17374), or the LM Studio plugin (17375). Switch by changing
-> the URL under **Settings → General → Advanced → Cloud bridge**.
+> the MCP server (17374, the shipped default), or the LM Studio plugin (17375).
+> Switch by changing the URL under **Settings → General → Advanced → Cloud
+> bridge**. Because it is on by default, any local process that listens on the
+> configured port can ask this browser to run tasks; the in-browser permission
+> prompts still gate every action it takes.
 
 ## LM Studio plugin
 

@@ -103,10 +103,24 @@ WebMate tools do not appear in its tool list.
 The MCP server hosts the listener; the extension dials out to it. A Manifest V3 extension cannot listen on a socket, so the direction is fixed.
 
 1. Install the AgentX WebMate extension (load `brand-dist/chrome` from a checkout, or the store build) and open your browser.
-2. In **AgentX WebMate → Settings → General → Advanced → Cloud bridge**, set the URL to `ws://127.0.0.1:17374/extension` and enable it. The status line reads **Connected** once the MCP server is running.
+2. Nothing to configure: the bridge ships **enabled** and pointed at `ws://127.0.0.1:17374/extension`, which is this server's port. The status line under **AgentX WebMate → Settings → General → Advanced → Cloud bridge** reads **Connected** once the MCP server is running.
 3. Ask your MCP client to call `webmate_connection` to confirm.
 
-> **One bridge at a time.** The extension holds exactly one outbound bridge socket. Pointing it here means it is *not* pointed at the WebMate Cloud sidecar (`17373`) or the LM Studio plugin (`17375`). Switch it under **Settings → General → Advanced → Cloud bridge**.
+If a profile was pointed somewhere else, or the bridge was switched off, both live in that same Settings panel.
+
+> **One bridge at a time.** The extension holds exactly one outbound bridge socket. The shipped default points it here, which means it is *not* pointed at the WebMate Cloud sidecar (`17373`) or the LM Studio plugin (`17375`). Switch it under **Settings → General → Advanced → Cloud bridge**.
+
+### What keeps it attached
+
+The extension dials out and retries with a backoff that tops out at 10 seconds, so
+restarting this server reattaches the browser within seconds — no click needed.
+That socket lives in the extension's offscreen document; if the browser tears
+that document down, a once-a-minute alarm in the extension's service worker
+rebuilds it. On this side, the listener pings the extension every 15 seconds and
+hangs up on one that stops answering, so a browser that disappeared without
+closing its connection is reported as detached instead of timing out every
+command. A command issued while the browser is still mid-backoff waits up to
+`WEBMATE_CONNECT_GRACE_MS` (12s) rather than failing immediately.
 
 ## Launch manually
 
@@ -238,6 +252,9 @@ AgentX WebMate exposes roughly fifty primitives internally — `click_ax`, `type
 | Variable | Default | Meaning |
 |---|---|---|
 | `WEBMATE_BRIDGE_PORT` | `17374` | Port the extension connects to. |
+| `WEBMATE_CONNECT_GRACE_MS` | `12000` | How long a command waits for a browser that is mid-reconnect before reporting "not connected". |
+| `WEBMATE_CONNECT_PROBE_MS` | `2000` | Same wait for the `connection` diagnostic, kept short so it answers fast. |
+| `WEBMATE_HEARTBEAT_INTERVAL_MS` | `15000` | WebSocket ping interval; two missed pongs drop the socket. `0` disables. |
 | `WEBMATE_BRIDGE_PATH` | `/extension` | Path segment; must match the URL in Settings. |
 | `WEBMATE_COMMAND_TIMEOUT_MS` | `30000` | Per-command reply timeout. |
 | `WEBMATE_RUN_TIMEOUT_MS` | `300000` | Default ceiling for `webmate_run` polling. |

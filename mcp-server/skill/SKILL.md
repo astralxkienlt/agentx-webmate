@@ -59,10 +59,12 @@ API call, or when the user is on Firefox (no bridge there).
    `--host hermes|claude|mcp-json`, `--project DIR` (write `DIR/.mcp.json`),
    `--home PATH` (another Hermes profile), `--dry-run`.
    Then reload: Hermes `/reload-mcp` or a new session; Claude Code restart or `/mcp`.
-4. **Extension attached.** In a Chromium browser with {{productName}} installed:
-   **Settings → General → Advanced → Cloud bridge**, URL
-   `ws://127.0.0.1:17374/extension`, toggle on. The status line reads
-   **Connected** while a session of the host is running (it hosts the server).
+4. **Extension attached.** Nothing to switch on: in a Chromium browser with
+   {{productName}} installed the bridge ships enabled at
+   `ws://127.0.0.1:17374/extension`. **Settings → General → Advanced → Cloud
+   bridge** shows the status line, which reads **Connected** while a session of
+   the host is running (it hosts the server). Check there if a profile was
+   pointed at another port or the bridge was turned off.
 5. **Same machine.** The bridge is loopback-only on both ends; from a remote
    box forward the port: `ssh -L 17374:127.0.0.1:17374 REMOTE_HOST`.
 6. **The extension has its own model** (its own sign-in / provider). The

@@ -796,7 +796,7 @@ export default {
   'st.display.cloud_bridge.label': 'Jambatan awan',
   'st.display.cloud_bridge.desc': 'Sambungkan satu pengawal setempat ke profil Chromium ini. Gunakan port 17374 untuk klien MCP, 17375 untuk pemalam LM Studio atau 17373 untuk perkhidmatan larian awan. Hanya satu jambatan boleh aktif; gesaan kebenaran biasa masih digunakan.',
   'st.display.cloud_bridge.url_label': 'URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Gunakan URL ws:// setempat dengan 127.0.0.1, localhost atau ::1.',
   'st.display.cloud_bridge.status_disabled': 'Jambatan dilumpuhkan',
   'st.display.cloud_bridge.status_connecting': 'Menyambung…',

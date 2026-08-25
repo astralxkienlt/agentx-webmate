@@ -49,6 +49,11 @@ import {
 } from './selection-shortcut-i18n.js';
 import { createTabChatHandoffCoordinator } from './ui/tab-chat-persistence.js';
 import {
+  CLOUD_BRIDGE_ENABLED_KEY,
+  CLOUD_BRIDGE_URL_KEY,
+  isCloudBridgeEnabled,
+} from './cloud-bridge-config.js';
+import {
   ATTACHMENT_RETENTION_KEY,
   ATTACHMENT_SESSION_MARKER_KEY,
   ATTACHMENT_SWEEP_ALARM,
@@ -208,7 +213,32 @@ const cloudRunController = createCloudRunController({
 });
 alwaysAllowApiMutationsReady
   .then(() => cloudRunController.syncBridge())
+  .then(() => refreshCloudBridgeWatchdog())
   .catch(() => {});
+
+// The offscreen document heals its own socket — it reconnects with backoff for
+// as long as it is alive. What it cannot heal is its own death: a renderer
+// crash or an offscreen teardown takes the bridge with it and nothing recreates
+// it until the next service-worker cold start, which on an idle profile may
+// never come. With the bridge shipping enabled, that silent-and-permanent
+// failure is the one an MCP client would actually hit, so a periodic alarm
+// re-runs the (idempotent) sync. One wake-up per minute is the price; the
+// handler is a no-op whenever the socket is already open.
+const CLOUD_BRIDGE_WATCHDOG_ALARM = 'wb-cloud-bridge-watchdog';
+const CLOUD_BRIDGE_WATCHDOG_PERIOD_MINUTES = 1;
+
+async function refreshCloudBridgeWatchdog() {
+  try {
+    const stored = await chrome.storage.local.get([CLOUD_BRIDGE_ENABLED_KEY]);
+    if (isCloudBridgeEnabled(stored)) {
+      await chrome.alarms.create(CLOUD_BRIDGE_WATCHDOG_ALARM, {
+        periodInMinutes: CLOUD_BRIDGE_WATCHDOG_PERIOD_MINUTES,
+      });
+    } else {
+      await chrome.alarms.clear(CLOUD_BRIDGE_WATCHDOG_ALARM);
+    }
+  } catch { /* alarms unavailable */ }
+}
 
 const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
@@ -959,6 +989,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await loadClarifyTimeout();
   await syncAgentUserMemoryFromStorage().catch(() => {});
   await cloudRunController.syncBridge().catch(() => {});
+  await refreshCloudBridgeWatchdog();
   scheduleUserMemoryExtractionDrain(5000);
   console.log('[WebBrain] Extension installed, providers loaded.');
 });
@@ -971,6 +1002,7 @@ chrome.runtime.onStartup?.addListener(async () => {
   await loadClarifyTimeout();
   await syncAgentUserMemoryFromStorage().catch(() => {});
   await cloudRunController.syncBridge().catch(() => {});
+  await refreshCloudBridgeWatchdog();
   scheduleUserMemoryExtractionDrain(5000);
 });
 
@@ -981,8 +1013,9 @@ chrome.storage.onChanged.addListener((changes) => {
     createContextMenus().catch(() => {});
   }
   if (changes.providers || changes.activeProvider) providerManager.load().catch(() => {});
-  if (changes.webbrainCloudBridgeEnabled || changes.webbrainCloudBridgeUrl) {
+  if (changes[CLOUD_BRIDGE_ENABLED_KEY] || changes[CLOUD_BRIDGE_URL_KEY]) {
     cloudRunController.syncBridge().catch(() => {});
+    refreshCloudBridgeWatchdog().catch(() => {});
   }
   if (changes.maxAgentSteps) {
     agent.maxSteps = normalizeMaxAgentSteps(changes.maxAgentSteps.newValue);
@@ -2154,6 +2187,10 @@ async function initAttachmentRetention() {
 }
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
+  if (alarm?.name === CLOUD_BRIDGE_WATCHDOG_ALARM) {
+    cloudRunController.syncBridge().catch(() => {});
+    return;
+  }
   if (alarm?.name !== ATTACHMENT_SWEEP_ALARM) return;
   void sweepAttachmentStore();
 });

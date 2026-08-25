@@ -3,8 +3,13 @@ import {
   normalizeSavedWorkflow,
 } from './agent/workflows.js';
 import { isCredentialField } from './agent/credential-fields.js';
-
-const DEFAULT_CLOUD_BRIDGE_URL = 'ws://127.0.0.1:17373/extension';
+import {
+  CLOUD_BRIDGE_ENABLED_KEY,
+  CLOUD_BRIDGE_URL_KEY,
+  DEFAULT_CLOUD_BRIDGE_URL,
+  cloudBridgeUrlFrom,
+  isCloudBridgeEnabled,
+} from './cloud-bridge-config.js';
 const CLOUD_RUN_STORAGE_KEY = 'webbrainCloudRunSnapshots';
 const CLOUD_UPDATE_LIMIT = 200;
 const CLOUD_RUN_LIMIT = 50;
@@ -1386,10 +1391,17 @@ export function createCloudRunController({
     return api.runtime.sendMessage({ type: 'cloud-bridge-status' });
   }
 
+  // Called on install, on browser start, on every service-worker cold start, on
+  // the watchdog alarm, and whenever the two storage keys change. Everything
+  // below it is idempotent: `startBridge` re-creates the offscreen document only
+  // when it is missing, and the offscreen client no-ops when its socket is
+  // already open. That is what makes the watchdog safe to fire on a timer.
   async function syncBridge() {
-    const stored = await api.storage.local.get(['webbrainCloudBridgeEnabled', 'webbrainCloudBridgeUrl']);
-    if (!stored.webbrainCloudBridgeEnabled) return stopBridge().catch(() => ({ enabled: false, connected: false }));
-    return startBridge(stored.webbrainCloudBridgeUrl || DEFAULT_CLOUD_BRIDGE_URL);
+    const stored = await api.storage.local.get([CLOUD_BRIDGE_ENABLED_KEY, CLOUD_BRIDGE_URL_KEY]);
+    if (!isCloudBridgeEnabled(stored)) {
+      return stopBridge().catch(() => ({ enabled: false, connected: false }));
+    }
+    return startBridge(cloudBridgeUrlFrom(stored));
   }
 
   return {
