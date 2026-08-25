@@ -1269,9 +1269,13 @@ function notifySidePanelOfContextMenuPrompt(payload) {
 function openSidePanelForContextMenu(tab) {
   if (!tab?.id) return;
   // enable then open with nothing awaited between them — the gesture that
-  // reached this handler has to survive all the way into open().
+  // reached this handler has to survive all the way into open(). `.catch()`
+  // attaches synchronously and consumes no gesture, so it is safe here: an
+  // open() that loses its gesture rejects (documented as a dead end on Edge in
+  // side-panel-availability.js), and an unhandled rejection inside the service
+  // worker lands on the extension's own Errors page with no usable stack.
   sidePanelAvailability.enableForTab(tab.id);
-  chrome.sidePanel.open({ tabId: tab.id });
+  chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
   ensureWebBrainGroup(tab).catch(() => {});
 }
 
@@ -1800,7 +1804,10 @@ chrome.action.onClicked.addListener((tab) => {
   // below. Nothing in the extension ever disables the panel, so open() can
   // never observe a stale "disabled" state and silently no-op.
   sidePanelAvailability.enableForTab(tab.id);
-  chrome.sidePanel.open({ tabId: tab.id });
+  // Not awaited (that would spend the gesture), but the rejection IS handled:
+  // Edge rejects open() whenever the gesture did not survive, and letting that
+  // float surfaces as an untraceable "Uncaught (in promise)" on the Errors page.
+  chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
   // Async — we already lost the user-gesture window for sidePanel.open, and
   // grouping doesn't need it.
   ensureWebBrainGroup(tab).catch(() => {});
