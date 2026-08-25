@@ -6,6 +6,11 @@ This changelog was generated from the repository Git history and release tags. V
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-25
+
+### Added
+- **The Ask/Act/Dev switcher and the permission chip got a redesign.** The mode toggle is now an iOS-style segmented control — a recessed track, a sliding thumb that carries the active mode's colour, a small icon per mode, equal-width segments — with `aria-pressed` kept in sync on every button. The permission chip swaps its shield for a struck-through one while Bypass permissions is standing, so the widest rung is visible at a glance. Mode labels moved into their own spans, which stops a locale pass from erasing the icons.
+
 ### Fixed
 - **The cloud bridge no longer needs to be switched on, and no longer stays down once it drops.** The local control bridge now ships **enabled**, pointed at `ws://127.0.0.1:17374/extension` — the MCP server's port — so an agent driving this browser over MCP attaches to a fresh profile without anyone opening Settings first. Cloud (`17373`) and the LM Studio plugin (`17375`) are still one URL edit away, and the extension still holds exactly one socket. Because it is on by default, any local process listening on that port can ask the browser to run a task; the bridge's action allowlist keeps that to run-level operations, and every action inside a run still passes the same in-browser permission gate a human driving the side panel gets.
 - Three ways the bridge could go quiet and stay quiet are closed. The socket lives in the extension's offscreen document, which reconnects on its own but cannot survive its own teardown — a once-a-minute alarm in the service worker now rebuilds it, and a real-browser test confirms the bridge comes back after the offscreen host is destroyed. A dial that connects at the TCP level and then never completes its WebSocket handshake used to wedge the bridge permanently, because the reconnect path skips a socket that is still `CONNECTING`; it is now abandoned after ten seconds and retried. And a controller that comes back after a long outage no longer waits out a backoff that had already grown: an explicit start — from Settings, from a cold service worker, or from the watchdog — cancels the pending retry and dials at once. The backoff ceiling itself dropped from 30s to 10s, which is what makes a restarted MCP server reattach in seconds.
