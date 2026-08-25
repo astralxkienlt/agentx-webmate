@@ -78,6 +78,8 @@ export default {
   'sp.inspection': 'WebBrain rozpoczął analizę tej strony',
   'sp.greeting.html': 'Cześć! Jestem <strong>WebBrain</strong>. Mogę czytać tę stronę, odpowiadać na pytania, klikać przyciski, wypełniać formularze i automatyzować wieloetapowe zadania.',
   'sp.help_message': 'W czym mogę pomóc na tej stronie?',
+  'sp.tab_chat_restore_failed': "Nie udało się wczytać zapisanej rozmowy, ponieważ tło rozszerzenia nie odpowiada. Dla bezpieczeństwa nic nie zostanie zapisane dla tej karty, dopóki wczytywanie się nie powiedzie.",
+  'sp.tab_chat_restore_reload': "Załaduj panel ponownie",
   'sp.cleared_message': 'Rozmowa wyczyszczona. W czym mogę pomóc?',
   'sp.clear.confirm': 'Ta rozmowa zostanie utracona. Rozpocząć nową rozmowę?',
   "sp.clear.title": "Rozpocząć nową rozmowę?",

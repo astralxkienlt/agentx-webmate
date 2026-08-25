@@ -834,13 +834,53 @@ function fakeGateDom() {
   return { root, appRoot: fakeElement('div'), documentRef, parts };
 }
 
-function gateHarness({ seed, clock, fetchImpl }) {
+/**
+ * Manual timers for the gate's own deadlines: tests fire them by delay value
+ * instead of waiting wall-clock time.
+ */
+function manualTimers() {
+  const pending = new Map();
+  let seq = 0;
+  return {
+    pending,
+    setTimeout(fn, ms) {
+      const id = ++seq;
+      pending.set(id, { fn, ms: Number(ms) });
+      return id;
+    },
+    clearTimeout(id) {
+      pending.delete(id);
+    },
+    fire(matcher = () => true) {
+      for (const [id, timer] of [...pending]) {
+        if (!matcher(timer)) continue;
+        pending.delete(id);
+        timer.fn();
+      }
+    },
+  };
+}
+
+function gateHarness({ seed, clock, fetchImpl, sendToBackground, gateOptions = {} } = {}) {
   const fake = createApi(seed);
   const dom = fakeGateDom();
   const calls = [];
   const providerState = {
     providers: { webbrain_cloud: { type: 'openai', category: 'cloud' } },
     active: 'openai',
+  };
+  const defaultSendToBackground = async (action, data = {}) => {
+    calls.push({ action, data });
+    if (action === 'update_provider') {
+      Object.assign(providerState.providers.webbrain_cloud, data.config);
+      return { ok: true };
+    }
+    if (action === 'set_active_provider') {
+      providerState.active = data.providerId;
+      return { ok: true };
+    }
+    if (action === 'get_providers') return structuredClone(providerState);
+    throw new Error(`Unexpected background action: ${action}`);
   };
   const gate = createAgentXLoginGate({
     api: fake.api,
@@ -849,26 +889,23 @@ function gateHarness({ seed, clock, fetchImpl }) {
     documentRef: dom.documentRef,
     locale: () => 'vi',
     config: { ...CONFIG, sessionIdleTimeoutMs: IDLE_MS },
-    async sendToBackground(action, data = {}) {
-      calls.push({ action, data });
-      if (action === 'update_provider') {
-        Object.assign(providerState.providers.webbrain_cloud, data.config);
-        return { ok: true };
-      }
-      if (action === 'set_active_provider') {
-        providerState.active = data.providerId;
-        return { ok: true };
-      }
-      if (action === 'get_providers') return structuredClone(providerState);
-      throw new Error(`Unexpected background action: ${action}`);
-    },
+    sendToBackground: sendToBackground
+      ? (action, data) => sendToBackground(action, data, { calls, providerState, defaultSendToBackground })
+      : defaultSendToBackground,
     serviceOptions: {
       fetchImpl: fetchImpl || (async () => jsonResponse({ data: [{ id: 'model-a' }] })),
       cryptoImpl: webcrypto,
       now: () => clock.now,
     },
+    ...gateOptions,
   });
-  return { gate, dom, calls, providerState, values: fake.values, storageChanged: fake.storageChanged };
+  return { gate, dom, calls, providerState, api: fake.api, values: fake.values, storageChanged: fake.storageChanged };
+}
+
+function flushMicrotasks(rounds = 3) {
+  let chain = Promise.resolve();
+  for (let i = 0; i < rounds; i++) chain = chain.then(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  return chain;
 }
 
 test('an untouched session expires on its idle deadline and reports why', async () => {
@@ -1072,6 +1109,138 @@ test('signing out elsewhere re-locks the panel that is already open', async () =
   assert.match(harness.dom.parts.notice.textContent, /đăng xuất/);
 });
 
+test('a hung status check times out to a retry button instead of spinning forever', async () => {
+  const clock = { now: NOW };
+  const timers = manualTimers();
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+    gateOptions: {
+      restoreTimeoutMs: 1_000,
+      setTimeoutImpl: timers.setTimeout,
+      clearTimeoutImpl: timers.clearTimeout,
+    },
+  });
+  // The storage backend stops answering — the documented Chrome failure mode
+  // this deadline exists for. Every read from here on parks forever.
+  harness.api.storage.local.get = () => new Promise(() => {});
+
+  const pending = harness.gate.start();
+  await flushMicrotasks();
+  assert.equal(harness.dom.parts.busy.classList.contains('hidden'), false);
+  assert.equal(harness.dom.parts.busyLabel.textContent, 'Đang kiểm tra phiên đăng nhập…');
+  assert.equal(harness.dom.parts.signin.classList.contains('hidden'), true);
+
+  timers.fire((timer) => timer.ms === 1_000);
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.dom.parts.busy.classList.contains('hidden'), true);
+  assert.equal(harness.dom.parts.signin.classList.contains('hidden'), false);
+  assert.equal(harness.dom.parts.signin.textContent, 'Thử lại');
+  assert.match(harness.dom.parts.notice.textContent, /quá lâu/);
+  const settled = await Promise.race([
+    pending.then(() => 'unlocked'),
+    flushMicrotasks().then(() => 'still-locked'),
+  ]);
+  assert.equal(settled, 'still-locked');
+});
+
+test('a background that never answers cannot park the gate at provisioning', async () => {
+  const clock = { now: NOW };
+  const timers = manualTimers();
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+    sendToBackground: (action, data, { calls, defaultSendToBackground }) => {
+      if (action === 'update_provider') {
+        calls.push({ action, data });
+        // The service worker accepted the message and then died: the promise
+        // never settles.
+        return new Promise(() => {});
+      }
+      return defaultSendToBackground(action, data);
+    },
+    gateOptions: {
+      restoreTimeoutMs: 60_000,
+      backgroundCallTimeoutMs: 500,
+      setTimeoutImpl: timers.setTimeout,
+      clearTimeoutImpl: timers.clearTimeout,
+    },
+  });
+
+  const pending = harness.gate.start();
+  await flushMicrotasks();
+  // The cached key probed fine, so the gate is now waiting on update_provider.
+  assert.equal(harness.dom.parts.busyLabel.textContent, 'Đang chuẩn bị kết nối mô hình…');
+
+  timers.fire((timer) => timer.ms === 500);
+  await flushMicrotasks();
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.dom.parts.signin.classList.contains('hidden'), false);
+  assert.equal(harness.dom.parts.signin.textContent, 'Thử lại');
+  assert.match(harness.dom.parts.notice.textContent, /không phản hồi/);
+  const settled = await Promise.race([
+    pending.then(() => 'unlocked'),
+    flushMicrotasks().then(() => 'still-locked'),
+  ]);
+  assert.equal(settled, 'still-locked');
+});
+
+test('a status check that finishes after its deadline may not unlock the panel', async () => {
+  const clock = { now: NOW };
+  const timers = manualTimers();
+  const harness = gateHarness({
+    clock,
+    seed: {
+      [AGENTX_SESSION_STORAGE_KEY]: session({ lastActiveAt: NOW }),
+      [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [credential()] },
+    },
+    gateOptions: {
+      restoreTimeoutMs: 1_000,
+      setTimeoutImpl: timers.setTimeout,
+      clearTimeoutImpl: timers.clearTimeout,
+    },
+  });
+  // Storage answers only once the test releases it — after the deadline.
+  let releaseReads;
+  const readsReleased = new Promise((resolve) => { releaseReads = resolve; });
+  const realGet = harness.api.storage.local.get.bind(harness.api.storage.local);
+  harness.api.storage.local.get = async (keys) => {
+    await readsReleased;
+    return realGet(keys);
+  };
+
+  const pending = harness.gate.start();
+  await flushMicrotasks();
+  timers.fire((timer) => timer.ms === 1_000);
+  assert.match(harness.dom.parts.notice.textContent, /quá lâu/);
+
+  // The stale attempt now completes successfully — and must change nothing.
+  releaseReads();
+  await flushMicrotasks(6);
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), true);
+  assert.match(harness.dom.parts.notice.textContent, /quá lâu/);
+  assert.equal(harness.dom.parts.signin.classList.contains('hidden'), false);
+  const settled = await Promise.race([
+    pending.then(() => 'unlocked'),
+    flushMicrotasks().then(() => 'still-locked'),
+  ]);
+  assert.equal(settled, 'still-locked');
+  // The panel it refused to unlock is exactly the value of the guard: the
+  // NEXT attempt (user-driven retry) starts clean instead of racing this one.
+});
+
 test('both branded targets gate the side panel and keep Cloud management in settings', async () => {
   for (const target of ['chrome', 'firefox']) {
     const root = path.join(ROOT, 'brand-dist', target);
@@ -1113,6 +1282,18 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.match(sidepanelJs, /createAgentXLoginGate/);
     // Onboarding must not start asking about providers before sign-in settles.
     assert.match(sidepanelJs, /await agentxSignedIn\.catch\(\(\) => \{\}\);/);
+    // The boot watchdog is a classic script outside the module graph: when the
+    // module never runs, it swaps the shipped spinner for a reload button. The
+    // module retires it the moment it takes over.
+    const watchdog = await fs.readFile(path.join(root, 'src/ui/agentx-boot-watchdog.js'), 'utf8');
+    assert.match(watchdog, /__netmindGateBootAlive/);
+    assert.match(watchdog, /location\.reload\(\)/);
+    assert.match(sidepanelHtml, /<script src="agentx-boot-watchdog\.js"><\/script>/);
+    assert.ok(
+      sidepanelHtml.indexOf('agentx-boot-watchdog.js') < sidepanelHtml.indexOf('<script src="sidepanel.js" type="module">'),
+      `${target}: the watchdog must load before the module it watches`,
+    );
+    assert.match(sidepanelJs, /globalThis\.__netmindGateBootAlive\?\.\(\);/);
   }
 
   const [transcribe, recorderHost] = await Promise.all([

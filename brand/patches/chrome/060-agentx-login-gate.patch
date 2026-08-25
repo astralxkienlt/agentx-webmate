@@ -1,16 +1,16 @@
 diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
-index afc7791b9..59f505556 100644
 --- a/src/ui/sidepanel.html
 +++ b/src/ui/sidepanel.html
-@@ -11,6 +11,7 @@
+@@ -11,6 +11,8 @@
    <script src="theme-bootstrap.js"></script>
    <link rel="stylesheet" href="../../styles/sidepanel.css">
    <link rel="stylesheet" href="../../vendor/katex/katex.min.css">
 +  <link rel="stylesheet" href="agentx-login-gate.css">
++  <script src="agentx-boot-watchdog.js"></script>
    <!-- KaTeX is loaded as classic scripts (not modules). They assign to
         window.katex and window.renderMathInElement so formatMarkdown can
         call them after inserting message HTML. -->
-@@ -45,6 +46,33 @@
+@@ -45,6 +47,33 @@
      </div>
    </div>
  
@@ -45,10 +45,9 @@ index afc7791b9..59f505556 100644
    <div id="onboarding" class="onboarding hidden">
      <div class="ob-card">
 diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
-index ec36d9837..5dcbb2e37 100644
 --- a/src/ui/sidepanel.js
 +++ b/src/ui/sidepanel.js
-@@ -25,6 +25,7 @@ import {
+@@ -43,6 +43,7 @@ import {
  import { historyTextFromElement } from './history-text.js';
  import { sniffAttachment } from '../media/media-core.js';
  import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../media/attachment-store.js';
@@ -56,7 +55,7 @@ index ec36d9837..5dcbb2e37 100644
  import { claimRunError } from './run-error-dedupe.js';
  import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
  import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
-@@ -112,6 +113,7 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
+@@ -134,6 +135,7 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
  
      applyDOMTranslations(overlay);
      const backgroundLayers = [
@@ -64,7 +63,7 @@ index ec36d9837..5dcbb2e37 100644
        document.getElementById('onboarding'),
        document.getElementById('app'),
      ].filter(Boolean);
-@@ -203,10 +205,36 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
+@@ -225,10 +227,38 @@ const pinCoachmarkDismissed = (async function initPinCoachmark() {
    }
  })();
  
@@ -73,6 +72,8 @@ index ec36d9837..5dcbb2e37 100644
 +// provider holds a live key, so this runs before the product tour: onboarding
 +// asks which model to use, and by then the answer is already settled.
 +const agentxSignedIn = (function initAgentXLoginGate() {
++  // Retire the static boot watchdog: from here the gate owns the UX.
++  globalThis.__netmindGateBootAlive?.();
 +  const root = document.getElementById('agentx-login-gate');
 +  if (!root) return Promise.resolve();
 +  try {
@@ -98,6 +99,6 @@ index ec36d9837..5dcbb2e37 100644
    // Coachmark setup errors resolve as no-op so the model/safety wizard still runs.
    await pinCoachmarkDismissed.catch(() => {});
 +  await agentxSignedIn.catch(() => {});
-   const stored = await chrome.storage.local.get('onboardingComplete');
-   if (stored.onboardingComplete) return;
- 
+   // Treat an unreadable flag as "already onboarded": skipping the wizard once
+   // beats an unhandled rejection that kills it for good.
+   const stored = await chrome.storage.local.get('onboardingComplete').catch(() => ({ onboardingComplete: true }));

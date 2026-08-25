@@ -111,7 +111,9 @@ if (globalThis.browser?.storage?.onChanged) {
 
 // ─── Onboarding (first-launch wizard) ───────────────────────────────
 (async function initOnboarding() {
-  const stored = await browser.storage.local.get('onboardingComplete');
+  // Treat an unreadable flag as "already onboarded": skipping the wizard once
+  // beats an unhandled rejection that kills it for good.
+  const stored = await browser.storage.local.get('onboardingComplete').catch(() => ({ onboardingComplete: true }));
   if (stored.onboardingComplete) return;
 
   const overlay = document.getElementById('onboarding');
@@ -1850,6 +1852,9 @@ async function loadTabChat(tabId, { waitForHandoff = false } = {}) {
         waitForHandoff,
         handoffOwnerId: tabChatHandoffOwnerId,
       });
+      // A successful read proves the background is reachable again and this
+      // document now holds the authoritative copy — persistence may resume.
+      clearTabChatRestoreFailure(queuedTabId);
       if (stored?.handoffOwnerId === tabChatHandoffOwnerId
           && Number.isFinite(Number(stored?.handoffGeneration))) {
         tabChatHandoffGenerations.set(queuedTabId, Number(stored.handoffGeneration));
@@ -1871,6 +1876,9 @@ async function loadTabChat(tabId, { waitForHandoff = false } = {}) {
 function persistTabChat(tabId, html, { allowHidden = false } = {}) {
   if (tabId == null || (document.visibilityState === 'hidden' && !allowHidden)) {
     return Promise.resolve({ ok: false, skipped: true });
+  }
+  if (sameTabId(tabChatRestoreBlockedTabId, tabId)) {
+    return Promise.resolve({ ok: false, skipped: true, reason: 'restore-blocked' });
   }
   const numericTabId = Number(tabId);
   if (!Number.isFinite(numericTabId)) return Promise.resolve({ ok: false, error: 'No tab ID' });
@@ -1972,6 +1980,87 @@ function waitForTabChatHandoffRetry() {
   return new Promise(resolve => setTimeout(resolve, TAB_CHAT_HANDOFF_RETRY_MS));
 }
 
+// ─── Recovery for a failed authoritative chat restore ────────────────
+// TAB_CHAT_LOAD_FAILED means sendToBackground('load_tab_chat') rejected — the
+// background was unreachable (restarting, mid-update, invalidated
+// registration). The 250ms retry loops used to spin on that state forever,
+// composer disabled, with nothing on screen saying why. They now stop at this
+// deadline and recover: first by reloading the panel document once (which
+// also picks up the new code after an extension update), then — if a reload
+// already happened recently — by showing a visible notice with a reload
+// button. While a tab is in the failed state nothing may persist over its
+// stored chat: this document never managed to read it, so any write would
+// clobber the only good copy.
+const TAB_CHAT_RESTORE_DEADLINE_MS = 12_000;
+const PANEL_SELF_RELOAD_COOLDOWN_MS = 5 * 60_000;
+const PANEL_SELF_RELOAD_MARKER = 'wbPanelSelfReloadAt';
+let tabChatRestoreBlockedTabId = null;
+
+function lastPanelSelfReloadAt() {
+  let at = Number(history.state?.[PANEL_SELF_RELOAD_MARKER]) || 0;
+  try {
+    at = Math.max(at, Number(sessionStorage.getItem(PANEL_SELF_RELOAD_MARKER)) || 0);
+  } catch { /* sessionStorage may be unavailable; history.state still guards */ }
+  return at;
+}
+
+function tryPanelSelfReload(reason) {
+  if (Date.now() - lastPanelSelfReloadAt() < PANEL_SELF_RELOAD_COOLDOWN_MS) return false;
+  const stamp = Date.now();
+  // Both markers survive location.reload(); either alone stops a reload loop.
+  try {
+    history.replaceState({ ...(history.state || {}), [PANEL_SELF_RELOAD_MARKER]: stamp }, '');
+  } catch { /* ignore */ }
+  try {
+    sessionStorage.setItem(PANEL_SELF_RELOAD_MARKER, String(stamp));
+  } catch { /* ignore */ }
+  // A marker that did not stick cannot stop a reload loop — fall through to
+  // the visible notice instead of risking a panel that flashes forever.
+  if (lastPanelSelfReloadAt() < stamp) return false;
+  console.warn(`[WebBrain] Reloading the panel document to recover: ${reason}`);
+  location.reload();
+  return true;
+}
+
+function failTabChatRestore(tabId, reason) {
+  if (tryPanelSelfReload(reason)) return;
+  tabChatRestoreBlockedTabId = tabId ?? null;
+  console.error(`[WebBrain] Tab chat restore stopped retrying (${reason}); persistence is paused for this tab until a restore succeeds.`);
+  showTabChatRestoreFailure();
+  syncSendButtonState();
+}
+
+function clearTabChatRestoreFailure(tabId) {
+  if (tabChatRestoreBlockedTabId == null || !sameTabId(tabChatRestoreBlockedTabId, tabId)) return;
+  tabChatRestoreBlockedTabId = null;
+  document.getElementById('tab-chat-restore-failure')?.remove();
+  syncSendButtonState();
+}
+
+function showTabChatRestoreFailure() {
+  if (document.getElementById('tab-chat-restore-failure')) return;
+  const card = document.createElement('div');
+  card.id = 'tab-chat-restore-failure';
+  card.className = 'message system tab-chat-restore-failure';
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  const text = document.createElement('div');
+  text.className = 'message-text';
+  text.textContent = t('sp.tab_chat_restore_failed');
+  const reloadBtn = document.createElement('button');
+  reloadBtn.type = 'button';
+  reloadBtn.className = 'tab-chat-restore-reload-btn';
+  reloadBtn.textContent = t('sp.tab_chat_restore_reload');
+  reloadBtn.addEventListener('click', () => location.reload());
+  content.appendChild(text);
+  content.appendChild(reloadBtn);
+  card.appendChild(content);
+  // Outside #messages on purpose: the persist observer snapshots
+  // messagesEl.innerHTML, and this notice must never be written over the
+  // stored conversation it failed to load.
+  messagesEl?.insertAdjacentElement('beforebegin', card);
+}
+
 async function waitForVisibleSidePanelStateRefresh() {
   let pendingRefresh;
   do {
@@ -1987,6 +2076,7 @@ async function waitForVisibleSidePanelStateRefresh() {
 
 function schedulePersist() {
   if (document.visibilityState === 'hidden') return;
+  if (renderedTabId != null && sameTabId(tabChatRestoreBlockedTabId, renderedTabId)) return;
   if (persistTimer) clearTimeout(persistTimer);
   const tabId = renderedTabId;
   const html = messagesEl.innerHTML;
@@ -4187,9 +4277,12 @@ function clearScratchpad(tabId = currentTabId) {
 async function init() {
   const initialWindow = await browser.windows.getCurrent().catch(() => null);
   const initialWindowId = initialWindow?.id ?? null;
+  // A panel document restored against a window that no longer exists rejects
+  // this query; the panel must still finish booting so the tab/window
+  // listeners below can re-bind it.
   const [tab] = await browser.tabs.query(initialWindowId != null
     ? { active: true, windowId: initialWindowId }
-    : { active: true, currentWindow: true });
+    : { active: true, currentWindow: true }).catch(() => []);
   currentTabId = tab?.id;
   renderedTabId = currentTabId;
 
@@ -4225,7 +4318,9 @@ async function init() {
   });
 
   // Load settings that affect the composer state.
-  const stored = await browser.storage.local.get(['verboseMode', 'alwaysAllowApiMutations']);
+  // Defaults on a failed read: a rejection here used to abort the rest of
+  // init() and leave a silent, inert panel.
+  const stored = await browser.storage.local.get(['verboseMode', 'alwaysAllowApiMutations']).catch(() => ({}));
   verboseMode = stored.verboseMode || false;
   alwaysAllowApiMutations = stored.alwaysAllowApiMutations === true;
   syncApiMutationsAllowedForCurrentTab();
@@ -4244,10 +4339,15 @@ async function init() {
     visibleStateRefreshInProgress = true;
     syncSendButtonState();
     try {
+      const restoreDeadline = Date.now() + TAB_CHAT_RESTORE_DEADLINE_MS;
       let html = TAB_CHAT_LOAD_FAILED;
       while (html === TAB_CHAT_LOAD_FAILED && currentTabId === restoreTabId) {
         html = await loadTabChat(restoreTabId, { waitForHandoff: true });
         if (html === TAB_CHAT_LOAD_FAILED && currentTabId === restoreTabId) {
+          if (Date.now() >= restoreDeadline) {
+            failTabChatRestore(restoreTabId, 'initial chat restore kept failing');
+            break;
+          }
           await waitForTabChatHandoffRetry();
         }
       }
@@ -4388,11 +4488,16 @@ async function switchToTab(newTabId) {
     // Acquire shared handoff ownership for the destination before its DOM can
     // render or persist. Retry transient background failures while this remains
     // the current tab-switch generation.
+    const switchDeadline = Date.now() + TAB_CHAT_RESTORE_DEADLINE_MS;
     let html = TAB_CHAT_LOAD_FAILED;
     while (html === TAB_CHAT_LOAD_FAILED) {
       html = await loadTabChat(newTabId, { waitForHandoff: true });
       if (html !== TAB_CHAT_LOAD_FAILED) break;
       if (switchGeneration !== tabSwitchGeneration || currentTabId !== newTabId) return;
+      if (Date.now() >= switchDeadline) {
+        failTabChatRestore(newTabId, 'tab-switch chat restore kept failing');
+        return;
+      }
       await waitForTabChatHandoffRetry();
     }
     if (switchGeneration !== tabSwitchGeneration || currentTabId !== newTabId) return;
@@ -4462,10 +4567,15 @@ function requestVisibleSidePanelStateRefresh() {
   visibleStateRefreshPromise = visibleStateRefreshPromise.catch(() => {}).then(async () => {
     if (document.visibilityState === 'hidden' || tabSwitchTransitionId != null) return false;
     visibleStateRefreshPending = false;
+    const refreshDeadline = Date.now() + TAB_CHAT_RESTORE_DEADLINE_MS;
     let refreshed = await refreshVisibleSidePanelState();
     while (refreshed === false
         && document.visibilityState !== 'hidden'
         && tabSwitchTransitionId == null) {
+      if (Date.now() >= refreshDeadline) {
+        failTabChatRestore(currentTabId, 'visible-state refresh kept failing');
+        return false;
+      }
       visibleStateRefreshPending = true;
       syncSendButtonState();
       await waitForTabChatHandoffRetry();
@@ -7089,6 +7199,10 @@ function syncSendButtonState() {
   if (!sendBtn) return;
   const draft = normalizeScreenshotCommandText(inputEl?.value || '').trim();
   if (tabSwitchTransitionId != null || visibleStateRefreshPending || visibleStateRefreshInProgress) {
+    sendBtn.disabled = true;
+    return;
+  }
+  if (sameTabId(tabChatRestoreBlockedTabId, currentTabId)) {
     sendBtn.disabled = true;
     return;
   }
@@ -13034,4 +13148,10 @@ document.addEventListener('keydown', (event) => {
 
 // --- Start ---
 startInputPlaceholderRotation();
-init();
+init().catch((e) => {
+  // A boot that dies silently leaves an inert panel with no explanation and
+  // no recovery. Surface it, and offer the same reload path the failed chat
+  // restore uses.
+  console.error('[WebBrain] Side panel initialization failed:', e);
+  failTabChatRestore(currentTabId ?? null, `init failed: ${e?.message || e}`);
+});

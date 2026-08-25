@@ -1421,6 +1421,29 @@ body {
   font-size: 12px;
 }
 
+/* Failed-restore notice. Lives OUTSIDE #messages (so the persist observer can
+   never write it over the stored conversation), hence the own margin. */
+.tab-chat-restore-failure {
+  margin: 8px 12px 0;
+}
+
+.tab-chat-restore-reload-btn {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-chat-restore-reload-btn:hover {
+  background: var(--accent-hover, var(--accent));
+}
+
 .screenshot-result {
   display: flex;
   flex-direction: column;

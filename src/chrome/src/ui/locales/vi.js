@@ -109,6 +109,8 @@ export default {
   "sp.inspection": "WebBrain bắt đầu xem trang này",
   "sp.greeting.html": "Xin chào! Tôi là <strong>WebBrain</strong>. Tôi đọc được nội dung trang, trả lời câu hỏi, nhấp nút, điền biểu mẫu và làm thay bạn những việc nhiều bước.",
   "sp.help_message": "Bạn cần tôi giúp gì ở trang này?",
+  "sp.tab_chat_restore_failed": "Chưa tải được cuộc trò chuyện đã lưu vì nền tiện ích không phản hồi. Để tránh mất dữ liệu, tab này sẽ tạm không lưu gì cho đến khi tải lại thành công.",
+  "sp.tab_chat_restore_reload": "Tải lại bảng điều khiển",
   "sp.cleared_message": "Đã xóa cuộc trò chuyện. Bạn cần gì tiếp theo?",
   "sp.clear.confirm": "Cuộc trò chuyện hiện tại sẽ mất. Bắt đầu cuộc mới?",
   "sp.clear.title": "Bắt đầu cuộc trò chuyện mới?",

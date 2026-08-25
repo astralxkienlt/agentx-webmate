@@ -127,6 +127,8 @@ export default {
 
   'sp.greeting.html': '안녕하세요! 저는 <strong>WebBrain</strong>입니다. 이 페이지를 읽고, 질문에 답하고, 버튼을 누르고, 양식을 채우며, 여러 단계의 작업을 자동화할 수 있습니다.',
   'sp.help_message': '이 페이지에서 무엇을 도와드릴까요?',
+  'sp.tab_chat_restore_failed': "확장 프로그램 백그라운드가 응답하지 않아 저장된 대화를 불러오지 못했습니다. 안전을 위해 불러오기가 성공할 때까지 이 탭에서는 아무것도 저장되지 않습니다.",
+  'sp.tab_chat_restore_reload': "패널 새로 고침",
   'sp.cleared_message': '대화가 지워졌습니다. 무엇을 도와드릴까요?',
   'sp.clear.confirm': '이 대화는 사라집니다. 새 대화를 시작할까요?',
   "sp.clear.title": "새 대화를 시작할까요?",

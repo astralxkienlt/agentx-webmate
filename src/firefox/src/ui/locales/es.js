@@ -127,6 +127,8 @@ export default {
 
   'sp.greeting.html': '¡Hola! Soy <strong>WebBrain</strong>. Puedo leer esta página, responder preguntas, hacer clic en botones, rellenar formularios y automatizar tareas de varios pasos.',
   'sp.help_message': '¿Cómo puedo ayudarte con esta página?',
+  'sp.tab_chat_restore_failed': "No se pudo cargar la conversación guardada porque el fondo de la extensión no responde. Para protegerla, no se guardará nada en esta pestaña hasta que la carga funcione.",
+  'sp.tab_chat_restore_reload': "Recargar panel",
   'sp.cleared_message': 'Conversación borrada. ¿En qué puedo ayudarte?',
   'sp.clear.confirm': 'Esta conversación se perderá. ¿Iniciar una nueva conversación?',
   "sp.clear.title": "¿Iniciar una nueva conversación?",

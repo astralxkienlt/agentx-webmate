@@ -37,6 +37,16 @@ export const SIDE_PANEL_PATH = 'src/ui/sidepanel.html';
  * came from a disable racing a gesture's enable+open pair; with no disable
  * path there is no race to lose. A panel the user closes stays closed until
  * the next explicit open.
+ *
+ * One global setOptions call is allowed to exist, and it lives in
+ * background.js, not here: `setOptions({ path, enabled: false })` at SW boot.
+ * That call registers the panel *document* without granting visibility
+ * anywhere — per-tab records override the disabled default, so it can never
+ * race a gesture's enable+open pair (different scope). It exists because Edge
+ * opens panels from its own sidebar rail and from session restore without
+ * running any of our gesture handlers; with no globally registered path those
+ * surfaces rendered chrome-extension://<id>/ as a permanently blank frame
+ * that only removing the extension cleared.
  */
 export function createSidePanelAvailability({ browserApi, path = SIDE_PANEL_PATH } = {}) {
   /**

@@ -127,6 +127,8 @@ export default {
 
   'sp.greeting.html': 'Kumusta! Ako si <strong>WebBrain</strong>. Kaya kong basahin ang pahinang ito, sumagot ng mga tanong, mag-click ng mga button, magpuno ng mga form, at mag-automate ng mga multi-step na gawain.',
   'sp.help_message': 'Paano kita matutulungan sa pahinang ito?',
+  'sp.tab_chat_restore_failed': "Hindi ma-load ang naka-save na pag-uusap dahil hindi tumutugon ang background ng extension. Para maprotektahan ito, walang ise-save para sa tab na ito hangga't hindi nagtatagumpay ang pag-load.",
+  'sp.tab_chat_restore_reload': "I-reload ang panel",
   'sp.cleared_message': 'Na-clear na ang pag-uusap. Paano kita matutulungan?',
   'sp.clear.confirm': 'Mawawala ang pag-uusap na ito. Magsimula ng bagong pag-uusap?',
   "sp.clear.title": "Magsimula ng bagong pag-uusap?",

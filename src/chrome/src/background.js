@@ -97,7 +97,7 @@ import {
   parseUserMemoryExtractionResult,
 } from './agent/user-memory.js';
 import { shouldAutoGroupTabs } from './tab-group-preference.js';
-import { createSidePanelAvailability } from './side-panel-availability.js';
+import { createSidePanelAvailability, SIDE_PANEL_PATH } from './side-panel-availability.js';
 import {
   CONFIG_STORAGE_KEYS,
   createConfigExport,
@@ -262,16 +262,29 @@ function getContextMenuPromptStore() {
 const contextMenuStorage = createContextMenuStorage(getContextMenuPromptStore);
 const tabChatHandoff = createTabChatHandoffCoordinator(chrome.storage.session, {
   requestHandoff: async (tabId, { ownerId, generation }) => {
+    // A live outgoing panel answers synchronously. A suspended one (Edge puts
+    // hidden panel documents to sleep) can hold the channel open without ever
+    // answering, which would park load(waitForHandoff) — and the panel waiting
+    // on it — indefinitely. Treat silence like absence: the stored snapshot is
+    // then the best copy available.
+    let timeoutId = null;
     try {
-      return await chrome.runtime.sendMessage({
-        target: 'sidepanel',
-        action: 'tab_chat_handoff_request',
-        tabId,
-        ownerId,
-        generation,
-      });
+      return await Promise.race([
+        chrome.runtime.sendMessage({
+          target: 'sidepanel',
+          action: 'tab_chat_handoff_request',
+          tabId,
+          ownerId,
+          generation,
+        }),
+        new Promise((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), 4_000);
+        }),
+      ]);
     } catch {
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 });
@@ -890,7 +903,12 @@ async function loadCustomSkills() {
   }
   agent.setCustomSkills(skills);
 }
-const customSkillsReady = loadCustomSkills();
+// Like every other *Ready promise, this must never stay rejected: handleMessage
+// awaits it on every non-lightweight message, so a single failed storage read at
+// SW boot would otherwise fail every message until the next SW restart.
+const customSkillsReady = loadCustomSkills().catch((e) => {
+  console.warn('[WebBrain] Custom skills hydration failed', e);
+});
 
 // A valid key plus explicit consent enables CapSolver. Requiring the existing
 // boolean preserves legacy profiles that saved a key while the old switch was
@@ -962,8 +980,16 @@ async function loadPlanReviewSettings() {
 // Hydrate once at SW boot. handleMessage awaits this promise so the first chat
 // can't race ahead of hydration, but it does NOT re-read storage per message —
 // the storage.onChanged listener below keeps the planner mode in sync. (#5)
-const planBeforeActReady = loadPlanBeforeAct();
-const planReviewReady = loadPlanReviewSettings();
+// Both fall back to the shipped defaults when the storage read fails: a
+// permanently rejected hydration promise would fail every background message.
+const planBeforeActReady = loadPlanBeforeAct().catch((e) => {
+  console.warn('[WebBrain] Plan-before-act hydration failed', e);
+  applyPlanBeforeActMode(normalizePlanBeforeActMode({}));
+});
+const planReviewReady = loadPlanReviewSettings().catch((e) => {
+  console.warn('[WebBrain] Plan-review hydration failed', e);
+  applyPlanReviewSettings({});
+});
 
 async function showFirstInstallGuide(details) {
   if (details?.reason !== 'install') return;
@@ -1171,7 +1197,22 @@ function saveWebBrainGroups() {
 }
 loadWebBrainGroups();
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+// Optional-chained like every other optional API here: a browser without
+// chrome.sidePanel would otherwise throw during module evaluation, before any
+// onMessage listener registers, and every panel message would fail with
+// "Receiving end does not exist".
+chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false })?.catch?.(() => {});
+
+// Register the panel *document* globally while keeping it disabled everywhere.
+// Some surfaces open the panel without ever running our gesture handlers —
+// Edge's sidebar rail and its session restore are the measured ones — and
+// with no global path registered they render chrome-extension://<id>/ as a
+// permanently blank frame that survives browser restarts (only removing the
+// extension cleared it). A disabled default with a real path gives those
+// surfaces a document to load without putting the panel on every tab; per-tab
+// setOptions({tabId, enabled: true}) overrides remain the only visibility
+// lever (see side-panel-availability.js).
+chrome.sidePanel?.setOptions?.({ path: SIDE_PANEL_PATH, enabled: false })?.catch?.(() => {});
 
 // Panel visibility model — opt in per tab, never disable.
 //

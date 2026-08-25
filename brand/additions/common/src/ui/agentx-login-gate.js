@@ -1,6 +1,7 @@
 import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
 import {
   AGENTX_SESSION_STORAGE_KEY,
+  AgentXCloudError,
   createAgentXCloudService,
 } from '../agentx/cloud-service.js';
 import { installCloudCredential } from '../agentx/cloud-provider-install.js';
@@ -32,6 +33,7 @@ const COPY = {
     sign_in_timeout: 'Sign-in exceeded five minutes. Start the flow again.',
     network_unavailable: 'Could not reach the service. Check your connection and try again.',
     request_timeout: 'The service took too long to answer. Try again.',
+    background_unavailable: 'The extension background did not respond. Try again; if it keeps happening, close and reopen the panel.',
     genericError: 'Sign-in failed. {detail}',
     openSettings: 'Open Settings',
   },
@@ -61,6 +63,7 @@ const COPY = {
     sign_in_timeout: 'Quá 5 phút chưa đăng nhập xong. Hãy làm lại từ đầu.',
     network_unavailable: 'Không kết nối được dịch vụ. Hãy kiểm tra mạng rồi thử lại.',
     request_timeout: 'Dịch vụ trả lời quá lâu. Hãy thử lại.',
+    background_unavailable: 'Nền tiện ích không phản hồi. Hãy thử lại; nếu vẫn lỗi, hãy đóng rồi mở lại bảng điều khiển.',
     genericError: 'Đăng nhập không thành công. {detail}',
     openSettings: 'Mở Cài đặt',
   },
@@ -70,6 +73,17 @@ const COPY = {
 // storage write, this only decides whether to bother calling it.
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'focusin'];
 const SESSION_POLL_INTERVAL_MS = 60_000;
+// Hard ceiling on one silent restore attempt. Every network call under it is
+// individually timeout-capped (worst legitimate chain ≈ 46s of sequential
+// fetches), so anything still spinning past this is a hang — storage or
+// messaging — that would otherwise leave the spinner up forever with the
+// retry button hidden.
+const RESTORE_ATTEMPT_TIMEOUT_MS = 60_000;
+// One background round trip while installing the credential. The handlers
+// answer in milliseconds when the service worker is healthy; what this guards
+// against is a worker that accepted the message and then died or deadlocked,
+// which used to park the gate at "provisioning" with no way out.
+const BACKGROUND_CALL_TIMEOUT_MS = 20_000;
 
 function language(locale) {
   return String(locale || '').toLowerCase().startsWith('vi') ? 'vi' : 'en';
@@ -109,12 +123,18 @@ export function createAgentXLoginGate({
   config = AGENTX_RUNTIME_CONFIG,
   serviceOptions = {},
   documentRef = globalThis.document,
+  restoreTimeoutMs = RESTORE_ATTEMPT_TIMEOUT_MS,
+  backgroundCallTimeoutMs = BACKGROUND_CALL_TIMEOUT_MS,
+  setTimeoutImpl,
+  clearTimeoutImpl,
 } = {}) {
   if (!root) throw new TypeError('root element is required');
   if (typeof sendToBackground !== 'function') {
     throw new TypeError('sendToBackground is required');
   }
 
+  const setTimer = setTimeoutImpl || globalThis.setTimeout.bind(globalThis);
+  const clearTimer = clearTimeoutImpl || globalThis.clearTimeout.bind(globalThis);
   const service = createAgentXCloudService({ ...serviceOptions, api, config });
   const elements = {
     eyebrow: root.querySelector('[data-agentx-gate-eyebrow]'),
@@ -135,7 +155,45 @@ export function createAgentXLoginGate({
   let notice = '';
   let watching = false;
   let pollTimer = null;
+  // Bumped at the start of every restore/sign-in attempt. An attempt that is
+  // no longer current must not touch the UI or unlock the panel: its deadline
+  // already surfaced a retry button, and a stale unlock racing a live attempt
+  // is exactly the kind of surprise this gate exists to prevent.
+  let attemptSeq = 0;
   const teardown = [];
+
+  /**
+   * sendToBackground with a settle guarantee. The plain call can stay pending
+   * forever when the service worker accepts the message and then dies or
+   * deadlocks; every gate-critical round trip goes through here instead.
+   */
+  function boundedSendToBackground(action, data) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeoutId = setTimer(() => {
+        if (settled) return;
+        settled = true;
+        reject(new AgentXCloudError(
+          'background_unavailable',
+          `Nền tiện ích không phản hồi khi xử lý "${action}".`,
+          { transient: true },
+        ));
+      }, backgroundCallTimeoutMs);
+      Promise.resolve()
+        .then(() => sendToBackground(action, data))
+        .then((value) => {
+          if (settled) return;
+          settled = true;
+          clearTimer(timeoutId);
+          resolve(value);
+        }, (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimer(timeoutId);
+          reject(error);
+        });
+    });
+  }
 
   function render() {
     const lang = locale();
@@ -208,9 +266,17 @@ export function createAgentXLoginGate({
     void restore({ reasonKey });
   }
 
-  async function connect(operation) {
+  /**
+   * Runs the operation and installs its credential, but only lets the CURRENT
+   * attempt unlock. A stale attempt (superseded by retry, or already timed
+   * out) may finish its work silently — the provider it installed makes the
+   * next attempt fast — yet it must never flip the UI under the live one.
+   */
+  async function connect(operation, attempt) {
     const result = await operation();
-    await installCloudCredential(sendToBackground, result.credential);
+    if (attempt !== attemptSeq) return;
+    await installCloudCredential(boundedSendToBackground, result.credential);
+    if (attempt !== attemptSeq) return;
     notice = '';
     busyAction = '';
     unlock();
@@ -220,14 +286,29 @@ export function createAgentXLoginGate({
   }
 
   async function restore({ reasonKey = '' } = {}) {
+    const attempt = ++attemptSeq;
     busyAction = 'checking';
     // The reason survives the status re-read: whatever cleared the session has
     // already done so, so the second read reports a plain "needs login" and
     // would otherwise wipe the explanation the user needs to see.
     notice = reasonKey ? copy(locale(), reasonKey) : '';
     render();
+    // The watchdog for everything the per-call timeouts cannot see (a hung
+    // storage read, a promise that never settles). It retires this attempt and
+    // brings the retry button back instead of spinning forever.
+    const deadlineId = setTimer(() => {
+      if (attempt !== attemptSeq || !locked) return;
+      attemptSeq += 1;
+      busyAction = '';
+      notice = copy(locale(), 'request_timeout');
+      render();
+      try {
+        console.error('[AgentX] sign-in restore timed out; showing retry');
+      } catch { /* ignore */ }
+    }, restoreTimeoutMs);
     try {
       const status = await service.publicStatus();
+      if (attempt !== attemptSeq) return;
       if (!status.signedIn) {
         busyAction = '';
         if (!notice && status.idleExpired) notice = copy(locale(), 'idleExpired');
@@ -236,25 +317,46 @@ export function createAgentXLoginGate({
       }
       busyAction = 'provisioning';
       render();
-      await connect(() => service.retryProvision());
+      await connect(() => service.retryProvision(), attempt);
     } catch (error) {
+      if (attempt !== attemptSeq) return;
       busyAction = '';
       notice = errorMessage(error, locale());
       render();
+    } finally {
+      clearTimer(deadlineId);
     }
   }
 
   async function signIn() {
     if (busyAction) return;
+    // Supersede any still-running restore so it cannot unlock mid-sign-in.
+    const attempt = ++attemptSeq;
     busyAction = 'signingIn';
     notice = '';
     render();
+    // The interactive window already self-limits at authTimeoutMs; the margin
+    // covers the provisioning tail. This only catches true hangs — awaits
+    // that never settle — which no inner timeout can reach.
+    const deadlineId = setTimer(() => {
+      if (attempt !== attemptSeq || !locked) return;
+      attemptSeq += 1;
+      busyAction = '';
+      notice = copy(locale(), 'request_timeout');
+      render();
+      try {
+        console.error('[AgentX] sign-in timed out; showing retry');
+      } catch { /* ignore */ }
+    }, (Number(config.authTimeoutMs) || 5 * 60_000) + 90_000);
     try {
-      await connect(() => service.signInAndProvision());
+      await connect(() => service.signInAndProvision(), attempt);
     } catch (error) {
+      if (attempt !== attemptSeq) return;
       busyAction = '';
       notice = errorMessage(error, locale());
       render();
+    } finally {
+      clearTimer(deadlineId);
     }
   }
 

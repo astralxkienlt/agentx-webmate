@@ -193,16 +193,28 @@ function getContextMenuPromptStore() {
 const contextMenuStorage = createContextMenuStorage(getContextMenuPromptStore);
 const tabChatHandoff = createTabChatHandoffCoordinator(browser.storage.session, {
   requestHandoff: async (tabId, { ownerId, generation }) => {
+    // A live outgoing panel answers synchronously. A suspended one can hold
+    // the channel open without ever answering, which would park
+    // load(waitForHandoff) — and the panel waiting on it — indefinitely.
+    // Treat silence like absence: the stored snapshot is then the best copy.
+    let timeoutId = null;
     try {
-      return await browser.runtime.sendMessage({
-        target: 'sidepanel',
-        action: 'tab_chat_handoff_request',
-        tabId,
-        ownerId,
-        generation,
-      });
+      return await Promise.race([
+        browser.runtime.sendMessage({
+          target: 'sidepanel',
+          action: 'tab_chat_handoff_request',
+          tabId,
+          ownerId,
+          generation,
+        }),
+        new Promise((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), 4_000);
+        }),
+      ]);
     } catch {
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 });
@@ -821,7 +833,12 @@ async function loadCustomSkills() {
   }
   agent.setCustomSkills(skills);
 }
-const customSkillsReady = loadCustomSkills();
+// Like every other *Ready promise, this must never stay rejected: handleMessage
+// awaits it on every non-lightweight message, so a single failed storage read at
+// boot would otherwise fail every message until the next background restart.
+const customSkillsReady = loadCustomSkills().catch((e) => {
+  console.warn('[WebBrain] Custom skills hydration failed', e);
+});
 
 // A valid key plus explicit consent enables CapSolver. Requiring the existing
 // boolean preserves legacy profiles that saved a key while the old switch was
@@ -893,8 +910,16 @@ async function loadPlanReviewSettings() {
 // Hydrate once at SW boot. handleMessage awaits this promise so the first chat
 // can't race ahead of hydration, but it does NOT re-read storage per message —
 // the storage.onChanged listener below keeps the planner mode in sync. (#5)
-const planBeforeActReady = loadPlanBeforeAct();
-const planReviewReady = loadPlanReviewSettings();
+// Both fall back to the shipped defaults when the storage read fails: a
+// permanently rejected hydration promise would fail every background message.
+const planBeforeActReady = loadPlanBeforeAct().catch((e) => {
+  console.warn('[WebBrain] Plan-before-act hydration failed', e);
+  applyPlanBeforeActMode(normalizePlanBeforeActMode({}));
+});
+const planReviewReady = loadPlanReviewSettings().catch((e) => {
+  console.warn('[WebBrain] Plan-review hydration failed', e);
+  applyPlanReviewSettings({});
+});
 
 function showFirstInstallGuide(details) {
   if (details?.reason !== 'install') return;

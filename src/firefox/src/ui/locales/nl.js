@@ -112,6 +112,8 @@ export default {
   'sp.inspection': 'WebBrain is begonnen met het inspecteren van deze pagina',
   'sp.greeting.html': 'Hallo! Ik ben <strong>WebBrain</strong>. Ik kan deze pagina lezen, vragen beantwoorden, op knoppen klikken, formulieren invullen en meerstapstaken automatiseren.',
   'sp.help_message': 'Hoe kan ik u helpen met deze pagina?',
+  'sp.tab_chat_restore_failed': "Het opgeslagen gesprek kon niet worden geladen omdat de achtergrond van de extensie niet reageert. Ter bescherming wordt er voor dit tabblad niets opgeslagen totdat het laden lukt.",
+  'sp.tab_chat_restore_reload': "Paneel opnieuw laden",
   'sp.cleared_message': 'Gesprek gewist. Hoe kan ik helpen?',
   'sp.clear.confirm': 'Dit gesprek gaat verloren. Nieuw gesprek beginnen?',
   "sp.clear.title": "Nieuw gesprek beginnen?",
