@@ -574,7 +574,7 @@ export default {
   ...apocalypseModeCopy,
   ...emergencyCopy,
   'st.display.cloud_bridge.label': 'Cloud bridge',
-  'st.display.cloud_bridge.desc': 'Connect one local controller to this Chromium profile. Use port 17373 for WebBrain Cloud, 17374 for MCP clients, or 17375 for LM Studio. Only one bridge can be active; normal permission prompts still apply.',
+  'st.display.cloud_bridge.desc': 'Connect one local controller to this Chromium profile. Point it at port 17374 for MCP clients, 17375 for the LM Studio plugin, or 17373 for a cloud run service. Only one bridge can be active; normal permission prompts still apply.',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'Use a local ws:// URL with 127.0.0.1, localhost, or ::1.',

@@ -574,7 +574,7 @@ export default {
   ...getApocalypseModeCopy('fa'),
   ...getEmergencyBoxCopy('fa'),
   'st.display.cloud_bridge.label': 'پل ابری',
-  'st.display.cloud_bridge.desc': 'یک کنترل‌کننده محلی را به این نمایه Chromium متصل کنید. برای WebBrain Cloud از درگاه 17373، برای سرویس‌گیرنده‌های MCP از 17374 یا برای LM Studio از 17375 استفاده کنید. فقط یک پل می‌تواند فعال باشد؛ درخواست‌های معمول مجوز همچنان اعمال می‌شوند.',
+  'st.display.cloud_bridge.desc': 'یک کنترل‌کننده محلی را به این نمایه Chromium متصل کنید. برای سرویس‌گیرنده‌های MCP از درگاه 17374، برای افزونه LM Studio از 17375 یا برای یک سرویس اجرای ابری از 17373 استفاده کنید. فقط یک پل می‌تواند فعال باشد؛ درخواست‌های معمول مجوز همچنان اعمال می‌شوند.',
   'st.display.cloud_bridge.url_label': 'نشانی WebSocket',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'از یک نشانی محلی ws:// با 127.0.0.1، localhost یا ::1 استفاده کنید.',

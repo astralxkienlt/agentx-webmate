@@ -41215,7 +41215,7 @@ test('Cloud bridge settings are Chromium-only, live under Advanced, and keep set
   assert.match(chromeSettings, /status\.lastError === 'WebSocket error'[\s\S]*status_unreachable/, 'generic WebSocket failures should explain that the local bridge is unreachable');
   assert.match(chromeSettings, /url\.protocol !== 'ws:'[\s\S]*127\.0\.0\.1[\s\S]*localhost[\s\S]*\[::1\]/, 'settings should reject non-loopback bridge URLs before saving');
   assert.match(chromeLocale, /'st\.display\.cloud_bridge\.label': 'Cloud bridge'/, 'Chrome English bridge label missing');
-  assert.match(chromeLocale, /Use port 17373 for WebBrain Cloud, 17374 for MCP clients, or 17375 for LM Studio/, 'bridge copy should explain the one-socket destinations');
+  assert.match(chromeLocale, /Point it at port 17374 for MCP clients, 17375 for the LM Studio plugin, or 17373 for a cloud run service/, 'bridge copy should lead with the MCP socket and name the alternatives generically');
 
   for (const rel of ['README.md', 'mcp-server/README.md', 'lmstudio-plugin/README.md']) {
     const readme = fs.readFileSync(path.join(ROOT, rel), 'utf8');

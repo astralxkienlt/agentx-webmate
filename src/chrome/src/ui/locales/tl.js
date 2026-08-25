@@ -794,7 +794,7 @@ export default {
   'st.display.search.empty': 'Walang tugmang General na mga setting.',
   'st.display.advanced': 'Advanced',
   'st.display.cloud_bridge.label': 'Cloud bridge',
-  'st.display.cloud_bridge.desc': 'Ikonekta ang isang lokal na controller sa Chromium profile na ito. Gamitin ang port 17373 para sa WebBrain Cloud, 17374 para sa mga MCP client, o 17375 para sa LM Studio. Isang bridge lang ang maaaring aktibo; nalalapat pa rin ang karaniwang mga prompt ng pahintulot.',
+  'st.display.cloud_bridge.desc': 'Ikonekta ang isang lokal na controller sa Chromium profile na ito. Gamitin ang port 17374 para sa mga MCP client, 17375 para sa LM Studio plugin, o 17373 para sa isang cloud run service. Isang bridge lang ang maaaring aktibo; nalalapat pa rin ang karaniwang mga prompt ng pahintulot.',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'Gumamit ng lokal na ws:// URL na may 127.0.0.1, localhost, o ::1.',
