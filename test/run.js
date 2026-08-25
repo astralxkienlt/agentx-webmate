@@ -45444,7 +45444,7 @@ test('duplicate provider controls are wired through background and settings in b
     assert.match(sidepanel, /appendProviderPickerOption\(id, name, t\('sp\.providers\.active'\), config\.sourceProviderId \|\| id\)/, `${label}: duplicate picker entries should reuse their source icon`);
   }
 
-  const localeKeyPattern = /'st\.providers\.duplicate_inactive':\s*'([^']+)'/;
+  const localeKeyPattern = /['"]st\.providers\.duplicate_inactive['"]:\s*['"]([^'"]+)['"]/;
   const chromeLocaleDir = path.join(ROOT, 'src/chrome/src/ui/locales');
   const firefoxLocaleDir = path.join(ROOT, 'src/firefox/src/ui/locales');
   for (const localeFile of fs.readdirSync(chromeLocaleDir).filter(file => file.endsWith('.js'))) {
@@ -45604,7 +45604,7 @@ test('extended provider catalog is complete, mirrored, safe, and excluded-provid
     const localeDir = path.join(ROOT, prefix, 'src/ui/locales');
     for (const localeFile of fs.readdirSync(localeDir).filter(file => file.endsWith('.js'))) {
       const localeSource = fs.readFileSync(path.join(localeDir, localeFile), 'utf8');
-      assert.match(localeSource, /'sp\.streaming\.fallback':/, `${label}: ${localeFile} missing localized Ask stream fallback`);
+      assert.match(localeSource, /['"]sp\.streaming\.fallback['"]:/, `${label}: ${localeFile} missing localized Ask stream fallback`);
     }
     const sidepanel = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.js'), 'utf8');
     assert.match(
