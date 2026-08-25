@@ -1531,6 +1531,7 @@ function renderPermissionModeMenu() {
     check.textContent = '\u2713';
     check.setAttribute('aria-hidden', 'true');
     const number = document.createElement('span');
+    number.className = 'permission-mode-item-key';
     number.textContent = String(index + 1);
     number.setAttribute('aria-hidden', 'true');
     shortcut.append(check, number);
@@ -12022,6 +12023,11 @@ function setMode(mode, { remember = true, instant = false } = {}) {
   modeActBtn.classList.toggle('act', mode === 'act');
   modeDevBtn?.classList.toggle('active', mode === 'dev');
   modeDevBtn?.classList.toggle('act', mode === 'dev');
+  // aria-pressed mirrors .active for assistive tech. Optional calls: the unit
+  // tests drive setMode with bare stubs that have no setAttribute.
+  modeAskBtn.setAttribute?.('aria-pressed', String(mode === 'ask'));
+  modeActBtn.setAttribute?.('aria-pressed', String(mode === 'act'));
+  modeDevBtn?.setAttribute?.('aria-pressed', String(mode === 'dev'));
   inputArea.classList.toggle('act-mode', mode !== 'ask');
 
   // Slide the highlight pill to the active button
