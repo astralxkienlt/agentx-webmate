@@ -6090,20 +6090,25 @@
       // CROSS-WORLD NOTE: page JavaScript runs in the MAIN world; this
       // content script runs in an ISOLATED world that has its own copies
       // of `window.fetch` and `XMLHttpRequest.prototype.send`. Patching
-      // those copies here (the previous implementation) observed nothing
-      // — the page calls the MAIN-world fetch we can't reach directly.
-      // To get real network visibility we inject a <script> element with
-      // text patches that run in the page's own world. The injected
-      // counter publishes its value to
+      // those copies here observes nothing — the page calls the MAIN-world
+      // fetch we can't reach directly. The real patch lives in
+      // net-idle-main-world.js, declared in manifest.json as a
+      // "world": "MAIN" content script so it runs in the page's own realm.
+      // An earlier version injected the same patch via a <script> element
+      // with inline text from here — pages with a strict CSP (no
+      // 'unsafe-inline') block that outright, which showed up as a CSP
+      // violation in DevTools on every page load. A declarative MAIN-world
+      // content script is exempt from the page's CSP, so it avoids the
+      // violation entirely instead of merely recovering from it.
+      // It publishes its counter to
       // `document.documentElement.dataset.__wbInflight`, which crosses
       // the world boundary via the shared DOM. We read it from here.
       //
-      // STRICT-CSP FALLBACK: pages with `script-src 'self'` (no inline)
-      // refuse the injected <script>. We detect the failure (the dataset
-      // attribute never gets set) and degrade gracefully: the response
-      // includes `networkObserved: false`, the netIdle gate is bypassed,
-      // and stability is decided on MutationObserver alone. Honest
-      // failure beats a fake "idle" signal.
+      // NETWORK-OBSERVATION FALLBACK: if the counter attribute never
+      // appears (e.g. a frame that predates the content script), we
+      // degrade gracefully: the response includes `networkObserved: false`,
+      // the netIdle gate is bypassed, and stability is decided on
+      // MutationObserver alone. Honest failure beats a fake "idle" signal.
       'wait_for_stable': () => {
         return new Promise((resolve) => {
           const params = msg.params || {};
@@ -6112,46 +6117,6 @@
           const checkNetwork = params.checkNetwork !== false; // default on
           let mutationCount = 0;
           let networkObserved = false;
-
-          // Install the MAIN-world counter once per page (per isolated-
-          // world realm — re-injection is a no-op).
-          if (checkNetwork && !window.__wbNetCounterAttempted) {
-            window.__wbNetCounterAttempted = true;
-            try {
-              const script = document.createElement('script');
-              script.textContent = `(() => {
-                if (window.__wbNetIdleInstalled) return;
-                window.__wbNetIdleInstalled = true;
-                let inFlight = 0;
-                const root = document.documentElement;
-                const publish = () => {
-                  try { root.dataset.__wbInflight = String(inFlight); } catch (_) {}
-                };
-                publish();
-                const origFetch = window.fetch;
-                if (typeof origFetch === 'function') {
-                  window.fetch = function() {
-                    inFlight++; publish();
-                    return origFetch.apply(this, arguments).finally(() => {
-                      inFlight = Math.max(0, inFlight - 1); publish();
-                    });
-                  };
-                }
-                const XHR = window.XMLHttpRequest;
-                if (XHR && XHR.prototype && XHR.prototype.send) {
-                  const origSend = XHR.prototype.send;
-                  XHR.prototype.send = function() {
-                    inFlight++; publish();
-                    const done = () => { inFlight = Math.max(0, inFlight - 1); publish(); };
-                    this.addEventListener('loadend', done, { once: true });
-                    return origSend.apply(this, arguments);
-                  };
-                }
-              })();`;
-              (document.head || document.documentElement).appendChild(script);
-              script.remove();
-            } catch { /* CSP or DOM unavailability — networkObserved stays false */ }
-          }
 
           // Read the MAIN-world counter via the shared DOM attribute.
           // Returns null when the inject failed (CSP) or hasn't run yet.
@@ -6219,7 +6184,7 @@
                 networkObserved,
                 hint: networkObserved
                   ? 'Page never went quiet within the timeout. The page may be polling, animating, or streaming — proceed and read the tree anyway, or pass a longer timeout.'
-                  : 'Network activity could not be observed on this page (the in-page <script> inject was blocked, likely by a strict Content Security Policy). Stability was judged on DOM mutations alone, and that never settled. Proceed cautiously.',
+                  : 'Network activity could not be observed on this page (the network-idle content script never published a counter, e.g. this frame predates it). Stability was judged on DOM mutations alone, and that never settled. Proceed cautiously.',
               });
             }
           }, 100);

@@ -38,7 +38,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/content/file-picker-guard-page.js"],
+      "js": ["src/content/file-picker-guard-page.js", "src/content/net-idle-main-world.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },

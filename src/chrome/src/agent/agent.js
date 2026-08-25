@@ -17796,7 +17796,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     await chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
-      files: ['src/content/file-picker-guard-page.js'],
+      files: ['src/content/file-picker-guard-page.js', 'src/content/net-idle-main-world.js'],
     });
     await chrome.scripting.executeScript({
       target: { tabId },

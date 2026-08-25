@@ -19336,6 +19336,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     await browser.tabs.executeScript(tabId, {
       file: 'src/content/file-picker-guard-loader.js',
     });
+    await browser.tabs.executeScript(tabId, {
+      file: 'src/content/net-idle-loader.js',
+    });
     // The loader fetches a web-accessible extension script into the page's
     // main world. Give that local load a brief head start before content.js
     // can dispatch an action; content.js also leaves its arm token in the

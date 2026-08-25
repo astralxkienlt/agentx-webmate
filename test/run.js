@@ -64616,6 +64616,35 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
     'firefox: page-world showPicker guard must be web-accessible',
   );
 
+  const chromeNetIdleGuard = chromeManifest.content_scripts.find(entry =>
+    entry.world === 'MAIN'
+    && entry.js?.includes('src/content/net-idle-main-world.js')
+  );
+  assert.ok(chromeNetIdleGuard, 'chrome: wait_for_stable net-idle counter must run in the page MAIN world');
+  assert.equal(chromeNetIdleGuard.run_at, 'document_start');
+
+  const firefoxNetIdleLoader = firefoxManifest.content_scripts.find(entry =>
+    entry.js?.includes('src/content/net-idle-loader.js')
+  );
+  assert.ok(firefoxNetIdleLoader, 'firefox: wait_for_stable net-idle page-world loader is missing');
+  assert.equal(firefoxNetIdleLoader.run_at, 'document_start');
+  assert.ok(
+    firefoxManifest.web_accessible_resources.includes('src/content/net-idle-page.js'),
+    'firefox: page-world net-idle counter must be web-accessible',
+  );
+
+  for (const relPath of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /script\.textContent = `\(\(\) => \{[\s\S]*__wbNetIdleInstalled/,
+      `${relPath}: wait_for_stable must not inline-inject the net-idle patch — strict-CSP pages (no 'unsafe-inline') block it outright and log a violation`,
+    );
+  }
+
   const pageGuardPaths = [
     'src/chrome/src/content/file-picker-guard-page.js',
     'src/firefox/src/content/file-picker-guard-page.js',
@@ -64645,7 +64674,7 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
     assert.deepEqual(chromeInjections[0], {
       target: { tabId: 42 },
       world: 'MAIN',
-      files: ['src/content/file-picker-guard-page.js'],
+      files: ['src/content/file-picker-guard-page.js', 'src/content/net-idle-main-world.js'],
     });
     assert.ok(
       chromeInjections[1].files.includes('src/content/content.js'),
@@ -64668,6 +64697,7 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
     await agent._injectCoreContentScripts(43);
     assert.deepEqual(firefoxInjections.map(injection => injection.file), [
       'src/content/file-picker-guard-loader.js',
+      'src/content/net-idle-loader.js',
       'src/content/rich-text-toolbar-heuristic.js',
       'src/content/accessibility-tree.js',
       'src/content/content.js',
