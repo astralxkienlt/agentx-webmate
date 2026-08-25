@@ -36553,6 +36553,30 @@ test('social media downloader copies stay in sync', () => {
   assert.equal(fixture, chrome);
 });
 
+test('social media downloader survives re-injection into the same realm', () => {
+  // The chrome build evaluates this file repeatedly in one MAIN-world
+  // realm: the manifest content_script at document_start, then
+  // executeScript on every download_social_media call. Any top-level
+  // const/let makes the second evaluation throw "Identifier ... has
+  // already been declared" before a runtime guard can run.
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/social-media-downloader.js'), 'utf8');
+  const context = vm.createContext({
+    console: { log: () => {}, warn: () => {}, error: () => {} },
+    document: { querySelectorAll: () => [] },
+    location: { href: 'https://www.facebook.com/', hostname: 'www.facebook.com', pathname: '/', search: '' },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  });
+  context.window = context;
+  vm.runInContext(source, context, { filename: 'social-media-downloader.js' });
+  const first = context.SocialMediaDownloader;
+  assert.ok(first, 'first evaluation should define SocialMediaDownloader');
+  vm.runInContext(source, context, { filename: 'social-media-downloader.js' });
+  assert.ok(context.SocialMediaDownloader, 'second evaluation should keep SocialMediaDownloader defined');
+  assert.notEqual(context.SocialMediaDownloader, first,
+    'second evaluation should replace the library so a stale copy gets refreshed');
+});
+
 test('social media MSE strict mode refuses split tracks and accepts verified muxed video', async () => {
   const split = loadSocialMediaDownloaderRuntime();
   assert.equal(split.smd.armMseRecorder().armed, true);
