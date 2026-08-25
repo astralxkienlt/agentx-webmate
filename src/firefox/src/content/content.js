@@ -5068,12 +5068,20 @@
       // CROSS-WORLD NOTE: Firefox content scripts (like Chrome) run in a
       // separate JS compartment from the page. Patching `window.fetch` /
       // `XMLHttpRequest.prototype.send` here observes nothing because the
-      // page's calls happen in the page's own world. Same fix as Chrome:
-      // inject a <script> with text patches, publish the in-flight count
-      // via `document.documentElement.dataset.__wbInflight` (shared DOM
-      // crosses the world boundary), read from here. Page CSP can refuse
-      // the inline-script inject — when that happens we fall back to
-      // MutationObserver-only stability and flag `networkObserved: false`.
+      // page's calls happen in the page's own world. The real patch lives
+      // in net-idle-page.js, loaded into the page's main world by
+      // net-idle-loader.js via a web-accessible extension URL — the same
+      // technique file-picker-guard-page.js uses. An earlier version
+      // injected the same patch as a <script> with inline text from here,
+      // which pages with a strict CSP (no 'unsafe-inline') block outright,
+      // showing up as a CSP violation on every page load; a src'd
+      // extension resource isn't inline script and isn't blocked. It
+      // publishes the in-flight count via
+      // `document.documentElement.dataset.__wbInflight` (shared DOM
+      // crosses the world boundary), read from here. If the counter
+      // attribute never appears (e.g. a frame that predates the content
+      // script) we fall back to MutationObserver-only stability and flag
+      // `networkObserved: false`.
       'wait_for_stable': () => {
         return new Promise((resolve) => {
           const params = msg.params || {};
@@ -5082,44 +5090,6 @@
           const checkNetwork = params.checkNetwork !== false;
           let mutationCount = 0;
           let networkObserved = false;
-
-          if (checkNetwork && !window.__wbNetCounterAttempted) {
-            window.__wbNetCounterAttempted = true;
-            try {
-              const script = document.createElement('script');
-              script.textContent = `(() => {
-                if (window.__wbNetIdleInstalled) return;
-                window.__wbNetIdleInstalled = true;
-                let inFlight = 0;
-                const root = document.documentElement;
-                const publish = () => {
-                  try { root.dataset.__wbInflight = String(inFlight); } catch (_) {}
-                };
-                publish();
-                const origFetch = window.fetch;
-                if (typeof origFetch === 'function') {
-                  window.fetch = function() {
-                    inFlight++; publish();
-                    return origFetch.apply(this, arguments).finally(() => {
-                      inFlight = Math.max(0, inFlight - 1); publish();
-                    });
-                  };
-                }
-                const XHR = window.XMLHttpRequest;
-                if (XHR && XHR.prototype && XHR.prototype.send) {
-                  const origSend = XHR.prototype.send;
-                  XHR.prototype.send = function() {
-                    inFlight++; publish();
-                    const done = () => { inFlight = Math.max(0, inFlight - 1); publish(); };
-                    this.addEventListener('loadend', done, { once: true });
-                    return origSend.apply(this, arguments);
-                  };
-                }
-              })();`;
-              (document.head || document.documentElement).appendChild(script);
-              script.remove();
-            } catch {}
-          }
 
           const readInflight = () => {
             try {
@@ -5175,7 +5145,7 @@
                 networkObserved,
                 hint: networkObserved
                   ? 'Page never went quiet within the timeout. Proceed and read the tree anyway, or pass a longer timeout.'
-                  : 'Network activity could not be observed on this page (the in-page <script> inject was blocked, likely by a strict Content Security Policy). Stability was judged on DOM mutations alone, and that never settled. Proceed cautiously.',
+                  : 'Network activity could not be observed on this page (the network-idle content script never published a counter, e.g. this frame predates it). Stability was judged on DOM mutations alone, and that never settled. Proceed cautiously.',
               });
             }
           }, 100);
