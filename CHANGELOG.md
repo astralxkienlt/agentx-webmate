@@ -4,6 +4,14 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [0.1.16] - 2026-08-25
+
+### Added
+- **The Ask/Act/Dev switcher and the permission chip got a redesign.** The mode toggle is now an iOS-style segmented control — a recessed track, a sliding thumb that carries the active mode's colour, a small icon per mode, equal-width segments — with `aria-pressed` kept in sync on every button. The permission chip swaps its shield for a struck-through one while Bypass permissions is standing, so the widest rung is visible at a glance. Mode labels moved into their own spans, which stops a locale pass from erasing the icons.
+
+### Changed
+- First tracked store build of the 0.1.15 series. The 0.1.15 submission archives were built from a stale checkout and never committed, so these 0.1.16 archives are the first cut from the branch tip that actually ships everything recorded under 0.1.15 — the graduated permission modes, the always-on cloud bridge and its liveness fixes, the CSP-safe network-idle probe and the reworded bridge copy in all 23 locales — together with the redesigned composer above. The bump itself changes version strings only.
+
 ## [0.1.15] - 2026-08-24
 
 ### Added
