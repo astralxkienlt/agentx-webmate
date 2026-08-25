@@ -667,7 +667,7 @@ export default {
   'sp.permmode.page_actions': '页面操作',
   'sp.permmode.page_actions.desc': '同时接受提交表单和运行页面脚本；在下载、上传、写入 API 或安排任务前仍会询问。',
   'sp.permmode.bypass': '跳过权限确认',
-  'sp.permmode.bypass.desc': "在所有网站上接受全部权限，并且不请你批准就直接执行计划。",
+  'sp.permmode.bypass.desc': "在所有网站上接受全部权限，不请你批准就直接执行计划，问题超时未答也会按默认答案继续。",
   'tool.schedule_resume': '正在安排恢复',
   'tool.schedule_task': '正在安排任务',
   'st.display.scheduled_tasks.label': '定时任务',

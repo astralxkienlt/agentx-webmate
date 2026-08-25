@@ -22,11 +22,14 @@
  * `bypass` is the one rung that reaches past this file's capability ladder.
  * Its name is a promise about the whole run, not about a subset of the cards,
  * so it also auto-approves the planner's review gate
- * (permissionModeAutoApprovesPlanReview) and it outranks the WebMCP callback's
- * otherwise-mandatory confirmation — a mode that already runs execute_js
- * unprompted buys no safety by stopping for a tool the page chose to expose.
- * What it does NOT silence is a question about the TASK: the model's own
- * clarify() call is not a permission, and no mode answers it.
+ * (permissionModeAutoApprovesPlanReview), it releases the clarify-timeout
+ * authorization guard (permissionModeAutoAuthorizesClarifyTimeout), and it
+ * outranks the WebMCP callback's otherwise-mandatory confirmation — a mode that
+ * already runs execute_js unprompted buys no safety by stopping for a tool the
+ * page chose to expose.
+ * What it does NOT do is answer a question about the TASK: the model's own
+ * clarify() call is not a permission, so every mode including `bypass` still
+ * asks it. `bypass` only decides what happens when nobody replies.
  *
  * Two rules make this safe to reason about:
  *
@@ -167,6 +170,30 @@ export function permissionModeSkipsAllGates(mode) {
  * the widest mode reaches.
  */
 export function permissionModeAutoApprovesPlanReview(mode) {
+  return permissionModeSkipsAllGates(mode);
+}
+
+/**
+ * Does the mode also authorize a clarify answer that was AUTO-SELECTED after a
+ * WAITED timeout? Only `bypass`.
+ *
+ * Passive silence is not a decision, so by default the runtime refuses to let a
+ * waited timeout stand in for the user: the next consequential action and any
+ * success completion are blocked until the question is answered for real (see
+ * agent.js `_clarificationAuthorizationBlock`). Structurally that guard is a
+ * permission card — a run halted until a human replies — which is exactly what
+ * the "accepts everything, asks nothing" rung promises to cover. Without this,
+ * `bypass` still stops mid-run, just with a different card.
+ *
+ * Two things this does NOT change. The clarify question is still asked in every
+ * mode, because it is a question about the task rather than a permission. And
+ * the timeout guard is still RECORDED: like every other mode decision this is
+ * read live and never written, so dropping back to a stricter mode restores the
+ * block for the actions that follow. `auto` and `page_actions` are deliberately
+ * excluded — they pre-approve interaction the user can watch happen, not the
+ * substitution of silence for an answer.
+ */
+export function permissionModeAutoAuthorizesClarifyTimeout(mode) {
   return permissionModeSkipsAllGates(mode);
 }
 

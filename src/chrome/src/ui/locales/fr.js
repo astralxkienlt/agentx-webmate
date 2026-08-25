@@ -701,7 +701,7 @@ export default {
   'sp.permmode.page_actions': 'Actions de page',
   'sp.permmode.page_actions.desc': 'L\'envoi de formulaires et les scripts de page sont également acceptés. WebBrain demande encore avant de télécharger, d\'envoyer un fichier, d\'écrire via une API ou de planifier un travail.',
   'sp.permmode.bypass': 'Tout autoriser',
-  'sp.permmode.bypass.desc': "Accepte toutes les autorisations sur tous les sites et exécute le plan sans vous demander de l’approuver.",
+  'sp.permmode.bypass.desc': "Accepte toutes les autorisations sur tous les sites, exécute le plan sans vous demander de l’approuver, et continue avec la réponse par défaut si une question expire sans réponse.",
   'tool.schedule_resume': 'Planification de la reprise',
   'tool.schedule_task': 'Planification de la tâche',
   'st.display.scheduled_tasks.label': 'Tâches planifiées',

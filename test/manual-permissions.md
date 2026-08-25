@@ -166,9 +166,19 @@ Settings → Permissions shows the same value.
    WebMCP tools, ask for one. **Expect** no invocation card and no frame-host
    card. In **Auto** and **Accept page actions** the same call must still raise
    the card — that gate only yields to Bypass.
-6. What Bypass does **not** silence: a `clarify()` question from the model
-   ("which of these two accounts?"). That is a question about the task, not a
-   permission, and no mode answers it.
+6. **A timed-out `clarify` no longer stops the run.** Set Settings → Display →
+   "Clarify timeout" to a short wait (say 5s) and give the agent a task it will
+   ask about. Let the question expire without answering. **Expect** the run
+   carries on: the clarify tool result reports `authorized: true`, its note
+   names *Bypass permissions*, and the next consequential action dispatches. In
+   **Auto** and **Accept page actions** the same expiry must still block the
+   next consequential action *and* any success completion until you answer for
+   real. Narrow the mode after the timeout and the block is back — the guard is
+   still stored, only the answer to it changed.
+7. What Bypass does **not** silence: the `clarify()` question itself still
+   appears, in every mode. That is a question about the task, not a permission,
+   so no mode answers it for you — Bypass only decides what happens when nobody
+   replies. The workflow target-healing card is likewise asked in every mode.
 
 ### 5e. Narrowing restores prompts immediately
 1. From Auto, go back to **Ask every time** and repeat the click from 5b.
@@ -181,7 +191,13 @@ Settings → Permissions shows the same value.
 3. **Expect** the click card disappears and the action proceeds.
 4. Repeat with a **download** card open: switching to Auto must leave that card
    standing (Auto does not cover downloads); switching to **Bypass** clears it.
-5. Console: `wb_permissions` stays empty — auto-answered cards are `once`.
+5. Repeat with a **plan review card** open (plan review set to *always*). Type
+   an edit into the plan first, then switch to **Auto** or **Accept page
+   actions**: the card must stay: those rungs do not cover plan review. Switch
+   to **Bypass**: the card is approved and the run continues, and the approved
+   plan contains the edit you typed — not the original. `/dangerously-skip-
+   permissions` must clear the same card.
+6. Console: `wb_permissions` stays empty — auto-answered cards are `once`.
 
 ### 5g. The slash command and the chip are one setting
 1. Type `/dangerously-skip-permissions`. **Expect** the chip switches to
@@ -211,7 +227,11 @@ untrusted-wrapping behaviour, independent of the mode).
 - Grants are per-capability+host (Test 2).
 - Bypass raises **no** card at all: no capability card, no submit card, no
   WebMCP card, and no plan review — even with plan review pinned to *always*
-  (5d).
+  (5d), including a plan card that was already on screen when the mode changed
+  (5f.5).
+- In Bypass a `clarify` that expires unanswered authorizes the run to continue;
+  in every other mode it still blocks the next consequential action and any
+  success completion. The question itself is asked in all four modes (5d.6-7).
 - Permissions tab lists/revokes/clears correctly; a revoke causes an immediate
   re-prompt (Test 3).
 - Grants persist across reload (Test 4).

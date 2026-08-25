@@ -374,7 +374,7 @@ export default {
   'sp.permmode.page_actions': 'Ações na página',
   'sp.permmode.page_actions.desc': 'Envios de formulário e scripts da página também são aceitos. O WebBrain ainda pergunta antes de baixar, enviar um arquivo, escrever em uma API ou agendar trabalho.',
   'sp.permmode.bypass': 'Ignorar permissões',
-  'sp.permmode.bypass.desc': "Aceita todas as permissões em todos os sites e executa o plano sem pedir a sua aprovação.",
+  'sp.permmode.bypass.desc': "Aceita todas as permissões em todos os sites, executa o plano sem pedir a sua aprovação e continua com a resposta predefinida se uma pergunta expirar sem resposta.",
   'sp.step.details': "detalhes",
   'sp.step.input_label': "Entrada",
   'sp.step.result_label': "Resultado",

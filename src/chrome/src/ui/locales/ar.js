@@ -701,7 +701,7 @@ export default {
   'sp.permmode.page_actions': 'إجراءات الصفحة',
   'sp.permmode.page_actions.desc': 'يُقبل أيضًا إرسال النماذج وتنفيذ نصوص الصفحة، ولا يزال WebBrain يسأل قبل التنزيل أو الرفع أو الكتابة عبر واجهة برمجية أو جدولة عمل.',
   'sp.permmode.bypass': 'تجاوز الأذونات',
-  'sp.permmode.bypass.desc': "يقبل كل الأذونات على كل المواقع، وينفّذ الخطة دون أن يطلب موافقتك.",
+  'sp.permmode.bypass.desc': "يقبل كل الأذونات على كل المواقع، وينفّذ الخطة دون أن يطلب موافقتك، ويتابع بالإجابة الافتراضية إذا انتهت مهلة سؤال دون رد.",
   'tool.schedule_resume': 'جدولة استئناف',
   'tool.schedule_task': 'جدولة مهمة',
   'st.display.scheduled_tasks.label': 'المهام المجدوَلة',

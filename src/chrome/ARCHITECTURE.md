@@ -867,7 +867,7 @@ all-or-nothing master switch:
 | `manual` (default) | nothing | every consequential action |
 | `auto` | navigate, click, type, temporary page edits, window resize | form submits, page scripts, downloads, uploads, outbound requests, scheduled work |
 | `page_actions` | the above plus form submits and `execute_js` | downloads, uploads, outbound requests, scheduled work |
-| `bypass` | everything, incl. form submits, WebMCP callbacks and the plan card | nothing |
+| `bypass` | everything, incl. form submits, WebMCP callbacks, the plan card, and a waited `clarify` timeout as authorization | nothing |
 
 Two invariants make this reviewable:
 
@@ -896,9 +896,24 @@ mode.
 card that stops a run before its first tool call, so the rung that promises
 "accepts everything, asks nothing" approves it and runs, overriding even
 `planReviewMode: always`. The skip is not silent: the conversation gets an
-"auto-approved by permission mode" note naming the mode. What no mode silences
-is a question about the TASK — the model's own `clarify()` call is not a
-permission, so nothing on this ladder answers it.
+"auto-approved by permission mode" note naming the mode.
+
+The same reasoning covers the **waited-`clarify` authorization guard**
+(`permissionModeAutoAuthorizesClarifyTimeout`). When a `clarify` times out with
+no reply, the auto-selected answer is normally not treated as user
+authorization: the next consequential action and any success completion are
+blocked until a human answers (`_clarificationAuthorizationBlock`). That is a
+run halted for an approval, so `bypass` releases it — read from the live mode,
+never recorded, so the guard stays armed and a stricter mode restores the block
+for the actions that follow. The clarify RESULT carries the decision in its own
+`authorized` field and its note, which is what the system prompt tells the
+model to trust, so the prompt and the runtime cannot disagree. `auto` and
+`page_actions` deliberately do not: they pre-approve interaction a watching user
+can follow, not the substitution of silence for an answer.
+
+What no mode silences is the QUESTION itself — the model's own `clarify()` call
+is not a permission, so every mode including `bypass` still asks it. `bypass`
+only decides what happens when nobody replies.
 
 The mode is stored under `permissionMode`; an install that predates it is
 migrated from `askBeforeConsequentialActions` on first read, and that key is

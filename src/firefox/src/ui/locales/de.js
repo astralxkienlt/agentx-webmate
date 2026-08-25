@@ -384,7 +384,7 @@ export default {
   'sp.permmode.page_actions': 'Seitenaktionen',
   'sp.permmode.page_actions.desc': 'Auch das Absenden von Formularen und Seitenskripte werden zugelassen. Vor Downloads, Uploads, API-Schreibzugriffen oder geplanter Arbeit fragt WebBrain weiterhin.',
   'sp.permmode.bypass': 'Alles zulassen',
-  'sp.permmode.bypass.desc': "Akzeptiert alle Berechtigungen auf jeder Website und führt den Plan aus, ohne ihn zur Freigabe vorzulegen.",
+  'sp.permmode.bypass.desc': "Akzeptiert alle Berechtigungen auf jeder Website, führt den Plan aus, ohne ihn zur Freigabe vorzulegen, und macht mit der Standardantwort weiter, wenn eine Frage unbeantwortet abläuft.",
   'sp.help.shortcuts_html': '<strong>Tastenkürzel</strong><br><code>Ctrl/Cmd+/</code> — Eingabefeld fokussieren<br><code>Ctrl/Cmd+Shift+A</code> — Zum Fragen-Modus wechseln<br><code>Ctrl/Cmd+Shift+X</code> — Zum Handeln-Modus wechseln<br><code>Ctrl/Cmd+Shift+D</code> — Zum Dev-Modus wechseln<br><code>Escape</code> — Aktiven Durchlauf stoppen<br><code>Escape</code> zweimal — Aktive Aufnahme stoppen',
   'sp.compact.nothing_to_compact': 'Noch nichts zu kompaktieren — es gibt nicht genügend älteren Kontext.',
   'sp.compact.busy': 'Kompaktierung nicht möglich, während ein Durchlauf läuft — warten Sie auf dessen Abschluss.',

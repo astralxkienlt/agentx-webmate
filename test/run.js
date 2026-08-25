@@ -602,6 +602,8 @@ const {
   permissionModeAsksBeforeConsequentialActions,
   permissionModeAutoAcceptsSubmit,
   permissionModeAutoAllows,
+  permissionModeAutoApprovesPlanReview,
+  permissionModeAutoAuthorizesClarifyTimeout,
   permissionModeDescKey,
   permissionModeFromLegacyGate,
   permissionModeIsWide,
@@ -29581,7 +29583,13 @@ test('clarify tool auto-timeout is configurable and mirrored across browsers', (
     assert.match(tools, /options\[0\] is auto-selected|options\[0\] is selected/, `${label}: clarify tool schema should document auto-select of first option`);
     assert.match(tools, /source=timeout/, `${label}: system prompts should treat timeout answers as non-confirmations`);
     assert.match(tools, /source=auto/, `${label}: system prompts should document Instant source=auto`);
-    assert.match(tools, /source=timeout is not user approval|source=timeout \(waited timeout|not source=timeout waited/, `${label}: prompts should qualify real clarify answers vs waited timeouts`);
+    // The prompts no longer rank sources by name: `bypass` can authorize a
+    // waited timeout, so the result's own `authorized` field is the arbiter and
+    // the prompt has to say so — otherwise the static rule and the runtime
+    // disagree the moment a bypass run times out.
+    assert.match(tools, /source=timeout with authorized:false/, `${label}: prompts should gate a waited timeout on the result's authorized field`);
+    assert.match(tools, /authorized:true/, `${label}: prompts should name the authorized:true case that overrides it`);
+    assert.doesNotMatch(tools, /source=timeout is not user approval|not source=timeout waited auto-selects\)/, `${label}: no prompt may still call every waited timeout a non-approval`);
 
     assert.match(scheduler, /pending\.timeoutSec/, `${label}: scheduled pendingClarify should persist timeoutSec`);
     assert.match(scheduler, /pending\.deadlineTs/, `${label}: scheduled pendingClarify should persist deadlineTs`);
@@ -29826,9 +29834,9 @@ test('waited clarify timeout guard persists across restart and ordinary user tur
       await restarted._hydrate(tabId);
       assert.equal(restarted._clarificationAuthorizationGuards.get(tabId)?.authorized, false, `${AgentClass.name}: worker restart lost timeout guard`);
 
-      restarted._prepareClarificationAuthorizationForRun(tabId, { trustedContinuation: true });
+      await restarted._prepareClarificationAuthorizationForRun(tabId, { trustedContinuation: true });
       assert.equal(restarted._clarificationAuthorizationGuards.has(tabId), true, `${AgentClass.name}: trusted continuation cleared the guard`);
-      restarted._prepareClarificationAuthorizationForRun(tabId, {});
+      await restarted._prepareClarificationAuthorizationForRun(tabId, {});
       assert.equal(restarted._clarificationAuthorizationGuards.has(tabId), true, `${AgentClass.name}: ordinary user turn cleared the unresolved guard`);
 
       restarted.abort(tabId);
@@ -29837,7 +29845,7 @@ test('waited clarify timeout guard persists across restart and ordinary user tur
       assert.equal(restarted._clarificationAuthorizationGuards.has(tabId), true, `${AgentClass.name}: consuming Stop also cleared the unresolved guard`);
 
       restarted.conversationIds.set(tabId, `different_conv_${tabId}`);
-      restarted._prepareClarificationAuthorizationForRun(tabId, {});
+      await restarted._prepareClarificationAuthorizationForRun(tabId, {});
       assert.equal(restarted._clarificationAuthorizationGuards.has(tabId), false, `${AgentClass.name}: conversation-scoped guard leaked into a replacement conversation`);
     }
   } finally {
@@ -29882,7 +29890,7 @@ test('waited clarify timeout permits only partial or failed completion', async (
 
       assert.deepEqual(result, { action: 'continue' }, `${AgentClass.name}: ${name} success completion did not request a fresh turn`);
       assert.equal(executed, false, `${AgentClass.name}: ${name} success completion reached executeTool`);
-      assert.equal(permissionGateCalls, 0, `${AgentClass.name}: ${name} success completion passed the authorization guard`);
+      assert.equal(permissionGateCalls, 1, `${AgentClass.name}: ${name} success completion should be judged against exactly one live permission-mode read`);
       const blocked = JSON.parse(messages[0].content);
       assert.equal(blocked.blockedDone, true, `${AgentClass.name}: ${name} result was not marked as blocked completion`);
       assert.equal(blocked.clarificationAuthorizationRequired, true, `${AgentClass.name}: ${name} block did not require explicit clarification`);
@@ -29932,7 +29940,7 @@ test('waited clarify timeout blocks CAPTCHA solve before solver dispatch', async
 
     assert.deepEqual(result, { action: 'continue' }, `${AgentClass.name}: blocked CAPTCHA solve did not request a fresh turn`);
     assert.deepEqual(executed, [], `${AgentClass.name}: CAPTCHA solver dispatched despite timeout guard`);
-    assert.equal(permissionGateCalls, 0, `${AgentClass.name}: permission setup ran before CAPTCHA timeout guard`);
+    assert.equal(permissionGateCalls, 1, `${AgentClass.name}: CAPTCHA guard should read the live permission mode once, then still deny`);
     const blocked = JSON.parse(messages[0].content);
     assert.equal(blocked.clarificationAuthorizationRequired, true, `${AgentClass.name}: CAPTCHA block did not require explicit clarification`);
     assert.equal(blocked.dispatched, false, `${AgentClass.name}: CAPTCHA block did not prove pre-dispatch denial`);
@@ -29974,7 +29982,7 @@ test('waited clarify timeout blocks outbound network reads before permission gat
 
       assert.deepEqual(result, { action: 'continue' }, `${AgentClass.name}: ${name} egress block should request a fresh turn`);
       assert.deepEqual(executed, [], `${AgentClass.name}: ${name} dispatched after a waited clarification timeout`);
-      assert.equal(permissionGateCalls, 0, `${AgentClass.name}: ${name} reached permission setup before the timeout guard`);
+      assert.equal(permissionGateCalls, 1, `${AgentClass.name}: ${name} guard should read the live permission mode once, then still deny`);
       const blocked = JSON.parse(messages[0].content);
       assert.equal(blocked.clarificationAuthorizationRequired, true, `${AgentClass.name}: ${name} did not require explicit clarification`);
       assert.equal(blocked.dispatched, false, `${AgentClass.name}: ${name} did not prove pre-dispatch denial`);
@@ -29990,7 +29998,11 @@ test('waited clarify timeout blocks consequential dispatch before permission gat
     let permissionGateCalls = 0;
     agent._persist = () => {};
     agent._ensurePermissionMode = async () => { permissionGateCalls += 1; return agent._permissionMode; };
-    agent._permissionMode = 'bypass';
+    // Deliberately NOT `bypass`: that rung authorizes a waited timeout outright
+    // (permissionModeAutoAuthorizesClarifyTimeout), which is the behaviour a
+    // separate test covers. Nothing here is gated anyway, because the guard
+    // denies before the capability loop runs.
+    agent._permissionMode = 'manual';
     agent.executeTool = async (_tabId, name) => {
       executed.push(name);
       return { success: true };
@@ -30019,7 +30031,7 @@ test('waited clarify timeout blocks consequential dispatch before permission gat
     );
     assert.deepEqual(firstResult, { action: 'continue' }, `${AgentClass.name}: first blocked action should request a fresh model turn`);
     assert.equal(executed.length, 0, `${AgentClass.name}: consequential tool dispatched despite timeout guard`);
-    assert.equal(permissionGateCalls, 0, `${AgentClass.name}: permission gate ran before timeout authorization guard`);
+    assert.equal(permissionGateCalls, 1, `${AgentClass.name}: the blocked batch should read the live permission mode once, then still deny`);
     assert.equal(firstMessages.length, 2, `${AgentClass.name}: remaining batch call did not receive a synthetic result`);
     const denied = JSON.parse(firstMessages[0].content);
     const skipped = JSON.parse(firstMessages[1].content);
@@ -30083,7 +30095,7 @@ test('waited clarify timeout blocked actions fail closed at the step limit', asy
       executed.push(name);
       return { success: true };
     };
-    await agent._recordClarificationAuthorization(tabId, 'timeout');
+    await armClarificationTimeoutGuard(agent, tabId);
     const updates = [];
 
     const final = await agent.processMessage(
@@ -30168,7 +30180,7 @@ test('waited clarify timeout blocks plain finals after a denied action', async (
         executed.push(name);
         return { success: true };
       };
-      await agent._recordClarificationAuthorization(tabId, 'timeout');
+      await armClarificationTimeoutGuard(agent, tabId);
       const updates = [];
       const run = streaming ? agent.processMessageStream.bind(agent) : agent.processMessage.bind(agent);
 
@@ -30236,7 +30248,7 @@ test('waited clarify timeout persists plain-final attempts before retrying', asy
       });
       const tabId = 4856 + (streaming ? 10 : 0) + index;
       configurePlanOnlyGuardAgent(agent, tabId);
-      await agent._recordClarificationAuthorization(tabId, 'timeout');
+      await armClarificationTimeoutGuard(agent, tabId);
 
       let releasePersist;
       let persistCalls = 0;
@@ -30295,7 +30307,7 @@ test('waited clarify timeout plain finals fail closed at the step limit', async 
       const tabId = 4860 + (streaming ? 10 : 0) + index;
       configurePlanOnlyGuardAgent(agent, tabId);
       agent.maxSteps = 1;
-      await agent._recordClarificationAuthorization(tabId, 'timeout');
+      await armClarificationTimeoutGuard(agent, tabId);
       const updates = [];
       const run = streaming ? agent.processMessageStream.bind(agent) : agent.processMessage.bind(agent);
 
@@ -30317,6 +30329,186 @@ test('waited clarify timeout plain finals fail closed at the step limit', async 
         `${AgentClass.name}/${streaming ? 'stream' : 'non-stream'}: max-step fallback replaced the authorization stop`,
       );
     }
+  }
+});
+
+test('bypass releases the waited clarify timeout guard without disarming it', async () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const tabId = AgentClass === AgentCh ? 4881 : 4882;
+    agent._persist = () => {};
+    agent._persistNow = async () => true;
+    await agent._recordClarificationAuthorization(tabId, 'timeout');
+
+    const action = () => agent._clarificationAuthorizationBlock(tabId, 'click_ax', { ref_id: 'ref_x' }, [Capability.CLICK]);
+    const completion = () => agent._clarificationAuthorizationBlock(tabId, 'done', { outcome: 'success' }, []);
+
+    // Every rung below the widest still refuses to read silence as an answer —
+    // `auto` and `page_actions` pre-approve clicking, not answering for the user.
+    for (const mode of ['manual', 'auto', 'page_actions']) {
+      agent._permissionMode = mode;
+      assert.ok(action(), `${AgentClass.name}/${mode}: consequential action was not blocked`);
+      assert.ok(completion(), `${AgentClass.name}/${mode}: success completion was not blocked`);
+      assert.equal(agent._clarificationAuthorizationPlainFinalDecision(tabId)?.status, 'clarification_required',
+        `${AgentClass.name}/${mode}: plain final was not blocked`);
+    }
+
+    // A junk stored value must fail closed to the strict behaviour, never widen.
+    agent._permissionMode = 'yolo';
+    assert.ok(action(), `${AgentClass.name}: a junk mode released the guard`);
+  }
+
+  // Reversibility, on a guard whose blocked-attempt counter is still clean so
+  // the first restored block is a nudge rather than a run-ending stop.
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const tabId = AgentClass === AgentCh ? 4883 : 4884;
+    agent._persist = () => {};
+    agent._persistNow = async () => true;
+    await agent._recordClarificationAuthorization(tabId, 'timeout');
+    const action = () => agent._clarificationAuthorizationBlock(tabId, 'click_ax', { ref_id: 'ref_x' }, [Capability.CLICK]);
+
+    agent._permissionMode = 'bypass';
+    assert.equal(action(), null, `${AgentClass.name}: bypass still blocked a consequential action`);
+    assert.equal(agent._clarificationAuthorizationBlock(tabId, 'done', { outcome: 'success' }, []), null,
+      `${AgentClass.name}: bypass still blocked a success completion`);
+    assert.equal(agent._clarificationAuthorizationPlainFinalDecision(tabId), null,
+      `${AgentClass.name}: bypass still blocked a plain final answer`);
+
+    // The release is a live policy read, not a write: the guard is untouched and
+    // no released check spends a blocked attempt, so a bypass run cannot walk
+    // itself up to the two-strikes stop.
+    assert.equal(agent._clarificationAuthorizationGuards.get(tabId)?.authorized, false,
+      `${AgentClass.name}: bypass consumed the stored timeout guard`);
+    assert.equal(agent._clarificationAuthorizationGuards.get(tabId)?.blockedAttempts, 0,
+      `${AgentClass.name}: a released check still charged a blocked attempt`);
+
+    agent._permissionMode = 'manual';
+    const restored = action();
+    assert.ok(restored, `${AgentClass.name}: returning to a stricter mode did not restore the block`);
+    assert.equal(restored.stop, false, `${AgentClass.name}: the restored block skipped straight to stopping the run`);
+  }
+});
+
+test('a bypass run keeps going after a waited clarify timeout', async () => {
+  // The end-to-end shape of the fix: same armed guard, same tool call, and the
+  // only difference is the rung the user picked.
+  for (const [mode, dispatches] of [['page_actions', false], ['bypass', true]]) {
+    for (const AgentClass of [AgentCh, AgentFx]) {
+      const agent = new AgentClass({ getVisionProvider: async () => null });
+      const tabId = (AgentClass === AgentCh ? 4885 : 4890) + (mode === 'bypass' ? 1 : 0);
+      const executed = [];
+      agent._persist = () => {};
+      agent._persistNow = async () => true;
+      agent._ensurePermissionMode = async () => agent._permissionMode;
+      agent._permissionMode = mode;
+      agent.executeTool = async (_tabId, name) => {
+        executed.push(name);
+        return { success: true };
+      };
+      await agent._recordClarificationAuthorization(tabId, 'timeout');
+
+      const messages = [];
+      await agent._executeToolBatch(
+        tabId,
+        [{ id: `after_timeout_${mode}`, function: { name: 'click_ax', arguments: '{"ref_id":"ref_after_timeout"}' } }],
+        messages,
+        () => {},
+        { supportsVision: false },
+        '',
+        new Set(['click_ax']),
+        1,
+      );
+
+      const label = `${AgentClass.name}/${mode}`;
+      assert.deepEqual(executed, dispatches ? ['click_ax'] : [], `${label}: wrong dispatch decision`);
+      // A dispatched click_ax result is wrapped in <untrusted_page_content>, so
+      // match the raw tool message rather than parsing it as JSON.
+      assert.equal(
+        String(messages[0].content).includes('"clarificationAuthorizationRequired":true'),
+        !dispatches,
+        `${label}: wrong clarification-authorization verdict in the tool result`,
+      );
+      // Either way the guard stays in storage, so the decision is reversible.
+      assert.equal(agent._clarificationAuthorizationGuards.get(tabId)?.authorized, false,
+        `${label}: the timeout guard was dropped instead of being re-read per action`);
+    }
+  }
+});
+
+test('clarify reports a waited timeout as authorized only under bypass', async () => {
+  for (const [mode, authorized] of [['manual', false], ['auto', false], ['page_actions', false], ['bypass', true]]) {
+    for (const AgentClass of [AgentCh, AgentFx]) {
+      const agent = new AgentClass({});
+      const tabId = (AgentClass === AgentCh ? 4893 : 4897) + PERMISSION_MODES.indexOf(mode);
+      agent.clarifyTimeoutSec = 1205;
+      agent._persist = () => {};
+      agent._persistNow = async () => true;
+      agent._ensurePermissionMode = async () => agent._permissionMode;
+      agent._permissionMode = mode;
+
+      const result = await agent.executeTool(
+        tabId,
+        'clarify',
+        { question: 'Which record?', options: ['First', 'Second'] },
+        (type, data) => {
+          if (type === 'clarify') agent.submitClarifyResponse(tabId, data.clarifyId, 'First', 'timeout');
+        },
+      );
+
+      const label = `${AgentClass.name}/${mode}`;
+      assert.equal(result.source, 'timeout', `${label}: timeout source was lost`);
+      assert.equal(result.authorized, authorized, `${label}: wrong authorization verdict on the clarify result`);
+      assert.equal(result.requiresExplicitConfirmation, !authorized, `${label}: authorized and requiresExplicitConfirmation disagree`);
+      // The note the model reads must agree with the field and with the guard,
+      // or a bypass run stops because the prompt told it to.
+      if (authorized) {
+        assert.match(result.note, /Bypass permissions/, `${label}: the note did not name the mode that authorized it`);
+        assert.doesNotMatch(result.note, /NOT a real user confirmation/, `${label}: the note still refused its own answer`);
+      } else {
+        assert.match(result.note, /NOT a real user confirmation/, `${label}: the note lost its non-confirmation warning`);
+      }
+      // Recorded either way: the mode is read live, never baked into the guard.
+      assert.equal(agent._clarificationAuthorizationGuards.get(tabId)?.authorized, false,
+        `${label}: a mode decision was written into the stored guard`);
+    }
+  }
+});
+
+test('a run starts by loading the mode the clarify-timeout guard depends on', async () => {
+  // A resumed run can hydrate the guard on a cold worker that has not read the
+  // mode yet. Without this load the first plain final would be judged against
+  // the DEFAULT rung and stop a bypass run.
+  const previousChrome = globalThis.chrome;
+  const previousBrowser = globalThis.browser;
+  try {
+    for (const [AgentClass, apiName, tabId] of [[AgentCh, 'chrome', 4901], [AgentFx, 'browser', 4902]]) {
+      const reads = [];
+      globalThis[apiName] = {
+        storage: {
+          local: {
+            get: async (keys) => { reads.push(keys); return { permissionMode: 'bypass' }; },
+          },
+        },
+      };
+      const agent = new AgentClass({});
+      agent._persist = () => {};
+      agent._persistNow = async () => true;
+      agent.conversationIds.set(tabId, `conv_${tabId}`);
+      await agent._recordClarificationAuthorization(tabId, 'timeout');
+      assert.equal(agent._permissionMode, DEFAULT_PERMISSION_MODE, `${AgentClass.name}: a fresh agent should start on the default rung`);
+
+      await agent._prepareClarificationAuthorizationForRun(tabId);
+
+      assert.equal(agent._permissionMode, 'bypass', `${AgentClass.name}: run start did not load the stored mode`);
+      assert.ok(reads.length >= 1, `${AgentClass.name}: run start did not read storage`);
+      assert.equal(agent._clarificationAuthorizationGuards.has(tabId), true, `${AgentClass.name}: run start dropped a same-conversation guard`);
+      assert.equal(agent._clarificationAuthorizationPlainFinalDecision(tabId), null,
+        `${AgentClass.name}: the loaded bypass mode did not release the plain final`);
+    }
+  } finally {
+    if (previousChrome === undefined) delete globalThis.chrome; else globalThis.chrome = previousChrome;
+    if (previousBrowser === undefined) delete globalThis.browser; else globalThis.browser = previousBrowser;
   }
 });
 
@@ -58169,6 +58361,20 @@ function configurePlanOnlyGuardAgent(agent, tabId) {
   };
 }
 
+/**
+ * `configurePlanOnlyGuardAgent` picks `bypass` so permission cards stay out of
+ * the way of an unrelated assertion. But `bypass` also authorizes a waited
+ * clarify timeout outright (permissionModeAutoAuthorizesClarifyTimeout), so a
+ * test that exercises THAT guard has to drop back to a mode which keeps it
+ * armed. Nothing in these runs is gated, so the strict mode costs nothing —
+ * and the release under `bypass` gets its own test rather than being an
+ * accidental side effect of a shared fixture.
+ */
+function armClarificationTimeoutGuard(agent, tabId) {
+  agent._permissionMode = 'manual';
+  return agent._recordClarificationAuthorization(tabId, 'timeout');
+}
+
 function executionToolResponses(prefix = 'execution') {
   return [
     {
@@ -66576,6 +66782,8 @@ test('permission-mode stays byte-identical across browser trees', () => {
       permissionModeCh.permissionModeAutoAcceptsSubmit(mode));
     assert.equal(permissionModeFx.permissionModeAutoApprovesPlanReview(mode),
       permissionModeCh.permissionModeAutoApprovesPlanReview(mode));
+    assert.equal(permissionModeFx.permissionModeAutoAuthorizesClarifyTimeout(mode),
+      permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout(mode));
   }
 });
 
@@ -66593,6 +66801,31 @@ test('only bypass reaches past the capability ladder to the plan card', () => {
   // Junk resolves to the strictest rung, never to the one that skips review.
   assert.equal(permissionModeCh.permissionModeAutoApprovesPlanReview('yolo'), false);
   assert.equal(permissionModeCh.permissionModeAutoApprovesPlanReview(undefined), false);
+});
+
+test('only bypass lets a waited clarify timeout stand in for the user', () => {
+  // `auto` and `page_actions` pre-approve interaction a watching user can
+  // follow. Substituting silence for an answer is a different kind of trust, so
+  // only the rung that promises to ask nothing at all takes it on.
+  for (const mode of PERMISSION_MODES) {
+    assert.equal(
+      permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout(mode),
+      mode === PermissionMode.BYPASS,
+      `${mode}: wrong clarify-timeout authorization policy`,
+    );
+  }
+  // Junk and absence fail closed, exactly like every other rung predicate.
+  assert.equal(permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout('yolo'), false);
+  assert.equal(permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout(undefined), false);
+  // The two run-level releases move together: both are "bypass only", so a
+  // future change to one has to be a deliberate change to the other.
+  for (const mode of PERMISSION_MODES) {
+    assert.equal(
+      permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout(mode),
+      permissionModeCh.permissionModeAutoApprovesPlanReview(mode),
+      `${mode}: the plan card and the clarify-timeout guard should release together`,
+    );
+  }
 });
 
 // --- The gate consults the mode only where it is allowed to ------------------
@@ -67168,10 +67401,20 @@ test('the composer exposes a permission-mode chip and a menu built from the ladd
       /function resolvePermissionPromptsCoveredByMode\(mode\) \{[\s\S]*?permissionModeSkipsAllGates\(mode\)[\s\S]*?permissionModeAutoAllows\(mode, String\(card\.dataset\.permissionCapability \|\| ''\)\)[\s\S]*?permissionModeAutoAcceptsSubmit\(mode\)[\s\S]*?submitClarify\(card, tabId, clarifyId, 'once', 'permission-mode'\);/,
       `${label}: only cards the new mode covers may be auto-answered, and never as 'always'`,
     );
+    // Both resolvers must sit inside the `widened` branch: a stricter choice may
+    // never auto-answer a card, and a wider one must clear the plan card too or
+    // the rung that promises to run the plan unasked leaves an approval on screen.
     assert.match(
       panel,
-      /const widened = permissionModeRank\(next\) > permissionModeRank\(permissionMode\);[\s\S]*?if \(widened\) resolvePermissionPromptsCoveredByMode\(next\);/,
+      /const widened = permissionModeRank\(next\) > permissionModeRank\(permissionMode\);[\s\S]*?if \(widened\) \{\s*resolvePermissionPromptsCoveredByMode\(next\);\s*resolvePlanReviewCardsCoveredByMode\(next\);\s*\}/,
       `${label}: a stricter choice must leave open cards to the user`,
+    );
+    // /dangerously-skip-permissions is documented as the same decision as the
+    // menu, so it must release the same plan card.
+    assert.match(
+      panel,
+      /permissionMode = PermissionMode\.BYPASS;[\s\S]*?resolvePlanReviewCardsCoveredByMode\(PermissionMode\.BYPASS\);/,
+      `${label}: the slash command must clear the plan card the mode now covers`,
     );
     assert.match(panel, /card\.dataset\.permissionCapability = cap;/, `${label}: permission cards must carry their capability for that match`);
 
@@ -67253,6 +67496,80 @@ test('widening the mode answers only the open cards it actually covers', () => {
     const [, tabId, clarifyId, answer, source] = run('auto')[1];
     assert.deepEqual([tabId, clarifyId, answer, source], [77, 'scheduled-card', 'once', 'permission-mode'],
       `${label}: a scheduled-run card must be answered on its own tab, once only`);
+  }
+});
+
+test('widening to bypass also clears a plan card already on screen', () => {
+  // Run the production resolver itself: this is the piece that used to leave an
+  // approval sitting in front of a user who had just picked the rung whose
+  // description promises to run the plan without asking.
+  for (const [label, prefix] of [['chrome', 'src/chrome'], ['firefox', 'src/firefox']]) {
+    const panel = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.js'), 'utf8');
+    const start = panel.indexOf('function resolvePlanReviewCardsCoveredByMode(mode) {');
+    const end = panel.indexOf('function resolvePermissionPromptsCoveredByMode(mode) {', start);
+    assert.ok(start >= 0 && end > start, `${label}: the plan-card resolver is missing`);
+
+    const makeCard = (dataset, reviewed = false) => ({
+      dataset,
+      classList: { contains: (name) => reviewed && name === 'plan-reviewed' },
+    });
+    // Keyed by planId so the fake approval resolver can answer per card.
+    const RESOLUTIONS = {
+      unedited: { editedText: '', markdownMode: 'verbose' },
+      edited: { editedText: 'Plan\n1. do the edited thing', markdownMode: 'compact' },
+      reviewed: { editedText: '', markdownMode: 'compact' },
+      blank: { editedText: '', markdownMode: 'compact', emptySteps: true },
+      untabbed: { editedText: '', markdownMode: 'compact' },
+    };
+    const cards = [
+      makeCard({ planId: 'unedited', tabId: '11' }),
+      makeCard({ planId: 'edited', tabId: '11' }),
+      makeCard({ planId: 'reviewed', tabId: '11' }, true),
+      makeCard({ planId: 'blank', tabId: '11' }),
+      makeCard({ planId: '', tabId: '11' }),
+      makeCard({ planId: 'untabbed' }),
+    ];
+
+    const run = (mode) => {
+      for (const card of cards) delete card.dataset.planMarkdownMode;
+      const submissions = [];
+      const resolver = vm.runInNewContext(
+        `(() => { ${panel.slice(start, end)}; return resolvePlanReviewCardsCoveredByMode; })()`,
+        {
+          document: { querySelectorAll: () => cards },
+          currentTabId: 42,
+          permissionModeAutoApprovesPlanReview,
+          resolvePlanReviewApprovalText: (card) => RESOLUTIONS[card.dataset.planId] || {},
+          submitPlanReview: (card, tabId, planId, action, editedText) => submissions.push({ card, tabId, planId, action, editedText }),
+          String,
+          Number,
+        },
+      );
+      const resolved = resolver(mode);
+      assert.equal(resolved, submissions.length, `${label}/${mode}: the count must match what was approved`);
+      return submissions;
+    };
+
+    // Every narrower rung leaves plan review to its own Settings control, so an
+    // open card must survive the switch untouched.
+    for (const mode of ['manual', 'auto', 'page_actions']) {
+      assert.deepEqual(run(mode), [], `${label}: ${mode} must not approve a plan for the user`);
+    }
+
+    const approved = run('bypass');
+    assert.deepEqual(approved.map(entry => entry.planId), ['unedited', 'edited', 'untabbed'],
+      `${label}: bypass must approve exactly the unanswered, non-empty, identifiable cards`);
+    assert.deepEqual(approved.map(entry => entry.action), ['approve', 'approve', 'approve'],
+      `${label}: a mode may only approve, never reject on the user's behalf`);
+    // Edits the user had already typed must travel with the approval, exactly as
+    // the Approve button sends them — dropping them would silently run a
+    // different plan than the one on screen.
+    assert.equal(approved[1].editedText, RESOLUTIONS.edited.editedText, `${label}: a pending plan edit was dropped`);
+    assert.equal(approved[1].card.dataset.planMarkdownMode, 'compact', `${label}: the approval markdown mode was not pinned`);
+    assert.equal(approved[0].card.dataset.planMarkdownMode, 'verbose', `${label}: the approval markdown mode was not taken from the resolution`);
+    // A card with no tabId belongs to the tab on screen, same as bindPlanReviewCard.
+    assert.equal(approved[2].tabId, 42, `${label}: a card without a tabId was not charged to the current tab`);
+    assert.deepEqual(approved.map(entry => entry.tabId), [11, 11, 42], `${label}: approvals must go to the tab that raised the card`);
   }
 });
 

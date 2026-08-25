@@ -39,7 +39,10 @@ them in sync — the test suite asserts the pure modules are byte-identical.
    asks for all of them, `auto` pre-approves reversible on-page interaction,
    `page_actions` adds form submits and page scripts, `bypass` accepts
    everything. An explicit "Don't allow" outranks every mode except `bypass`,
-   and a mode decision is never recorded as a grant.
+   and a mode decision is never recorded as a grant. `bypass` alone also
+   releases the run-level approvals that are not capability grants: the
+   planner's review card, and the guard that refuses to let a waited `clarify`
+   timeout stand in for user authorization.
    - Code: `permission-gate.js` (`capabilityFor`, `requiredHosts`,
      `PermissionManager`), `permission-mode.js` (the ladder); the gate loop in
      `agent.js _executeToolBatch`.
@@ -128,7 +131,9 @@ Known non-tool ingestion points (keep this list current):
 
 ### Don't weaken the boundary for "trusted sites"
 A permission mode — including `bypass`, the widest — changes **Layer 3 only**
-(which actions still raise a card). Layers 1, 2, and 4 stay on in every mode:
+(which actions still raise a card, plus the run-level approvals whose whole
+purpose is the same: the plan card and the waited-`clarify` authorization
+guard). Layers 1, 2, and 4 stay on in every mode:
 they cost nothing and are what protect the user on the trusted sites where
 injected content actually lives (a reputable domain is *anti-correlated* with
 safe content). Never gate Layers 1/2/4 behind a setting.

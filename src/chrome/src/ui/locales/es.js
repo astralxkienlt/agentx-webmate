@@ -701,7 +701,7 @@ export default {
   'sp.permmode.page_actions': 'Acciones de página',
   'sp.permmode.page_actions.desc': 'También acepta el envío de formularios y los scripts de la página. Sigue preguntando antes de descargar, subir un archivo, escribir en una API o programar trabajo.',
   'sp.permmode.bypass': 'Omitir permisos',
-  'sp.permmode.bypass.desc': "Acepta todos los permisos en todos los sitios y ejecuta el plan sin pedirte que lo apruebes.",
+  'sp.permmode.bypass.desc': "Acepta todos los permisos en todos los sitios, ejecuta el plan sin pedirte que lo apruebes y continúa con la respuesta predeterminada si una pregunta caduca sin respuesta.",
   'tool.schedule_resume': 'Programando reanudación',
   'tool.schedule_task': 'Programando tarea',
   'st.display.scheduled_tasks.label': 'Tareas programadas',
