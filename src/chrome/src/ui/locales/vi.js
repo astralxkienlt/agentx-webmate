@@ -139,11 +139,11 @@ export default {
 
   'sp.mode.ask': "Hỏi",
   'sp.mode.ask.title': "Đặt câu hỏi về trang — không thực hiện thay đổi nào",
-  'sp.mode.act': "hành động",
+  'sp.mode.act': "Hành động",
   'sp.mode.act.title': "Hãy để WebBrain nhấp, nhập và điều hướng cho bạn",
   'sp.mode.act.warning': "Chế độ hành động: Sử dụng có nguy cơ của riêng bạn.",
   'sp.mode.act.confirm': "Chế độ hành động cho phép WebBrain nhấp, nhập, cuộn và điều hướng thay mặt bạn.\n\nNó chạy bên trong phiên trình duyệt đã được xác thực của bạn nên nó có cùng quyền truy cập như bạn thực hiện trên mọi trang web mà bạn đăng nhập.\n\nHãy xem nó làm gì và dừng nó bất cứ lúc nào bằng nút ◼.\n\nTiếp tục?",
-  'sp.mode.dev': "Nhà phát triển",
+  'sp.mode.dev': "Dev",
   'sp.mode.dev.title': "Sử dụng các công cụ nguồn, kiểu và gỡ lỗi trang",
   'sp.mode.dev.confirm': "Chế độ nhà phát triển bổ sung thêm nguồn trang, kiểm tra kiểu, kiểm tra DOM/khung và các công cụ gỡ lỗi bên trên chế độ Hành động.\n\nSử dụng nó cho công việc chỉnh sửa và khắc phục sự cố HTML/CSS/trang. Nó bị chặn đối với các nhà cung cấp cấp Compact.\n\nTiếp tục?",
   'sp.mode.dev.compact_blocked': "Chế độ nhà phát triển bị chặn đối với các nhà cung cấp cấp Nhỏ gọn. {provider} hiện ở dạng Nhỏ gọn; chuyển sang nhà cung cấp cấp trung/đầy đủ hoặc thay đổi cấp độ nhắc nhở của nhà cung cấp đó.",
