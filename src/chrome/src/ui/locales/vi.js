@@ -527,7 +527,7 @@ export default {
   // --- Settings ----------------------------------------------------------
   'st.title': "Cài đặt WebBrain",
   'st.subtitle': "Định cấu hình các nhà cung cấp và tùy chọn LLM của bạn · v{version}",
-  'st.tab.display': "chung",
+  'st.tab.display': "Chung",
   'st.tab.providers': "Nhà cung cấp",
   'st.tab.skills': "Kỹ năng",
   'st.tab.vision': "Tầm nhìn",
