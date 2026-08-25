@@ -359,7 +359,7 @@ export default {
   'sp.permmode.page_actions': 'Page actions',
   'sp.permmode.page_actions.desc': 'Form submits and page scripts are accepted too. WebBrain still asks before downloading, uploading, writing to an API, or scheduling work.',
   'sp.permmode.bypass': 'Bypass permissions',
-  'sp.permmode.bypass.desc': "Accepts every permission on every site, and runs the plan without asking you to approve it.",
+  'sp.permmode.bypass.desc': "Accepts every permission on every site, runs the plan without asking you to approve it, and keeps going with the default answer if a question times out unanswered.",
   'sp.step.details': 'details',
   'sp.step.input_label': 'Input',
   'sp.step.result_label': 'Result',

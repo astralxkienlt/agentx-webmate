@@ -596,7 +596,7 @@ export default {
   'sp.permmode.page_actions': 'Aksi halaman',
   'sp.permmode.page_actions.desc': 'Pengiriman formulir dan skrip halaman juga diterima. WebBrain tetap bertanya sebelum mengunduh, mengunggah, menulis ke API, atau menjadwalkan pekerjaan.',
   'sp.permmode.bypass': 'Lewati izin',
-  'sp.permmode.bypass.desc': "Menerima semua izin di semua situs, dan menjalankan rencana tanpa meminta persetujuan Anda.",
+  'sp.permmode.bypass.desc': "Menerima semua izin di semua situs, menjalankan rencana tanpa meminta persetujuan Anda, dan lanjut dengan jawaban baku jika sebuah pertanyaan habis waktu tanpa dijawab.",
   'tool.schedule_resume': 'Menjadwalkan lanjutan',
   'tool.schedule_task': 'Menjadwalkan tugas',
   'st.display.scheduled_tasks.label': 'Tugas terjadwal',

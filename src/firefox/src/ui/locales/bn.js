@@ -359,7 +359,7 @@ export default {
   'sp.permmode.page_actions': 'পেজের কাজ',
   'sp.permmode.page_actions.desc': 'ফর্ম জমা দেওয়া ও পেজ স্ক্রিপ্টও অনুমোদিত। ডাউনলোড, আপলোড, API-তে লেখা বা কাজ শিডিউল করার আগে WebBrain এখনও জিজ্ঞাসা করে।',
   'sp.permmode.bypass': 'অনুমতি এড়িয়ে যান',
-  'sp.permmode.bypass.desc': "সব সাইটে সব অনুমতি গ্রহণ করে, এবং আপনার অনুমোদন ছাড়াই পরিকল্পনা চালায়।",
+  'sp.permmode.bypass.desc': "সব সাইটে সব অনুমতি গ্রহণ করে, আপনার অনুমোদন ছাড়াই পরিকল্পনা চালায়, এবং কোনো প্রশ্নের সময় শেষ হলে ডিফল্ট উত্তর নিয়ে এগিয়ে যায়।",
   'sp.step.details': "বিস্তারিত",
   'sp.step.input_label': "ইনপুট",
   'sp.step.result_label': "ফলাফল",

@@ -605,7 +605,7 @@ export default {
   'sp.permmode.page_actions': 'Aksyon sa pahina',
   'sp.permmode.page_actions.desc': 'Tinatanggap na rin ang pagsumite ng form at mga script ng pahina. Nagtatanong pa rin ang WebBrain bago mag-download, mag-upload, magsulat sa API, o mag-schedule ng trabaho.',
   'sp.permmode.bypass': 'Payagan lahat',
-  'sp.permmode.bypass.desc': "Tinatanggap ang lahat ng pahintulot sa lahat ng site, at pinapatakbo ang plano nang hindi humihingi ng pag-apruba mo.",
+  'sp.permmode.bypass.desc': "Tinatanggap ang lahat ng pahintulot sa lahat ng site, pinapatakbo ang plano nang hindi humihingi ng pag-apruba mo, at nagpapatuloy sa default na sagot kapag nag-time out ang isang tanong na walang sagot.",
   'tool.schedule_resume': 'Nag-iiskedyul ng pagpapatuloy',
   'tool.schedule_task': 'Nag-iiskedyul ng gawain',
   'st.display.scheduled_tasks.label': 'Mga naka-iskedyul na gawain',

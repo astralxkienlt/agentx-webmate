@@ -333,7 +333,7 @@ export default {
   'sp.permmode.page_actions': 'פעולות בדף',
   'sp.permmode.page_actions.desc': 'גם שליחת טפסים והרצת סקריפטים בדף מאושרות. WebBrain עדיין שואל לפני הורדה, העלאה, כתיבה דרך API או תזמון עבודה.',
   'sp.permmode.bypass': 'לדלג על הרשאות',
-  'sp.permmode.bypass.desc': "מאשר את כל ההרשאות בכל האתרים, ומריץ את התוכנית בלי לבקש את אישורך.",
+  'sp.permmode.bypass.desc': "מאשר את כל ההרשאות בכל האתרים, מריץ את התוכנית בלי לבקש את אישורך, וממשיך עם תשובת ברירת המחדל אם שאלה פגה בלי מענה.",
   "sp.step.details": "פרטים",
   "sp.step.input_label": "קלט",
   "sp.step.result_label": "תוצאה",

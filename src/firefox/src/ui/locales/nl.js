@@ -347,7 +347,7 @@ export default {
   'sp.permmode.page_actions': 'Pagina-acties',
   'sp.permmode.page_actions.desc': 'Ook formulieren versturen en paginascripts worden toegestaan. WebBrain vraagt nog steeds voordat het downloadt, uploadt, naar een API schrijft of werk inplant.',
   'sp.permmode.bypass': 'Alles toestaan',
-  'sp.permmode.bypass.desc': "Accepteert alle machtigingen op elke site en voert het plan uit zonder om je goedkeuring te vragen.",
+  'sp.permmode.bypass.desc': "Accepteert alle machtigingen op elke site, voert het plan uit zonder om je goedkeuring te vragen en gaat verder met het standaardantwoord als een vraag onbeantwoord verloopt.",
   'sp.step.details': 'details',
   'sp.step.input_label': 'Invoer',
   'sp.step.result_label': 'Resultaat',

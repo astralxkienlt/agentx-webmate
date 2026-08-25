@@ -15,6 +15,7 @@ import {
   permissionModeAsksBeforeConsequentialActions,
   permissionModeAutoAcceptsSubmit,
   permissionModeAutoAllows,
+  permissionModeAutoApprovesPlanReview,
   permissionModeDescKey,
   permissionModeIsWide,
   permissionModeLabelKey,
@@ -1689,6 +1690,40 @@ function handlePermissionModeOutsidePointer(event) {
 }
 
 /**
+ * The planner's review card is not a capability grant, but it stops the run to
+ * collect an approval — so the one rung that covers it
+ * (permissionModeAutoApprovesPlanReview, i.e. `bypass`) has to clear a card
+ * ALREADY on screen too, not only auto-approve the plans raised after the
+ * switch. Otherwise picking the mode whose whole promise is "runs the plan
+ * without asking you to approve it" leaves an approval sitting in front of the
+ * user.
+ *
+ * Approved with exactly what the Approve button would have sent, so edits the
+ * user had already typed into the plan are kept rather than silently dropped —
+ * and, like that button, an empty structured draft is refused rather than
+ * pushed through.
+ */
+function resolvePlanReviewCardsCoveredByMode(mode) {
+  if (!permissionModeAutoApprovesPlanReview(mode)) return 0;
+  let resolved = 0;
+  for (const card of document.querySelectorAll('.plan-review-card')) {
+    if (card.classList.contains('plan-reviewed')) continue;
+    const planId = String(card.dataset.planId || '');
+    // Mirrors bindPlanReviewCard: a card with no tabId belongs to the tab on
+    // screen, so the two paths can never disagree about which run to answer.
+    const rawTabId = card.dataset.tabId;
+    const tabId = rawTabId != null && rawTabId !== '' ? Number(rawTabId) : currentTabId;
+    if (!planId || tabId == null || Number.isNaN(tabId)) continue;
+    const resolution = resolvePlanReviewApprovalText(card);
+    if (resolution.emptySteps) continue;
+    card.dataset.planMarkdownMode = resolution.markdownMode;
+    submitPlanReview(card, tabId, planId, 'approve', resolution.editedText);
+    resolved += 1;
+  }
+  return resolved;
+}
+
+/**
  * Cards already on screen were raised under the previous, stricter mode. A
  * widened mode now answers them, so clear them instead of leaving the user to
  * dismiss questions the mode has already settled. They are answered 'once' and
@@ -1725,7 +1760,10 @@ async function selectPermissionMode(mode) {
   await savePermissionMode(browser.storage.local, next);
   // Only a widened mode may answer a question already on screen; a stricter one
   // must leave the open card to the user.
-  if (widened) resolvePermissionPromptsCoveredByMode(next);
+  if (widened) {
+    resolvePermissionPromptsCoveredByMode(next);
+    resolvePlanReviewCardsCoveredByMode(next);
+  }
   showComposerToast(t('sp.permmode.changed', { mode: t(permissionModeLabelKey(next)) }));
 }
 
@@ -7493,6 +7531,9 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
     } else {
       resolvePendingPermissionPromptsForTab(tabId);
     }
+    // Same decision as picking Bypass in the menu, so it must release the same
+    // plan card — otherwise the command leaves the approval the mode covers.
+    resolvePlanReviewCardsCoveredByMode(PermissionMode.BYPASS);
     addPersistentSlashMessage(systemHtml(t('sp.permissions.disabled_html')));
     return payload;
   }

@@ -605,7 +605,7 @@ export default {
   'sp.permmode.page_actions': 'ページ操作',
   'sp.permmode.page_actions.desc': 'フォーム送信とページスクリプトも許可します。ダウンロード、アップロード、API への書き込み、予定登録の前には確認します。',
   'sp.permmode.bypass': '権限確認をスキップ',
-  'sp.permmode.bypass.desc': "すべてのサイトで、すべての権限を許可します。プランの承認も求めずに実行します。",
+  'sp.permmode.bypass.desc': "すべてのサイトで、すべての権限を許可します。プランの承認も求めずに実行し、質問が未回答のままタイムアウトしても既定の回答で続行します。",
   'tool.schedule_resume': '再開をスケジュール中',
   'tool.schedule_task': 'タスクをスケジュール中',
   'st.display.scheduled_tasks.label': 'スケジュールタスク',

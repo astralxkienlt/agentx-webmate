@@ -644,7 +644,7 @@ export default {
   'sp.permmode.page_actions': 'Sayfa eylemleri',
   'sp.permmode.page_actions.desc': 'Form gönderimleri ve sayfa betikleri de kabul edilir. WebBrain indirmeden, dosya yüklemeden, API\'ye yazmadan veya iş planlamadan önce yine sorar.',
   'sp.permmode.bypass': 'İzinleri atla',
-  'sp.permmode.bypass.desc': "Tüm sitelerde tüm izinleri kabul eder ve planı onayınızı istemeden çalıştırır.",
+  'sp.permmode.bypass.desc': "Tüm sitelerde tüm izinleri kabul eder, planı onayınızı istemeden çalıştırır ve bir soru yanıtsız zaman aşımına uğrarsa varsayılan yanıtla devam eder.",
   'tool.schedule_resume': 'Devam zamanlama',
   'tool.schedule_task': 'Görev zamanlama',
   'st.display.scheduled_tasks.label': 'Zamanlanmış görevler',

@@ -605,7 +605,7 @@ export default {
   'sp.permmode.page_actions': 'Tindakan halaman',
   'sp.permmode.page_actions.desc': 'Penghantaran borang dan skrip halaman turut diterima. WebBrain masih bertanya sebelum memuat turun, memuat naik, menulis ke API atau menjadualkan kerja.',
   'sp.permmode.bypass': 'Langkau kebenaran',
-  'sp.permmode.bypass.desc': "Menerima semua kebenaran di semua laman, dan menjalankan rancangan tanpa meminta kelulusan anda.",
+  'sp.permmode.bypass.desc': "Menerima semua kebenaran di semua laman, menjalankan rancangan tanpa meminta kelulusan anda, dan terus dengan jawapan lalai jika satu soalan tamat masa tanpa dijawab.",
   'tool.schedule_resume': 'Menjadualkan sambungan semula',
   'tool.schedule_task': 'Menjadualkan tugas',
   'st.display.scheduled_tasks.label': 'Tugas berjadual',

@@ -346,7 +346,7 @@ export default {
   "sp.permmode.page_actions": "Thao tác trang",
   "sp.permmode.page_actions.desc": "Chấp nhận thêm việc gửi biểu mẫu và chạy script trên trang. WebBrain vẫn hỏi trước khi tải xuống, tải lên, ghi qua API hoặc đặt lịch.",
   "sp.permmode.bypass": "Bỏ qua cấp quyền",
-  "sp.permmode.bypass.desc": "Chấp nhận toàn bộ quyền, trên mọi trang, và chạy kế hoạch mà không cần bạn phê duyệt.",
+  "sp.permmode.bypass.desc": "Chấp nhận toàn bộ quyền, trên mọi trang, chạy kế hoạch mà không cần bạn phê duyệt, và nếu một câu hỏi hết thời gian chờ mà chưa được trả lời thì vẫn tiếp tục với câu trả lời mặc định.",
   "sp.step.details": "chi tiết",
   "sp.step.input_label": "Đầu vào",
   "sp.step.result_label": "Kết quả",

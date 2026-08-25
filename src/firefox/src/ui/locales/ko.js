@@ -596,7 +596,7 @@ export default {
   'sp.permmode.page_actions': '페이지 작업',
   'sp.permmode.page_actions.desc': '양식 제출과 페이지 스크립트도 허용합니다. 다운로드, 업로드, API 쓰기, 작업 예약 전에는 여전히 확인합니다.',
   'sp.permmode.bypass': '권한 확인 건너뛰기',
-  'sp.permmode.bypass.desc': "모든 사이트에서 모든 권한을 허용하고, 계획도 승인을 묻지 않고 실행합니다.",
+  'sp.permmode.bypass.desc': "모든 사이트에서 모든 권한을 허용하고, 계획도 승인을 묻지 않고 실행하며, 질문이 답 없이 시간이 지나도 기본 답으로 계속 진행합니다.",
   'tool.schedule_resume': '재개 예약 중',
   'tool.schedule_task': '작업 예약 중',
   'st.display.scheduled_tasks.label': '예약된 작업',

@@ -254,7 +254,7 @@ export default {
   'sp.permmode.page_actions': 'Działania strony',
   'sp.permmode.page_actions.desc': 'Wysyłanie formularzy i skrypty strony też są dozwolone. WebBrain nadal pyta przed pobraniem, wysłaniem pliku, zapisem przez API i zaplanowaniem pracy.',
   'sp.permmode.bypass': 'Pomiń uprawnienia',
-  'sp.permmode.bypass.desc': "Akceptuje wszystkie uprawnienia we wszystkich witrynach i wykonuje plan bez pytania o zatwierdzenie.",
+  'sp.permmode.bypass.desc': "Akceptuje wszystkie uprawnienia we wszystkich witrynach, wykonuje plan bez pytania o zatwierdzenie i kontynuuje z domyślną odpowiedzią, jeśli pytanie wygaśnie bez odpowiedzi.",
   'sp.step.details': 'szczegóły',
   'sp.step.input_label': 'Wejście',
   'sp.step.result_label': 'Wynik',

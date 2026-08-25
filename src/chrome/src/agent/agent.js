@@ -78,7 +78,7 @@ import {
 } from './cloudflare-managed-challenge.js';
 import { getRecordingStateFresh as recorderStateFresh } from '../recorder/host.js';
 import { Capability, CAPABILITY_LABEL, capabilitiesFor, requiredHosts, frameHostMatches, isNetworkMutation, normalizeHost, PermissionManager, UNTRUSTED_CONTENT_TOOLS } from './permission-gate.js';
-import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeSkipsAllGates } from './permission-mode.js';
+import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeAutoAuthorizesClarifyTimeout, permissionModeSkipsAllGates } from './permission-mode.js';
 import {
   buildPlannerMessages,
   buildPlannerIntentMessages,
@@ -5438,6 +5438,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const missingResponseOutcomeUnknown = capabilities.length > 0 || isStateChangingCall;
       const executionMutationEvidence = !protectedPageFailure
         && this._isExecutionMutationEvidence(fnName, fnArgs, capabilities);
+      // Loaded before the clarify-timeout guard below, not just before the
+      // capability gate: that guard releases under `bypass`, so it has to read
+      // the mode the user chose rather than the default a cold worker starts on.
+      await this._ensurePermissionMode();
       const clarificationAuthorizationBlock = protectedPageFailure
         ? null
         : this._clarificationAuthorizationBlock(
@@ -5491,7 +5495,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         return { action: 'continue' };
       }
-      await this._ensurePermissionMode();
       const skillEndpointRedirect = this._skillEndpointToolRedirect(fnName, fnArgs, tabId);
       if (skillEndpointRedirect) {
         messages.push({
@@ -9104,7 +9107,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return normalizedSource !== 'timeout';
   }
 
-  _prepareClarificationAuthorizationForRun(tabId) {
+  async _prepareClarificationAuthorizationForRun(tabId) {
+    // The guard's verdict now depends on the permission mode, and a run can
+    // resume on a cold worker that has hydrated the guard but not yet read the
+    // mode. Load it here so every later check — including a plain final answer
+    // that never reaches the tool loop — sees the mode the user actually chose.
+    await this._ensurePermissionMode();
     const guard = this._clarificationAuthorizationGuards.get(tabId);
     if (!guard) return;
     const conversationId = this.conversationIds.get(tabId) || null;
@@ -9120,6 +9128,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   _clarificationAuthorizationBlock(tabId, name, args = {}, capabilities = []) {
     const guard = this._clarificationAuthorizationGuards.get(tabId);
     if (!guard || guard.source !== 'timeout' || guard.authorized !== false) return null;
+    // Structurally this guard is a permission card: the run stops until a human
+    // answers. So the rung that promises to accept everything and ask nothing
+    // has to cover it, or `bypass` still halts mid-run. Read from the live mode
+    // and NOT recorded — the guard stays armed, so dropping back to a stricter
+    // mode restores the block for the next action. Every caller loads the mode
+    // first (`_prepareClarificationAuthorizationForRun` at run start,
+    // `_executeToolBatch` before this check), so the cached field is warm.
+    if (permissionModeAutoAuthorizesClarifyTimeout(this._permissionMode)) return null;
     const conversationId = this.conversationIds.get(tabId) || null;
     if (guard.conversationId && conversationId && guard.conversationId !== conversationId) {
       this._clarificationAuthorizationGuards.delete(tabId);
@@ -18168,7 +18184,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this._resetRichTextToolbarAudit(tabId);
       this._clickAxCdpFallbacks?.delete(tabId);
       this.abortFlags.delete(tabId);
-      this._prepareClarificationAuthorizationForRun(tabId);
+      await this._prepareClarificationAuthorizationForRun(tabId);
       this.permissions.beginTurn(tabId);
       this.conversationModes.set(tabId, 'act');
       completionRunToken = this._beginCompletionInvariant(tabId);
@@ -18857,9 +18873,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
       const answer = String(response?.answer || '').trim();
       const source = response?.source || 'user';
-      const authorized = await this._recordClarificationAuthorization(tabId, source);
+      const recordedAuthorization = await this._recordClarificationAuthorization(tabId, source);
+      // A waited timeout is passive silence, so on its own it is not
+      // authorization — unless the user is running in `bypass`, whose promise is
+      // that the run does not stop to collect an approval. Decided by the same
+      // live-mode predicate as _clarificationAuthorizationBlock, so the note the
+      // model reads can never disagree with the block it would otherwise hit.
+      // The guard is still armed either way: a stricter mode restores the block
+      // for the actions that follow.
+      const timeoutAuthorizedByMode = source === 'timeout'
+        && permissionModeAutoAuthorizesClarifyTimeout(await this._ensurePermissionMode());
+      const authorized = recordedAuthorization || timeoutAuthorizedByMode;
       let note;
-      if (source === 'timeout') {
+      if (timeoutAuthorizedByMode) {
+        // Waited timeout under Bypass permissions. The user's standing choice is
+        // to keep going, so say that rather than telling the model to stop.
+        note = 'This answer was auto-selected because the clarify timeout elapsed with no user reply, and the user set permission mode to Bypass permissions (source=timeout, mode=bypass) — a standing instruction to run the task without stopping for approval. Treat this answer as the chosen default and continue the task; do not re-ask the same question. Put the intended default first in options.';
+      } else if (source === 'timeout') {
         // Passive wait expired — not deliberate auto-approve.
         note = 'This answer was AUTO-SELECTED because the clarify timeout elapsed with no user reply (source=timeout). It is NOT a real user confirmation. Continue only with the safe default path; do NOT treat this as approval for irreversible, costly, or destructive actions — re-ask via clarify or stop if the next step is high-risk. Put the safe/default choice first in options next time.';
       } else if (source === 'auto') {
@@ -25414,7 +25444,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.autoScreenshotCount.delete(tabId);
     this.toolbarAuditScreenshotCount.delete(tabId);
     this.toolbarAuditBudgetNotified.delete(tabId);
-    this._prepareClarificationAuthorizationForRun(tabId);
+    await this._prepareClarificationAuthorizationForRun(tabId);
     this._preactivateRecommendedActionSkill(tabId, runOptions, mode);
     const messages = this.getConversation(tabId, mode);
     this._expireCurrentToolReasoning(messages);
@@ -26397,7 +26427,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.autoScreenshotCount.delete(tabId);
     this.toolbarAuditScreenshotCount.delete(tabId);
     this.toolbarAuditBudgetNotified.delete(tabId);
-    this._prepareClarificationAuthorizationForRun(tabId);
+    await this._prepareClarificationAuthorizationForRun(tabId);
     this._preactivateRecommendedActionSkill(tabId, runOptions, mode);
     const messages = this.getConversation(tabId, mode);
     this._expireCurrentToolReasoning(messages);
