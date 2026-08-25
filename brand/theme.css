@@ -144,14 +144,21 @@ h1 {
 
 /* Mode toggle. Upstream paints Act and Dev with the amber --warning colour to
    flag that they can drive the page; netMind keeps one accent across all three
-   tabs, so the pill, the label and the composer border track --accent instead.
-   The #act-warning banner stays amber — that one is a caution, not a mode. */
+   tabs, so the thumb (fill, hairline, glow), the active icon, the focus ring
+   and the composer border all track --accent instead. The #act-warning banner
+   and the wide permission chip stay amber — those are cautions, not modes. */
 .mode-toggle-highlight.act {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.mode-btn.active.act {
+.mode-btn.active.act .mode-btn-icon {
   color: var(--accent);
+}
+
+.mode-btn.act:focus-visible {
+  outline-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 #input-area.act-mode #input-wrapper {
@@ -160,4 +167,5 @@ h1 {
 
 #input-area.act-mode #input-wrapper:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
 }
