@@ -126,6 +126,8 @@ export default {
 
   'sp.greeting.html': 'Hi! I\'m <strong>WebBrain</strong>. I can read this page, answer questions, click buttons, fill forms, and automate multi-step tasks.',
   'sp.help_message': 'How can I help with this page?',
+  'sp.tab_chat_restore_failed': 'The saved conversation could not be loaded because the extension background is not responding. To keep it safe, nothing will be saved for this tab until loading succeeds.',
+  'sp.tab_chat_restore_reload': 'Reload panel',
   'sp.cleared_message': 'Conversation cleared. How can I help?',
   'sp.clear.confirm': 'This conversation will be lost. Start a new conversation?',
   "sp.clear.title": "Start a new conversation?",

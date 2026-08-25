@@ -126,6 +126,8 @@ export default {
 
   'sp.greeting.html': "Xin chào! tôi là <strong>WebBrain</strong>. Tôi có thể đọc trang này, trả lời câu hỏi, nhấp vào nút, điền biểu mẫu và tự động hóa các tác vụ gồm nhiều bước.",
   'sp.help_message': "Tôi có thể giúp gì với trang này?",
+  'sp.tab_chat_restore_failed': "Chưa tải được cuộc trò chuyện đã lưu vì nền tiện ích không phản hồi. Để tránh mất dữ liệu, tab này sẽ tạm không lưu gì cho đến khi tải lại thành công.",
+  'sp.tab_chat_restore_reload': "Tải lại bảng điều khiển",
   'sp.cleared_message': "Đã xóa cuộc trò chuyện. Tôi có thể giúp gì?",
   'sp.clear.confirm': "Cuộc trò chuyện này sẽ bị mất. Bắt đầu một cuộc trò chuyện mới?",
   "sp.clear.title": "Bắt đầu cuộc trò chuyện mới?",

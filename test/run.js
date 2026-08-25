@@ -28619,11 +28619,17 @@ test('chrome opts the side panel in per tab and never pre-enables or disables it
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|\s)\/\/[^\n]*/g, '$1');
 
-  // Every panel option must name a tab and must enable, never disable.
-  // Global options would keep the panel on screen on every tab; a disable
-  // racing a gesture's enable+open pair is the old first-click bug.
+  // Visibility is still granted per tab only: every per-tab option call must
+  // name its tab and must enable, never disable — a disable racing a gesture's
+  // enable+open pair is the old first-click bug. Exactly one global call is
+  // permitted, in background.js at SW boot: it registers the panel *path* with
+  // `enabled: false`, so surfaces that bypass our gesture handlers (Edge's
+  // sidebar rail, session restore) load the real document instead of a
+  // permanently blank frame. Being a different scope, it cannot race the
+  // per-tab enables.
   const optionCallPattern = /setOptions\s*(?:\?\.)?\s*\(\s*\{[\s\S]*?\}\s*\)/g;
-  let optionCalls = 0;
+  let perTabCalls = 0;
+  let globalCalls = 0;
   for (const [label, source] of [
     ['background', background],
     ['agent', agent],
@@ -28631,12 +28637,20 @@ test('chrome opts the side panel in per tab and never pre-enables or disables it
     ['availability module', availability],
   ].map(([label, source]) => [label, withoutComments(source)])) {
     for (const call of source.match(optionCallPattern) || []) {
-      optionCalls += 1;
-      assert.match(call, /tabId/, `${label}: side-panel options must name a tab: ${call}`);
-      assert.equal(/enabled:\s*false/.test(call), false, `${label}: nothing may disable the side panel: ${call}`);
+      if (/tabId/.test(call)) {
+        perTabCalls += 1;
+        assert.equal(/enabled:\s*false/.test(call), false, `${label}: nothing may disable the side panel for a tab: ${call}`);
+        assert.match(call, /enabled:\s*true/, `${label}: a per-tab option call must enable its tab: ${call}`);
+      } else {
+        globalCalls += 1;
+        assert.equal(label, 'background', `only background.js may register the global panel path: ${label}`);
+        assert.match(call, /path:\s*SIDE_PANEL_PATH/, `the global call must register the shared panel path: ${call}`);
+        assert.match(call, /enabled:\s*false/, `the global call must stay disabled so the panel never leaks onto every tab: ${call}`);
+      }
     }
   }
-  assert.equal(optionCalls, 3, 'only the availability module, the agent\'s new_tab, and the install page gesture should set panel options');
+  assert.equal(perTabCalls, 3, 'only the availability module, the agent\'s new_tab, and the install page gesture should set per-tab panel options');
+  assert.equal(globalCalls, 1, 'background.js registers the global panel path exactly once');
 
   // No manifest side_panel key: a tab the user never opened the panel on —
   // a fresh Cmd+T tab included — has no panel to inherit.
@@ -28659,6 +28673,59 @@ test('chrome opts the side panel in per tab and never pre-enables or disables it
   assert.notEqual(openIdx, -1, 'the toolbar click should open the panel');
   assert.equal(enableIdx < openIdx, true, 'the tab must be opted in before open()');
   assert.equal(/await/.test(clickHandler[1].slice(0, openIdx)), false, 'nothing may be awaited before open() — it would spend the user gesture');
+});
+
+test('background hydration failures degrade to defaults instead of poisoning every message', () => {
+  for (const [label, prefix] of [
+    ['chrome', 'src/chrome'],
+    ['firefox', 'src/firefox'],
+  ]) {
+    const background = fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8');
+    // handleMessage awaits these on every non-lightweight message. One failed
+    // storage read at boot used to leave them permanently rejected, failing
+    // every message until the next background restart.
+    assert.match(background, /const customSkillsReady = loadCustomSkills\(\)\.catch\(/, `${label}: customSkillsReady must not stay rejected`);
+    assert.match(background, /const planBeforeActReady = loadPlanBeforeAct\(\)\.catch\(/, `${label}: planBeforeActReady must not stay rejected`);
+    assert.match(background, /const planReviewReady = loadPlanReviewSettings\(\)\.catch\(/, `${label}: planReviewReady must not stay rejected`);
+    // A suspended outgoing panel can hold the handoff channel open forever;
+    // load(waitForHandoff) must treat silence like absence.
+    assert.match(background, /requestHandoff:[\s\S]{0,700}?Promise\.race\(/, `${label}: the handoff snapshot request needs a timeout race`);
+  }
+  // Chrome-only: an unguarded chrome.sidePanel call at module top level would
+  // abort evaluation before any onMessage listener registers on a browser
+  // without the API.
+  const chromeBackground = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
+  assert.match(chromeBackground, /chrome\.sidePanel\?\.setPanelBehavior\?\./, 'chrome: setPanelBehavior must be optional-chained');
+});
+
+test('panel chat-restore loops stop at a deadline and never clobber the stored chat', () => {
+  for (const [label, prefix] of [
+    ['chrome', 'src/chrome'],
+    ['firefox', 'src/firefox'],
+  ]) {
+    const panel = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.js'), 'utf8');
+    // Every retry loop over TAB_CHAT_LOAD_FAILED must be bounded: an
+    // unreachable background (mid-update, dead registration) used to spin
+    // them forever with the composer disabled and nothing on screen.
+    const loops = panel.match(/TAB_CHAT_LOAD_FAILED[^\n]*\)\s*\{|while\s*\(refreshed === false/g) || [];
+    assert.ok(loops.length > 0, `${label}: expected the retry loops to exist`);
+    const failCalls = (panel.match(/failTabChatRestore\(/g) || []).length;
+    // Definition + one call per loop (chrome: init + visibility + init().catch;
+    // firefox adds the tab-switch loop).
+    assert.ok(failCalls >= 4, `${label}: every retry loop needs its deadline exit (${failCalls} failTabChatRestore uses found)`);
+    assert.match(panel, /TAB_CHAT_RESTORE_DEADLINE_MS = 12_000/, `${label}: the restore deadline constant is missing`);
+    // While a restore has failed, nothing may write over the stored copy this
+    // document never managed to read.
+    assert.match(panel, /function persistTabChat[\s\S]{0,400}?restore-blocked/, `${label}: persistTabChat must skip a blocked tab`);
+    assert.match(panel, /function schedulePersist\(\) \{[\s\S]{0,200}?sameTabId\(tabChatRestoreBlockedTabId, renderedTabId\)/, `${label}: schedulePersist must skip a blocked tab`);
+    // A successful read unblocks: the notice clears and persistence resumes.
+    assert.match(panel, /clearTabChatRestoreFailure\(queuedTabId\);/, `${label}: a successful load must clear the failure state`);
+    // Self-heal is loop-proof: the reload marker must be verified before
+    // reloading, and the notice is the fallback.
+    assert.match(panel, /if \(lastPanelSelfReloadAt\(\) < stamp\) return false;/, `${label}: a reload marker that did not stick must not reload`);
+    // Boot failures surface instead of dying silently.
+    assert.match(panel, /init\(\)\.catch\(/, `${label}: init() must surface boot failures`);
+  }
 });
 
 test('the composer reopens in the mode the user chose', async () => {
@@ -43530,6 +43597,81 @@ test('failed sensitive field-tool readbacks are annotated and redacted', () => {
     method.call({ strictSecretMode: true }, 'set_field', strictFailure);
     assert.equal(Object.hasOwn(strictFailure, 'actual'), false, `${label}: strict mode must also redact failed readbacks`);
     assert.equal(strictFailure.note, strictNote, `${label}: strict secret reminder should apply to failed sensitive results`);
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Provider catalog resilience: stored configs survive crashes mid-write, so a
+// corrupted entry is a state load() must expect. It used to throw on every
+// retry, which failed every non-lightweight background message until the user
+// wiped the profile — the "reinstall the extension to fix it" report.
+// ────────────────────────────────────────────────────────────────────────
+
+console.log('\nprovider catalog resilience');
+
+test('provider load drops corrupted stored entries instead of failing every message', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, PM] of [['chrome', ProviderManagerCh], ['firefox', ProviderManagerFx]]) {
+      let reads = 0;
+      const storageApi = {
+        storage: {
+          local: {
+            async get() {
+              reads += 1;
+              return {
+                providers: {
+                  ollama: null,
+                  lmstudio: 'garbage',
+                  openrouter: 42,
+                  jan: ['not', 'a', 'config'],
+                  anthropic: { type: 'anthropic', apiKey: 'sk-keep-me', configured: true },
+                },
+                activeProvider: 'anthropic',
+                webbrainDeviceGuid: '3f2c1a99-6a2e-4a11-9c1b-88d1a2b3c4d5',
+              };
+            },
+            async set() {},
+          },
+        },
+        runtime: {
+          id: 'test-extension',
+          getPlatformInfo(callback) {
+            if (typeof callback === 'function') {
+              callback({ os: 'mac', arch: 'arm64' });
+              return undefined;
+            }
+            return Promise.resolve({ os: 'mac', arch: 'arm64' });
+          },
+        },
+      };
+      globalThis.chrome = storageApi;
+      globalThis.browser = storageApi;
+
+      const manager = new PM();
+      // A burst of concurrent callers coalesces to one in-flight load plus one
+      // queued follow-up — the follow-up re-reads so a caller reacting to a
+      // write that landed mid-load never settles for the older snapshot.
+      await Promise.all(Array.from({ length: 10 }, () => manager.load()));
+      assert.ok(reads <= 2, `${label}: a burst of loads must coalesce (${reads} storage reads)`);
+
+      assert.ok(manager.providers.size > 0, `${label}: the catalog must survive corrupted entries`);
+      assert.equal(manager.providers.get('anthropic')?.config?.apiKey, 'sk-keep-me', `${label}: intact entries keep their credentials`);
+      assert.equal(manager.activeProviderId, 'anthropic', `${label}: the active provider survives`);
+      // Dropped entries fall back to the shipped defaults rather than
+      // poisoning the load.
+      assert.ok(manager.providers.has('ollama'), `${label}: a null stored entry falls back to the default config`);
+
+      // The fully corrupted shape — providers is not even an object.
+      const flat = new PM();
+      storageApi.storage.local.get = async () => ({ providers: 'corrupted', activeProvider: null });
+      await flat.load();
+      assert.ok(flat.providers.size > 0, `${label}: a non-object providers value loads the defaults`);
+    }
+  } finally {
+    globalThis.chrome = originalChrome;
+    globalThis.browser = originalBrowser;
   }
 });
 

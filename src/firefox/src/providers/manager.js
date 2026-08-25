@@ -89,6 +89,8 @@ export class ProviderManager {
   constructor() {
     this.providers = new Map();
     this.activeProviderId = null;
+    this._loadInFlight = null;
+    this._loadQueued = null;
     this._ollamaVisionChecks = new Map();
     this._visionCapabilityChecks = new Map();
     this._visionCapabilityEpochs = new Map();
@@ -106,22 +108,58 @@ export class ProviderManager {
    * Deprecated provider entries are filtered after the merge so removed
    * defaults do not stay visible forever for existing users.
    */
-  async load() {
+  load() {
+    // At most one load in flight plus one queued follow-up: every
+    // non-lightweight background message calls this while the catalog is
+    // empty, so a slow storage read used to fan out into a pile of concurrent
+    // loads all racing the same save(). The follow-up (rather than handing
+    // latecomers the in-flight promise) keeps freshness intact: a caller
+    // reacting to a storage write that landed mid-load must never settle for
+    // the snapshot read before that write.
+    if (this._loadQueued) return this._loadQueued;
+    if (this._loadInFlight) {
+      this._loadQueued = this._loadInFlight.catch(() => {}).then(() => {
+        this._loadQueued = null;
+        return this.load();
+      });
+      return this._loadQueued;
+    }
+    this._loadInFlight = this._loadOnce().finally(() => {
+      this._loadInFlight = null;
+    });
+    return this._loadInFlight;
+  }
+
+  async _loadOnce() {
     const data = await browser.storage.local.get(['providers', 'activeProvider', WEBBRAIN_DEVICE_GUID_KEY]);
-    const rawStoredOllama = data.providers?.ollama;
+    // Stored configs survive crashes mid-write, so a single corrupted entry
+    // (null, a string, an array) is a state this must expect. It used to throw
+    // out of load() on every retry, which failed every background message until
+    // the user wiped the profile — drop the bad entry and keep the catalog.
+    const storedProviders = {};
+    if (data.providers && typeof data.providers === 'object' && !Array.isArray(data.providers)) {
+      for (const [id, config] of Object.entries(data.providers)) {
+        if (config && typeof config === 'object' && !Array.isArray(config)) {
+          storedProviders[id] = config;
+        } else {
+          console.warn(`[providers] dropping corrupted stored config for "${id}"`);
+        }
+      }
+    }
+    const rawStoredOllama = storedProviders.ollama;
     const ollamaVisionConfigMigrated = !!rawStoredOllama && (
       !OLLAMA_VISION_MODES.has(rawStoredOllama.visionMode)
       || Object.hasOwn(rawStoredOllama, 'supportsVision')
     );
-    const genericVisionConfigMigrated = Object.entries(data.providers || {}).some(([id, config]) => {
+    const genericVisionConfigMigrated = Object.entries(storedProviders).some(([id, config]) => {
       return !!visionProviderKind(config?.duplicateOf || id, config) && (
         !VISION_MODES.has(config.visionMode)
         || Object.hasOwn(config, 'supportsVision')
         || (!String(config.model || '').trim() && config.visionDetection != null)
       );
     });
-    const hadLegacyClaudeSubscription = Object.hasOwn(data.providers || {}, 'claude_subscription');
-    const stored = this._migrateStoredProviderConfigs(data.providers || {});
+    const hadLegacyClaudeSubscription = Object.hasOwn(storedProviders, 'claude_subscription');
+    const stored = this._migrateStoredProviderConfigs(storedProviders);
     const legacyActiveProviderId = ['webbrain', 'openai_subscription'].includes(data.activeProvider)
       ? WEBBRAIN_CLOUD_PROVIDER_ID
       : data.activeProvider;
@@ -172,7 +210,13 @@ export class ProviderManager {
     // settings-UI sign-out control with it, so purge any leftover OAuth
     // token bundle here — otherwise a previously-signed-in user's raw
     // access/refresh tokens would sit in storage with no UI path to clear them.
-    if (hadLegacyClaudeSubscription) await signOutClaude();
+    if (hadLegacyClaudeSubscription) {
+      try {
+        await signOutClaude();
+      } catch (e) {
+        console.warn('[providers] legacy Claude sign-out cleanup failed:', e);
+      }
+    }
     if (configs[WEBBRAIN_CLOUD_PROVIDER_ID]) {
       configs[WEBBRAIN_CLOUD_PROVIDER_ID].deviceGuid = await this._getDeviceGuid(data[WEBBRAIN_DEVICE_GUID_KEY]);
     }
@@ -185,7 +229,13 @@ export class ProviderManager {
 
     this.providers.clear();
     for (const [id, config] of Object.entries(configs)) {
-      this.providers.set(id, this._createProvider(id, config));
+      try {
+        this.providers.set(id, this._createProvider(id, config));
+      } catch (e) {
+        // One unusable entry must not take down the whole catalog — and with
+        // it every background message that waits for providers to load.
+        console.warn(`[providers] skipping provider "${id}" with unusable config:`, e);
+      }
     }
     if (providerStateMigrated) await this.save();
   }

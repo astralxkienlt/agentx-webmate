@@ -124,6 +124,8 @@ export default {
   'sp.inspection': 'WebBrain hat begonnen, diese Seite zu analysieren',
   'sp.greeting.html': 'Hallo! Ich bin <strong>WebBrain</strong>. Ich kann diese Seite lesen, Fragen beantworten, auf Buttons klicken, Formulare ausfüllen und mehrstufige Aufgaben automatisieren.',
   'sp.help_message': 'Wie kann ich Ihnen mit dieser Seite helfen?',
+  'sp.tab_chat_restore_failed': "Die gespeicherte Unterhaltung konnte nicht geladen werden, weil der Hintergrunddienst der Erweiterung nicht antwortet. Zum Schutz wird für diesen Tab nichts gespeichert, bis das Laden gelingt.",
+  'sp.tab_chat_restore_reload': "Panel neu laden",
   'sp.cleared_message': 'Gespräch gelöscht. Wie kann ich helfen?',
   'sp.clear.confirm': 'Dieses Gespräch geht verloren. Neues Gespräch starten?',
   "sp.clear.title": "Neues Gespräch starten?",

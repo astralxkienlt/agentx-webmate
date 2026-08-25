@@ -223,6 +223,8 @@ export default {
 
   'sp.greeting.html': 'Hai! Saya <strong>WebBrain</strong>. Saya boleh membaca halaman ini, menjawab soalan, mengklik butang, mengisi borang, dan mengautomatikkan tugas berbilang langkah.',
   'sp.help_message': 'Bagaimana saya boleh membantu pada halaman ini?',
+  'sp.tab_chat_restore_failed': "Perbualan yang disimpan tidak dapat dimuatkan kerana latar belakang sambungan tidak bertindak balas. Untuk melindunginya, tiada apa-apa akan disimpan untuk tab ini sehingga pemuatan berjaya.",
+  'sp.tab_chat_restore_reload': "Muat semula panel",
   'sp.cleared_message': 'Perbualan dikosongkan. Bagaimana saya boleh membantu?',
   'sp.clear.confirm': 'Perbualan ini akan hilang. Mulakan perbualan baharu?',
   "sp.clear.title": "Mulakan perbualan baharu?",

@@ -234,6 +234,8 @@ export default {
 
   'sp.greeting.html': 'Merhaba! Ben <strong>WebBrain</strong>. Bu sayfayı okuyabilir, sorularını yanıtlayabilir, düğmelere tıklayabilir, formları doldurabilir ve çok adımlı görevleri otomatikleştirebilirim.',
   'sp.help_message': 'Bu sayfayla ilgili nasıl yardımcı olabilirim?',
+  'sp.tab_chat_restore_failed': "Uzantının arka planı yanıt vermediği için kayıtlı konuşma yüklenemedi. Korumak adına, yükleme başarılı olana kadar bu sekme için hiçbir şey kaydedilmeyecek.",
+  'sp.tab_chat_restore_reload': "Paneli yeniden yükle",
   'sp.cleared_message': 'Konuşma silindi. Nasıl yardımcı olabilirim?',
   'sp.clear.confirm': 'Bu konuşma kaybolacak. Yeni bir konuşma başlatılsın mı?',
   "sp.clear.title": "Yeni bir konuşma başlatılsın mı?",

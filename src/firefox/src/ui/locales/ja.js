@@ -198,6 +198,8 @@ export default {
 
   'sp.greeting.html': 'こんにちは！<strong>WebBrain</strong> です。このページを読み、質問に答え、ボタンを押し、フォームに入力し、複数ステップのタスクを自動化できます。',
   'sp.help_message': 'このページで何をお手伝いしましょうか？',
+  'sp.tab_chat_restore_failed': "拡張機能のバックグラウンドが応答しないため、保存された会話を読み込めませんでした。安全のため、読み込みが成功するまでこのタブでは何も保存されません。",
+  'sp.tab_chat_restore_reload': "パネルを再読み込み",
   'sp.cleared_message': '会話をクリアしました。何かお手伝いできますか？',
   'sp.clear.confirm': 'この会話は失われます。新しい会話を開始しますか？',
   "sp.clear.title": "新しい会話を開始しますか？",

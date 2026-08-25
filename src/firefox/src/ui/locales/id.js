@@ -198,6 +198,8 @@ export default {
 
   'sp.greeting.html': 'Halo! Saya <strong>WebBrain</strong>. Saya bisa membaca halaman ini, menjawab pertanyaan, mengeklik tombol, mengisi formulir, dan mengotomatiskan tugas multi-langkah.',
   'sp.help_message': 'Ada yang bisa saya bantu di halaman ini?',
+  'sp.tab_chat_restore_failed': "Percakapan tersimpan tidak dapat dimuat karena latar belakang ekstensi tidak merespons. Agar tetap aman, tidak ada yang akan disimpan untuk tab ini sampai pemuatan berhasil.",
+  'sp.tab_chat_restore_reload': "Muat ulang panel",
   'sp.cleared_message': 'Percakapan dihapus. Ada yang bisa saya bantu?',
   'sp.clear.confirm': 'Percakapan ini akan hilang. Mulai percakapan baru?',
   "sp.clear.title": "Mulai percakapan baru?",

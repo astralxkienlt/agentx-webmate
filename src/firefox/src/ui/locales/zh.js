@@ -198,6 +198,8 @@ export default {
 
   'sp.greeting.html': '你好！我是 <strong>WebBrain</strong>。我可以阅读此页面、回答问题、点击按钮、填写表单以及执行多步骤自动化任务。',
   'sp.help_message': '需要我在此页面做什么？',
+  'sp.tab_chat_restore_failed': "由于扩展后台无响应，无法加载已保存的对话。为保护数据，在加载成功之前不会为此标签页保存任何内容。",
+  'sp.tab_chat_restore_reload': "重新加载面板",
   'sp.cleared_message': '会话已清除。有什么可以帮你的？',
   'sp.clear.confirm': '此对话将丢失。要开始新的对话吗？',
   "sp.clear.title": "开始新对话？",

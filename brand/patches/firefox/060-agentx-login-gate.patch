@@ -1,16 +1,16 @@
 diff --git a/src/ui/sidepanel.html b/src/ui/sidepanel.html
-index 94d6f0d79..a44e2fce4 100644
 --- a/src/ui/sidepanel.html
 +++ b/src/ui/sidepanel.html
-@@ -12,6 +12,7 @@
+@@ -12,6 +12,8 @@
    <script src="theme-bootstrap.js"></script>
    <link rel="stylesheet" href="../../styles/sidepanel.css">
    <link rel="stylesheet" href="../../vendor/katex/katex.min.css">
 +  <link rel="stylesheet" href="agentx-login-gate.css">
++  <script src="agentx-boot-watchdog.js"></script>
    <!-- KaTeX is loaded as classic scripts (not modules). They assign to
         window.katex and window.renderMathInElement so formatMarkdown can
         call them after inserting message HTML. -->
-@@ -19,6 +20,32 @@
+@@ -19,6 +21,32 @@
    <script defer src="../../vendor/katex/auto-render.min.js"></script>
  </head>
  <body>
@@ -44,10 +44,9 @@ index 94d6f0d79..a44e2fce4 100644
    <div id="onboarding" class="onboarding hidden">
      <div class="ob-card">
 diff --git a/src/ui/sidepanel.js b/src/ui/sidepanel.js
-index 8283a84c3..56e88a60e 100644
 --- a/src/ui/sidepanel.js
 +++ b/src/ui/sidepanel.js
-@@ -25,6 +25,7 @@ import {
+@@ -43,6 +43,7 @@ import {
  import { historyTextFromElement } from './history-text.js';
  import { sniffAttachment } from '../media/media-core.js';
  import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../media/attachment-store.js';
@@ -55,7 +54,7 @@ index 8283a84c3..56e88a60e 100644
  import { claimRunError } from './run-error-dedupe.js';
  import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
  import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
-@@ -87,8 +88,34 @@ if (globalThis.browser?.storage?.onChanged) {
+@@ -109,8 +110,36 @@ if (globalThis.browser?.storage?.onChanged) {
    });
  }
  
@@ -64,6 +63,8 @@ index 8283a84c3..56e88a60e 100644
 +// provider holds a live key, so this runs before the product tour: onboarding
 +// asks which model to use, and by then the answer is already settled.
 +const agentxSignedIn = (function initAgentXLoginGate() {
++  // Retire the static boot watchdog: from here the gate owns the UX.
++  globalThis.__netmindGateBootAlive?.();
 +  const root = document.getElementById('agentx-login-gate');
 +  if (!root) return Promise.resolve();
 +  try {
@@ -87,6 +88,6 @@ index 8283a84c3..56e88a60e 100644
  // ─── Onboarding (first-launch wizard) ───────────────────────────────
  (async function initOnboarding() {
 +  await agentxSignedIn.catch(() => {});
-   const stored = await browser.storage.local.get('onboardingComplete');
-   if (stored.onboardingComplete) return;
- 
+   // Treat an unreadable flag as "already onboarded": skipping the wizard once
+   // beats an unhandled rejection that kills it for good.
+   const stored = await browser.storage.local.get('onboardingComplete').catch(() => ({ onboardingComplete: true }));

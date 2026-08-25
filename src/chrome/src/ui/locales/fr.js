@@ -223,6 +223,8 @@ export default {
 
   'sp.greeting.html': 'Bonjour ! Je suis <strong>WebBrain</strong>. Je peux lire cette page, répondre à des questions, cliquer sur des boutons, remplir des formulaires et automatiser des tâches en plusieurs étapes.',
   'sp.help_message': 'Comment puis-je vous aider avec cette page ?',
+  'sp.tab_chat_restore_failed': "Impossible de charger la conversation enregistrée : l'arrière-plan de l'extension ne répond pas. Pour la protéger, rien ne sera enregistré pour cet onglet tant que le chargement n'aboutit pas.",
+  'sp.tab_chat_restore_reload': "Recharger le panneau",
   'sp.cleared_message': 'Conversation effacée. Comment puis-je vous aider ?',
   'sp.clear.confirm': 'Cette conversation sera perdue. Démarrer une nouvelle conversation ?',
   "sp.clear.title": "Démarrer une nouvelle conversation ?",
