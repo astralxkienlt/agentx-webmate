@@ -698,7 +698,7 @@ export default {
   'st.display.search.empty': '一致する一般設定はありません。',
   'st.display.advanced': '詳細設定',
   'st.display.cloud_bridge.label': 'クラウドブリッジ',
-  'st.display.cloud_bridge.desc': 'この Chromium プロファイルにローカルコントローラーを1つ接続します。WebBrain Cloud はポート 17373、MCP クライアントは 17374、LM Studio は 17375 を使用します。有効にできるブリッジは1つだけで、通常の権限確認は引き続き適用されます。',
+  'st.display.cloud_bridge.desc': 'この Chromium プロファイルにローカルコントローラーを1つ接続します。MCP クライアントはポート 17374、LM Studio プラグインは 17375、クラウド実行サービスは 17373 を使用します。有効にできるブリッジは1つだけで、通常の権限確認は引き続き適用されます。',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': '127.0.0.1、localhost、または ::1 を使ったローカル ws:// URL を指定してください。',

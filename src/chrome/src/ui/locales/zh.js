@@ -698,7 +698,7 @@ export default {
   'st.display.search.empty': '没有匹配的通用设置。',
   'st.display.advanced': '高级',
   'st.display.cloud_bridge.label': '云桥接',
-  'st.display.cloud_bridge.desc': '将一个本地控制器连接到此 Chromium 配置文件。WebBrain Cloud 使用端口 17373，MCP 客户端使用 17374，LM Studio 使用 17375。一次只能启用一个桥接；常规权限提示仍然有效。',
+  'st.display.cloud_bridge.desc': '将一个本地控制器连接到此 Chromium 配置文件。MCP 客户端使用端口 17374，LM Studio 插件使用 17375，云端运行服务使用 17373。一次只能启用一个桥接；常规权限提示仍然有效。',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': '请使用包含 127.0.0.1、localhost 或 ::1 的本地 ws:// URL。',

@@ -554,7 +554,7 @@ export default {
   'st.display.search.empty': 'Keine passenden allgemeinen Einstellungen.',
   'st.display.advanced': 'Erweitert',
   'st.display.cloud_bridge.label': 'Cloud-Bridge',
-  'st.display.cloud_bridge.desc': 'Verbinde einen lokalen Controller mit diesem Chromium-Profil. Port 17373 ist für WebBrain Cloud, 17374 für MCP-Clients und 17375 für LM Studio. Es kann nur eine Bridge aktiv sein; die normalen Berechtigungsabfragen gelten weiterhin.',
+  'st.display.cloud_bridge.desc': 'Verbinde einen lokalen Controller mit diesem Chromium-Profil. Port 17374 ist für MCP-Clients, 17375 für das LM-Studio-Plugin und 17373 für einen Cloud-Run-Dienst. Es kann nur eine Bridge aktiv sein; die normalen Berechtigungsabfragen gelten weiterhin.',
   'st.display.cloud_bridge.url_label': 'WebSocket-URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'Verwende eine lokale ws://-URL mit 127.0.0.1, localhost oder ::1.',

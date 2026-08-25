@@ -557,7 +557,7 @@ export default {
   'st.display.search.empty': "कोई सामान्य सेटिंग मेल नहीं खाती.",
   'st.display.advanced': "उन्नत",
   'st.display.cloud_bridge.label': 'क्लाउड ब्रिज',
-  'st.display.cloud_bridge.desc': 'एक स्थानीय कंट्रोलर को इस Chromium प्रोफ़ाइल से कनेक्ट करें। WebBrain Cloud के लिए पोर्ट 17373, MCP क्लाइंट के लिए 17374 या LM Studio के लिए 17375 इस्तेमाल करें। एक समय में केवल एक ब्रिज सक्रिय हो सकता है; सामान्य अनुमति संकेत लागू रहेंगे।',
+  'st.display.cloud_bridge.desc': 'एक स्थानीय कंट्रोलर को इस Chromium प्रोफ़ाइल से कनेक्ट करें। MCP क्लाइंट के लिए पोर्ट 17374, LM Studio प्लगइन के लिए 17375 या क्लाउड रन सेवा के लिए 17373 इस्तेमाल करें। एक समय में केवल एक ब्रिज सक्रिय हो सकता है; सामान्य अनुमति संकेत लागू रहेंगे।',
   'st.display.cloud_bridge.url_label': 'WebSocket URL',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': '127.0.0.1, localhost या ::1 वाला स्थानीय ws:// URL इस्तेमाल करें।',

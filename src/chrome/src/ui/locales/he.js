@@ -531,7 +531,7 @@ export default {
   "st.display.search.empty": "אין הגדרות כלליות תואמות.",
   "st.display.advanced": "מִתקַדֵם",
   'st.display.cloud_bridge.label': 'גשר ענן',
-  'st.display.cloud_bridge.desc': 'חבר בקר מקומי אחד לפרופיל Chromium הזה. השתמש ביציאה 17373 עבור WebBrain Cloud, ב-17374 עבור לקוחות MCP או ב-17375 עבור LM Studio. רק גשר אחד יכול להיות פעיל; בקשות ההרשאה הרגילות עדיין חלות.',
+  'st.display.cloud_bridge.desc': 'חבר בקר מקומי אחד לפרופיל Chromium הזה. השתמש ביציאה 17374 עבור לקוחות MCP, ב-17375 עבור התוסף של LM Studio או ב-17373 עבור שירות הרצה בענן. רק גשר אחד יכול להיות פעיל; בקשות ההרשאה הרגילות עדיין חלות.',
   'st.display.cloud_bridge.url_label': 'כתובת WebSocket',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'השתמש בכתובת ws:// מקומית עם 127.0.0.1, localhost או ::1.',

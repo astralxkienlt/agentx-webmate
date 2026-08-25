@@ -698,7 +698,7 @@ export default {
   'st.display.search.empty': 'لا توجد إعدادات عامة مطابقة.',
   'st.display.advanced': 'متقدم',
   'st.display.cloud_bridge.label': 'جسر السحابة',
-  'st.display.cloud_bridge.desc': 'صِل وحدة تحكم محلية واحدة بملف Chromium هذا. استخدم المنفذ 17373 لـ WebBrain Cloud أو 17374 لعملاء MCP أو 17375 لـ LM Studio. يمكن تفعيل جسر واحد فقط؛ وتظل مطالبات الأذونات العادية سارية.',
+  'st.display.cloud_bridge.desc': 'صِل وحدة تحكم محلية واحدة بملف Chromium هذا. وجِّهها إلى المنفذ 17374 لعملاء MCP أو 17375 لملحق LM Studio أو 17373 لخدمة تشغيل سحابية. يمكن تفعيل جسر واحد فقط؛ وتظل مطالبات الأذونات العادية سارية.',
   'st.display.cloud_bridge.url_label': 'عنوان WebSocket',
   'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
   'st.display.cloud_bridge.invalid_url': 'استخدم عنوان ws:// محليًا مع 127.0.0.1 أو localhost أو ::1.',
