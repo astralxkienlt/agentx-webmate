@@ -700,7 +700,7 @@ export default {
   'st.display.cloud_bridge.label': 'Хмарний міст',
   'st.display.cloud_bridge.desc': 'Підключіть один локальний контролер до цього профілю Chromium. Використовуйте порт 17374 для клієнтів MCP, 17375 для плагіна LM Studio або 17373 для хмарного сервісу запусків. Одночасно може бути активним лише один міст; звичайні запити дозволів залишаються чинними.',
   'st.display.cloud_bridge.url_label': 'URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Використовуйте локальний URL ws:// із 127.0.0.1, localhost або ::1.',
   'st.display.cloud_bridge.status_disabled': 'Міст вимкнено',
   'st.display.cloud_bridge.status_connecting': 'Підключення…',

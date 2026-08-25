@@ -8,6 +8,13 @@ import { THEME_MODES, applyMode, loadMode, watch } from './theme.js';
 import { renderSkillMarkdown } from './skill-markdown.js';
 import { CAPABILITY_LABEL } from '../agent/permission-gate.js';
 import {
+  CLOUD_BRIDGE_ENABLED_KEY,
+  CLOUD_BRIDGE_URL_KEY,
+  DEFAULT_CLOUD_BRIDGE_URL,
+  cloudBridgeUrlFrom,
+  isCloudBridgeEnabled,
+} from '../cloud-bridge-config.js';
+import {
   PERMISSION_MODES,
   PERMISSION_MODE_STORAGE_KEY,
   loadPermissionMode,
@@ -340,9 +347,7 @@ const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
 const PLAN_BEFORE_ACT_MODES = new Set(['try', 'strict', 'off']);
 const PLAN_REVIEW_MODES = new Set(['confidence', 'always', 'never']);
-const CLOUD_BRIDGE_ENABLED_KEY = 'webbrainCloudBridgeEnabled';
-const CLOUD_BRIDGE_URL_KEY = 'webbrainCloudBridgeUrl';
-const DEFAULT_CLOUD_BRIDGE_URL = 'ws://127.0.0.1:17373/extension';
+
 let cloudBridgeStatusPollTimer = null;
 let cloudBridgeStatusRequestPending = false;
 // Product default: auto-approve plans at 75% confidence to reduce review stops.
@@ -513,8 +518,8 @@ async function toggleCloudBridge() {
 
 async function initCloudBridgeSettings(stored) {
   if (!cloudBridgeToggle || !cloudBridgeUrlInput) return;
-  cloudBridgeToggle.checked = stored[CLOUD_BRIDGE_ENABLED_KEY] === true;
-  cloudBridgeUrlInput.value = stored[CLOUD_BRIDGE_URL_KEY] || DEFAULT_CLOUD_BRIDGE_URL;
+  cloudBridgeToggle.checked = isCloudBridgeEnabled(stored);
+  cloudBridgeUrlInput.value = cloudBridgeUrlFrom(stored);
 
   const normalized = validateCloudBridgeUrl();
   if (normalized) cloudBridgeUrlInput.value = normalized;
@@ -557,7 +562,7 @@ async function initCloudBridgeSettings(stored) {
       cloudBridgeUrlInput.value = changes[CLOUD_BRIDGE_URL_KEY].newValue;
     }
     if (changes[CLOUD_BRIDGE_ENABLED_KEY]) {
-      cloudBridgeToggle.checked = changes[CLOUD_BRIDGE_ENABLED_KEY].newValue === true;
+      cloudBridgeToggle.checked = changes[CLOUD_BRIDGE_ENABLED_KEY].newValue !== false;
       if (cloudBridgeToggle.checked) refreshCloudBridgeStatus();
       else renderCloudBridgeStatus({ enabled: false });
     }

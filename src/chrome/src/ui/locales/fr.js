@@ -700,7 +700,7 @@ export default {
   'st.display.cloud_bridge.label': 'Pont cloud',
   'st.display.cloud_bridge.desc': 'Connectez un contrôleur local à ce profil Chromium. Utilisez le port 17374 pour les clients MCP, 17375 pour le plugin LM Studio ou 17373 pour un service d’exécution cloud. Un seul pont peut être actif ; les demandes d’autorisation restent applicables.',
   'st.display.cloud_bridge.url_label': 'URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Utilisez une URL ws:// locale avec 127.0.0.1, localhost ou ::1.',
   'st.display.cloud_bridge.status_disabled': 'Pont désactivé',
   'st.display.cloud_bridge.status_connecting': 'Connexion…',

@@ -21,15 +21,26 @@
     'cloud_respond',
     'cloud_abort',
   ]);
+  // Ceiling on the reconnect backoff. This dials loopback, so a refused attempt
+  // costs a syscall pair and no network traffic — a long ceiling buys nothing
+  // and delays the case that matters: the controller was down for a while and
+  // has just come back up.
+  const MAX_RECONNECT_DELAY_MS = 10000;
+  // A WebSocket that never finishes its handshake stays CONNECTING forever, and
+  // connect() short-circuits on CONNECTING — so without this the bridge wedges
+  // permanently against anything that accepts TCP and then goes quiet.
+  const CONNECT_TIMEOUT_MS = 10000;
   let socket = null;
   let bridgeUrl = null;
   let enabled = false;
   let reconnectTimer = null;
+  let connectTimer = null;
   let reconnectAttempt = 0;
   let lastError = '';
+  let connectedAt = null;
 
   function normalizeBridgeUrl(value) {
-    const url = new URL(String(value || 'ws://127.0.0.1:17373/extension'));
+    const url = new URL(String(value || 'ws://127.0.0.1:17374/extension'));
     const host = url.hostname.toLowerCase();
     // WHATWG URL keeps the brackets on IPv6 literals: ws://[::1]/… parses to
     // hostname "[::1]", so both spellings must be allowlisted.
@@ -46,8 +57,28 @@
       connected: socket?.readyState === WebSocket.OPEN,
       readyState: socket ? socket.readyState : null,
       reconnectAttempt,
+      connectedAt,
       lastError,
     };
+  }
+
+  function clearConnectTimer() {
+    if (connectTimer) clearTimeout(connectTimer);
+    connectTimer = null;
+  }
+
+  function clearReconnectTimer() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  function dropSocket() {
+    clearConnectTimer();
+    if (!socket) return;
+    const previousSocket = socket;
+    socket = null;
+    connectedAt = null;
+    try { previousSocket.close(); } catch {}
   }
 
   function sendJson(obj, target = socket) {
@@ -61,7 +92,7 @@
 
   function scheduleReconnect() {
     if (!enabled || !bridgeUrl || reconnectTimer) return;
-    const delay = Math.min(30000, 500 * Math.pow(2, reconnectAttempt++));
+    const delay = Math.min(MAX_RECONNECT_DELAY_MS, 500 * Math.pow(2, reconnectAttempt++));
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connect();
@@ -74,9 +105,20 @@
     try {
       const nextSocket = new WebSocket(bridgeUrl);
       socket = nextSocket;
+      clearConnectTimer();
+      connectTimer = setTimeout(() => {
+        connectTimer = null;
+        if (socket !== nextSocket || nextSocket.readyState !== WebSocket.CONNECTING) return;
+        lastError = `Handshake did not complete within ${CONNECT_TIMEOUT_MS}ms.`;
+        socket = null;
+        try { nextSocket.close(); } catch {}
+        scheduleReconnect();
+      }, CONNECT_TIMEOUT_MS);
       nextSocket.addEventListener('open', () => {
         if (socket !== nextSocket) return;
+        clearConnectTimer();
         reconnectAttempt = 0;
+        connectedAt = Date.now();
         lastError = '';
         sendJson({
           type: 'hello',
@@ -128,7 +170,9 @@
       });
       nextSocket.addEventListener('close', () => {
         if (socket !== nextSocket) return;
+        clearConnectTimer();
         socket = null;
+        connectedAt = null;
         scheduleReconnect();
       });
       nextSocket.addEventListener('error', () => {
@@ -155,10 +199,14 @@
       const changed = bridgeUrl && bridgeUrl !== nextUrl;
       enabled = true;
       bridgeUrl = nextUrl;
-      if (changed && socket) {
-        const previousSocket = socket;
-        socket = null;
-        try { previousSocket.close(); } catch {}
+      if (changed) dropSocket();
+      // An explicit start is a fresh intent — from the user, from a cold
+      // service worker, or from the watchdog alarm. Waiting out a backoff that
+      // may already have grown to its ceiling would make "the controller is up
+      // now" take up to MAX_RECONNECT_DELAY_MS to notice, so retry at once.
+      if (!socket) {
+        clearReconnectTimer();
+        reconnectAttempt = 0;
       }
       connect();
       sendResponse(status());
@@ -166,14 +214,9 @@
     }
     if (msg.type === 'cloud-bridge-stop') {
       enabled = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+      clearReconnectTimer();
       reconnectAttempt = 0;
-      if (socket) {
-        const previousSocket = socket;
-        socket = null;
-        try { previousSocket.close(); } catch {}
-      }
+      dropSocket();
       sendResponse(status());
       return false;
     }

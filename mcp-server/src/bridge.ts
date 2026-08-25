@@ -117,6 +117,8 @@ export class WebMateBridge {
   private extensionProtocol: number | null = null;
   private handshakenSocket: WebSocket | null = null;
   private waiters: Array<() => void> = [];
+  private heartbeat: NodeJS.Timeout | null = null;
+  private missedPongs = 0;
 
   async start(): Promise<void> {
     if (this.wss) return;
@@ -170,7 +172,13 @@ export class WebMateBridge {
       this.handshakenSocket = null;
       this.extensionCapabilities = [];
       this.extensionProtocol = null;
+      this.missedPongs = 0;
       log(`extension connected on ${config.bridgePath}`);
+
+      socket.on("pong", () => {
+        if (this.socket !== socket) return;
+        this.missedPongs = 0;
+      });
 
       socket.on("message", (raw) => this.handleMessage(socket, raw.toString()));
 
@@ -180,6 +188,7 @@ export class WebMateBridge {
         this.handshakenSocket = null;
         this.extensionCapabilities = [];
         this.extensionProtocol = null;
+        this.missedPongs = 0;
         log("extension disconnected");
         this.failAllPending(
           new BridgeError(
@@ -195,7 +204,48 @@ export class WebMateBridge {
       });
     });
 
+    this.startHeartbeat();
     log(`listening on ws://127.0.0.1:${config.bridgePort}${config.bridgePath}`);
+  }
+
+  /**
+   * Ping the attached extension and hang up on one that stops answering.
+   *
+   * Without this, a browser that vanishes without closing its TCP connection
+   * (killed process, crashed renderer, suspended VM) leaves `isConnected()`
+   * returning true and every command failing on the 30s command timeout
+   * instead of the honest "no extension is connected".
+   *
+   * Pongs come from the browser's own WebSocket stack, so this proves the
+   * socket is alive — not that the offscreen document's JavaScript is healthy.
+   * The command timeout remains the check for that.
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeat || config.heartbeatIntervalMs <= 0) return;
+    this.heartbeat = setInterval(() => {
+      const socket = this.socket;
+      if (!socket || socket.readyState !== 1) return;
+      if (this.missedPongs >= 2) {
+        log("extension missed two heartbeats — dropping the socket");
+        this.missedPongs = 0;
+        try {
+          socket.terminate();
+        } catch {
+          /* already gone */
+        }
+        return;
+      }
+      this.missedPongs += 1;
+      try {
+        socket.ping();
+      } catch {
+        /* the close handler will clean up */
+      }
+    }, config.heartbeatIntervalMs);
+    // Never hold the process open on the heartbeat alone: an MCP host stops
+    // this server by closing stdin, and an un-unref'd interval would keep the
+    // event loop — and the listening port — alive in an orphan process.
+    this.heartbeat.unref?.();
   }
 
   private handleMessage(socket: WebSocket, data: string): void {
@@ -293,6 +343,13 @@ export class WebMateBridge {
     payload: Record<string, unknown> = {},
     timeoutMs = config.commandTimeoutMs,
   ): Promise<T> {
+    // The extension dials us, so a command issued right after this process
+    // binds the port arrives while the browser is still inside its reconnect
+    // backoff. Failing instantly there turns an ordinary cold start into a
+    // spurious "no extension is connected" on the first tool call.
+    if (!this.isConnected() && config.connectGraceMs > 0) {
+      await this.waitForExtension(config.connectGraceMs);
+    }
     const socket = this.socket;
     if (!socket || !this.isConnected()) {
       throw new BridgeError(
@@ -333,6 +390,9 @@ export class WebMateBridge {
   }
 
   async stop(): Promise<void> {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
+    this.missedPongs = 0;
     this.failAllPending(new BridgeError("Bridge shutting down."));
     if (this.socket) {
       try {

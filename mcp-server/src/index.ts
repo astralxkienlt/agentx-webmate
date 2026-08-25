@@ -414,6 +414,11 @@ server.registerTool(
     inputSchema: {},
   },
   async (): Promise<TextResult> => {
+    // Same grace the command path uses, so this diagnostic never reports
+    // "not connected" for a browser that is one backoff tick from attaching.
+    if (!bridge.isConnected() && config.connectProbeMs > 0) {
+      await bridge.waitForExtension(config.connectProbeMs);
+    }
     if (bridge.isConnected()) {
       const caps = bridge.capabilities();
       return ok(

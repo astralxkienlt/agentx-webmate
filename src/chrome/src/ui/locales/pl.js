@@ -692,7 +692,7 @@ export default {
   'st.display.cloud_bridge.label': 'Most chmurowy',
   'st.display.cloud_bridge.desc': 'Połącz jeden lokalny kontroler z tym profilem Chromium. Użyj portu 17374 dla klientów MCP, 17375 dla wtyczki LM Studio lub 17373 dla usługi uruchomień w chmurze. Aktywny może być tylko jeden most; zwykłe monity o uprawnienia nadal obowiązują.',
   'st.display.cloud_bridge.url_label': 'Adres URL WebSocket',
-  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17373/extension',
+  'st.display.cloud_bridge.url_placeholder': 'ws://127.0.0.1:17374/extension',
   'st.display.cloud_bridge.invalid_url': 'Użyj lokalnego adresu ws:// z 127.0.0.1, localhost lub ::1.',
   'st.display.cloud_bridge.status_disabled': 'Most wyłączony',
   'st.display.cloud_bridge.status_connecting': 'Łączenie…',

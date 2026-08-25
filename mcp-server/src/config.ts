@@ -67,6 +67,19 @@ function durationFromEnv(suffix: string, fallback: number): number {
   return parsed;
 }
 
+/** Like durationFromEnv, but 0 is a legal value meaning "disabled". */
+function optionalDurationFromEnv(suffix: string, fallback: number): number {
+  const found = readEnv(suffix);
+  if (!found) return fallback;
+  const parsed = parseIntFromEnv(found.name, found.raw);
+  if (parsed < 0) {
+    throw new Error(
+      `${found.name} must be a non-negative duration in milliseconds (0 disables), got: ${found.raw}`,
+    );
+  }
+  return parsed;
+}
+
 function stringFromEnv(suffix: string, fallback: string): string {
   return readEnv(suffix)?.raw || fallback;
 }
@@ -89,6 +102,41 @@ export const config = {
 
   /** Interval between `cloud_status` polls while a run is in flight. */
   pollIntervalMs: durationFromEnv("POLL_INTERVAL_MS", 1_000),
+
+  /**
+   * How long a command waits for the extension to (re)attach before giving up
+   * with "not connected".
+   *
+   * The extension dials US, so the moment this process binds the port it is
+   * still sitting in its reconnect backoff. An MCP host that spawns this server
+   * on demand would otherwise see its very first tool call fail against a
+   * browser that attaches a second later.
+   *
+   * Keep this at or above the extension's reconnect ceiling
+   * (MAX_RECONNECT_DELAY_MS in src/chrome/src/offscreen/cloud-bridge.js, 10s)
+   * plus handshake headroom, so the grace always covers a full backoff cycle.
+   */
+  connectGraceMs: durationFromEnv("CONNECT_GRACE_MS", 12_000),
+
+  /**
+   * Grace for the `connection` diagnostic specifically. Deliberately far
+   * shorter than connectGraceMs: an agent calls this tool precisely when it
+   * suspects nothing is attached, and stalling that answer for a full backoff
+   * cycle is worse than answering "not connected" a moment early. Long enough
+   * only to cover a socket already mid-handshake.
+   */
+  connectProbeMs: durationFromEnv("CONNECT_PROBE_MS", 2_000),
+
+  /**
+   * WebSocket ping interval. A socket that misses two consecutive pongs is
+   * terminated so `isConnected()` stops claiming a browser that is gone.
+   *
+   * This catches the disappearances TCP does not report — a killed or crashed
+   * browser, a suspended VM — not a wedged extension: pongs are answered by the
+   * browser's WebSocket stack, not by the offscreen document's JavaScript.
+   * Set to 0 to disable.
+   */
+  heartbeatIntervalMs: optionalDurationFromEnv("HEARTBEAT_INTERVAL_MS", 15_000),
 } as const;
 
 /** The URL the user must paste into Settings → General → Advanced → Cloud bridge. */
