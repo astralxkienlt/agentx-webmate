@@ -28400,6 +28400,44 @@ test('side-panel visibility is opted into per tab and never disabled', async () 
   await new Promise(resolve => setImmediate(resolve));
 });
 
+test('no panel-open rejection is left to float', () => {
+  // `sidePanel.open()` must NOT be awaited — that spends the user gesture the
+  // call needs — but its rejection still has to be handled. Edge rejects the
+  // call outright whenever the gesture did not survive (the documented dead end
+  // in side-panel-availability.js), and an unhandled rejection raised inside the
+  // service worker reaches the user as a bare "Uncaught (in promise)" on the
+  // extension's own Errors page: the rejecting frame is a chrome.* binding, so
+  // there is no JS stack to read — DevTools reports it at 0:1 in background.js.
+  // `.catch()` attaches synchronously and consumes no gesture, so handling costs
+  // nothing. Returning the promise is the other acceptable answer: then the
+  // caller owns it (install.js reports the failure in its own UI).
+  const withoutComments = (source) => source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+  const OPEN_CALL = /(return\s+)?[A-Za-z_$][\w$]*\.(?:sidePanel|sidebarAction)\.open\s*\([^()]*\)(\s*\.catch\s*\()?/g;
+  let seen = 0;
+  for (const rel of [
+    'src/chrome/src/background.js',
+    'src/firefox/src/background.js',
+    'src/chrome/src/ui/install.js',
+    'src/firefox/src/ui/install.js',
+  ]) {
+    const source = withoutComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+    for (const call of source.matchAll(OPEN_CALL)) {
+      seen += 1;
+      assert.ok(
+        Boolean(call[1] || call[2]),
+        `${rel}: a panel open() must return its promise or catch it, never float: ${call[0].trim()}`,
+      );
+    }
+  }
+  // Two Chrome background paths (toolbar/shortcut, context menu + selection
+  // shortcut), one Firefox background path, and two per install page — install.js
+  // is shared verbatim by both trees and branches on the build. A drop here means
+  // a call site moved out of the scan unnoticed.
+  assert.equal(seen, 7, `expected 7 panel-open call sites, found ${seen}`);
+});
+
 test('chrome opts the side panel in per tab and never pre-enables or disables it', () => {
   const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
   const agent = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
@@ -28447,7 +28485,7 @@ test('chrome opts the side panel in per tab and never pre-enables or disables it
   const clickHandler = withoutComments(background).match(/chrome\.action\.onClicked\.addListener\(\(tab\) => \{([\s\S]*?)\n\}\);/);
   assert.ok(clickHandler, 'the action click handler is missing');
   const enableIdx = clickHandler[1].indexOf('sidePanelAvailability.enableForTab(tab.id);');
-  const openIdx = clickHandler[1].indexOf('chrome.sidePanel.open({ tabId: tab.id });');
+  const openIdx = clickHandler[1].indexOf('chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});');
   assert.notEqual(enableIdx, -1, 'the toolbar click should opt its tab in');
   assert.notEqual(openIdx, -1, 'the toolbar click should open the panel');
   assert.equal(enableIdx < openIdx, true, 'the tab must be opted in before open()');
