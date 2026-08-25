@@ -6,6 +6,15 @@ This changelog was generated from the repository Git history and release tags. V
 
 ## [Unreleased]
 
+### Fixed
+- **Bypass permissions now covers a `clarify` nobody answered.** When a clarify question timed out with no reply, the auto-selected answer was never treated as your authorization: the next consequential action and any success completion stayed blocked until you replied for real, and a second attempt ended the run. That is a run halted to collect an approval, so Bypass — the rung whose name promises otherwise — now releases it. The question itself is still asked in every mode; only what happens when nobody replies changes. The decision is read live and never recorded, so the guard stays armed and dropping back to a stricter rung restores the block for whatever comes next, with the blocked-attempt counter untouched. Auto and Accept page actions deliberately keep the block: they pre-approve interaction you can watch happen, not the substitution of silence for an answer.
+- The system prompt now points the model at the clarify result's own `authorized` field instead of ranking answers by where they came from. Six prompt strings stated flatly that a timed-out answer is never approval, which contradicted the runtime the moment a Bypass run timed out — the model could refuse an action the mode had already allowed.
+- Widening to Bypass clears a plan card that is **already on screen**, not only the plans raised after the switch; the rung described as running the plan without asking for approval used to leave that open approval sitting in front of you. Edits you had already typed into the plan travel with the approval, exactly as the Approve button sends them, and an empty step list is refused rather than pushed through. `/dangerously-skip-permissions` clears the same card, since it is documented as the same decision as picking Bypass in the menu.
+- Opening the side panel no longer leaves an unexplained error behind. The toolbar/shortcut path and the context-menu path both fired `sidePanel.open()` without handling its rejection, so a panel open that lost its user gesture — a documented dead end on Edge — surfaced as a bare "Uncaught (in promise)" on the extension's Errors page with no readable location. Every panel-open call now handles its own failure, as the Firefox build and every neighbouring call already did.
+
+### Changed
+- Documentation caught up with behaviour: the security model still claimed a WebMCP invocation "still asks in every mode", which stopped being true when Bypass took over that gate. Both trees' architecture notes, the injection-defence layer note, the manual permission checklist and the Bypass description in all 23 locales now match what the code does.
+
 ## [1.0.1] - 2026-08-24
 
 ### Added
