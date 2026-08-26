@@ -3006,6 +3006,20 @@ async function handleMessage(msg, sender) {
       return await providerManager.testTranscriptionProvider();
     }
 
+    // Where images go right now: a dedicated vision sidecar when one is
+    // configured, otherwise the active provider reads them itself. The
+    // composer model menu shows this so "which model sees my screenshots?"
+    // has an answer without opening Settings. No network — getVisionProvider
+    // only reads stored config.
+    case 'get_vision_provider_status': {
+      try {
+        const provider = await providerManager.getVisionProvider();
+        return { ok: true, dedicated: !!provider, model: provider?.config?.model || '' };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    }
+
     case 'test_capsolver_balance': {
       try {
         const key = String(msg.apiKey || '').trim();

@@ -1048,6 +1048,73 @@ test('settings controller can select a Cloud vision model without exposing the k
   assert.doesNotMatch(controller.renderVision(), /sk-existing-secret/);
 });
 
+test('an open Settings card follows a composer model switch through storage', async () => {
+  const cached = credential({ models: ['model-a', 'model-b'] });
+  const fake = createApi({
+    [AGENTX_SESSION_STORAGE_KEY]: session(),
+    [AGENTX_CREDENTIAL_STORAGE_KEY]: { version: 1, records: [cached] },
+  });
+  const providerState = {
+    providers: { webbrain_cloud: { type: 'openai', category: 'cloud' } },
+    active: 'openai',
+  };
+  let renders = 0;
+  const controller = createAgentXCloudSettingsController({
+    api: fake.api,
+    config: CONFIG,
+    locale: () => 'vi',
+    async sendToBackground(action, data = {}) {
+      if (action === 'update_provider') {
+        Object.assign(providerState.providers.webbrain_cloud, data.config);
+        return { ok: true };
+      }
+      if (action === 'set_active_provider') {
+        providerState.active = data.providerId;
+        return { ok: true };
+      }
+      if (action === 'get_providers') return structuredClone(providerState);
+      throw new Error(`Unexpected background action: ${action}`);
+    },
+    onRender() { renders += 1; },
+    serviceOptions: {
+      fetchImpl: async () => jsonResponse({ data: [{ id: 'model-a' }, { id: 'model-b' }] }),
+      cryptoImpl: webcrypto,
+      now: () => NOW,
+    },
+  });
+
+  await controller.initialize();
+  assert.equal(controller.status().provider.model, 'model-a');
+
+  // The composer chip switches the model: the background merges { model } into
+  // the provider entry and the providers storage key changes. The open card
+  // must repaint the new selection without a reload.
+  const switched = {
+    ...providerState.providers.webbrain_cloud,
+    agentxCloudManaged: true,
+    apiKey: cached.key,
+    model: 'model-b',
+    models: ['model-a', 'model-b'],
+  };
+  const before = renders;
+  fake.storageChanged.emit({ providers: { newValue: { webbrain_cloud: switched } } }, 'local');
+  assert.equal(controller.status().provider.model, 'model-b');
+  assert.ok(renders > before, 'the storage sync must repaint the card');
+  assert.match(controller.render(), /value="model-b" selected/);
+
+  // The same event repeated changes nothing and does not repaint again.
+  const stable = renders;
+  fake.storageChanged.emit({ providers: { newValue: { webbrain_cloud: switched } } }, 'local');
+  assert.equal(renders, stable);
+
+  // A sign-out-shaped entry (credential cleared) must be ignored: the
+  // sign-out flow owns that repaint, half-cleared values never show.
+  fake.storageChanged.emit({
+    providers: { newValue: { webbrain_cloud: { ...switched, apiKey: '', agentxCloudManaged: false, model: '' } } },
+  }, 'local');
+  assert.equal(controller.status().provider.model, 'model-b');
+});
+
 test('Cloud vision sidecar uses the gateway key and ignores an empty selection', () => {
   const cloudConfig = {
     agentxCloudManaged: true,
@@ -1592,11 +1659,17 @@ test('both branded targets gate the side panel and keep Cloud management in sett
     assert.match(manager, /activeProviderId === WEBBRAIN_CLOUD_PROVIDER_ID/);
     assert.match(openai, /not available through this gateway key/);
     assert.doesNotMatch(manager, /webbrain-cloud 1\.0|api\.webbrain\.one\/v1/);
-    // The panel carries the sign-in gate only. Model switching, connection
-    // tests and sign-out stay on the Settings card, so the gate's copy never
-    // has to duplicate them.
+    // The panel carries the sign-in gate plus the composer model chip.
+    // Connection tests, the vision/transcription pickers and sign-out stay on
+    // the Settings card; the chip switches models through the same
+    // update_provider message the card uses, never through the settings
+    // controller, so the panel still needs none of the card's machinery.
     assert.doesNotMatch(sidepanelHtml, /agentx-cloud-sidepanel|agentx-cloud\.css/);
     assert.doesNotMatch(sidepanelJs, /createAgentXCloudSettingsController|agentxCloudController/);
+    assert.match(sidepanelHtml, /id="btn-model-picker"/);
+    assert.match(sidepanelHtml, /id="model-picker-menu"/);
+    assert.match(sidepanelJs, /refreshComposerModelPicker\(res\);/);
+    assert.match(sidepanelJs, /sendToBackground\('get_vision_provider_status'\)/);
     assert.match(sidepanelHtml, /agentx-login-gate\.css/);
     assert.match(sidepanelHtml, /id="agentx-login-gate"/);
     assert.match(sidepanelHtml, /data-agentx-gate-signin/);

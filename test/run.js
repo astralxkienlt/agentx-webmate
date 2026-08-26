@@ -442,6 +442,13 @@ const { claimRunError: claimRunErrorCh } = await import(
 const { claimRunError: claimRunErrorFx } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/ui/run-error-dedupe.js').replace(/\\/g, '/')
 );
+// model-picker.js is pure ESM — the composer model chip's state helpers.
+const ModelPickerCh = await import(
+  'file://' + path.join(ROOT, 'src/chrome/src/ui/model-picker.js').replace(/\\/g, '/')
+);
+const ModelPickerFx = await import(
+  'file://' + path.join(ROOT, 'src/firefox/src/ui/model-picker.js').replace(/\\/g, '/')
+);
 const {
   buildTrustedRuntimeContext: buildTrustedRuntimeContextCh,
   stripTrustedRuntimeContext: stripTrustedRuntimeContextCh,
@@ -75810,6 +75817,190 @@ test('sidepanel routes every run-error path through request-scoped deduplication
     assert.match(panel, /renderAgentErrorUpdate\(data, currentTabId, msg\.requestId\)/, `${label}: streamed errors should use message request identity`);
     assert.match(panel, /msgEl\.dataset\.tabId = active\.tabId;[\s\S]*?msgEl\.dataset\.runRequestId = active\.requestId;[\s\S]*?msgEl\.dataset\.errorMessageKey = active\.key;/, `${label}: persisted error cards should retain their dedupe identity`);
     assert.match(panel, /if \(active\.duplicate\) return;[\s\S]*?retryPayload: isTabAbortRequested\(tabId\) \? null : active\.retryPayload/, `${label}: only the first copy should retain the Retry action`);
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Composer model picker (src/ui/model-picker.js + the footer chip)
+// ────────────────────────────────────────────────────────────────────────
+
+test('composer model picker derives visibility, names and vision notes from provider state', () => {
+  for (const [label, M] of [['chrome', ModelPickerCh], ['firefox', ModelPickerFx]]) {
+    assert.deepEqual(M.normalizeModelList([' a ', 'b', 'a', '', null, 7]), ['a', 'b', '7'], `${label}: normalize trims, dedupes and drops empties`);
+    assert.deepEqual(M.selectableChatModels({ models: ['m1', 'm1', ' m2 '] }), ['m1', 'm2'], `${label}: catalog dedupes`);
+    assert.deepEqual(M.selectableChatModels({ models: 'MiniMax' }), [], `${label}: a non-array catalog offers nothing`);
+    assert.deepEqual(M.selectableChatModels(null), [], `${label}: missing config offers nothing`);
+
+    assert.equal(M.modelShortName('MiniMax/MiniMax-M3'), 'MiniMax-M3', `${label}: vendor prefix trimmed for the chip`);
+    assert.equal(M.modelShortName('models/gemini-2.5-pro'), 'gemini-2.5-pro', `${label}: path-style ids keep the last segment`);
+    assert.equal(M.modelShortName('gpt-4o'), 'gpt-4o', `${label}: plain ids pass through`);
+    assert.equal(M.modelShortName(' qwen2.5:7b '), 'qwen2.5:7b', `${label}: tags survive, whitespace does not`);
+    assert.equal(M.modelShortName('vendor/'), 'vendor/', `${label}: an empty tail falls back to the full id`);
+    assert.equal(M.modelVendorPrefix('MiniMax/MiniMax-M3'), 'MiniMax/', `${label}: vendor prefix for the dimmed span`);
+    assert.equal(M.modelVendorPrefix('a/b/c'), 'a/b/', `${label}: only the last segment stays prominent`);
+    assert.equal(M.modelVendorPrefix('gpt-4o'), '', `${label}: no prefix without a slash`);
+    assert.equal(M.modelVendorPrefix('/model'), '', `${label}: a leading slash is not a vendor`);
+
+    const cloudConfig = {
+      label: 'netMind Extension',
+      enabled: true,
+      supportsVision: true,
+      model: 'MiniMax/MiniMax-M3',
+      models: ['MiniMax/MiniMax-M3', 'Qwen/Qwen3-VL-32B', 'deepseek-v3.2'],
+    };
+    const state = M.modelPickerState({ active: 'webbrain_cloud', providers: { webbrain_cloud: cloudConfig } });
+    assert.equal(state.visible, true, `${label}: an active provider with a catalog surfaces the chip`);
+    assert.equal(state.model, 'MiniMax/MiniMax-M3', `${label}: current model comes from the config`);
+    assert.equal(state.providerLabel, 'netMind Extension', `${label}: heading names the provider`);
+    assert.deepEqual(state.models, cloudConfig.models, `${label}: menu offers the full catalog`);
+    assert.equal(state.supportsVision, true, `${label}: vision capability rides along for the footnote`);
+
+    assert.equal(
+      M.modelPickerState({ active: 'webbrain_cloud', providers: { webbrain_cloud: { ...cloudConfig, model: '' } } }).model,
+      'MiniMax/MiniMax-M3',
+      `${label}: a blank model falls back to the catalog head`,
+    );
+    assert.equal(M.modelPickerState({ active: 'openai', providers: { openai: { model: 'gpt-4o' } } }).visible, false, `${label}: no catalog, no chip`);
+    assert.equal(
+      M.modelPickerState({ active: 'webbrain_cloud', providers: { webbrain_cloud: { ...cloudConfig, enabled: false } } }).visible,
+      false,
+      `${label}: a disabled provider never surfaces the chip`,
+    );
+    assert.equal(
+      M.modelPickerState({ active: 'openai', providers: { openai: { model: 'gpt-4o' }, webbrain_cloud: cloudConfig } }).visible,
+      false,
+      `${label}: an inactive provider's catalog stays out of the composer`,
+    );
+    assert.equal(M.modelPickerState(null).visible, false, `${label}: a failed providers read hides the chip`);
+
+    assert.deepEqual(
+      M.modelVisionNote(state, { ok: true, dedicated: false, model: '' }),
+      { kind: 'inherit', model: 'MiniMax/MiniMax-M3' },
+      `${label}: with no dedicated vision model the chat model reads images`,
+    );
+    assert.deepEqual(
+      M.modelVisionNote(state, { ok: true, dedicated: true, model: 'Qwen/Qwen3-VL-32B' }),
+      { kind: 'dedicated', model: 'Qwen/Qwen3-VL-32B' },
+      `${label}: a dedicated vision model names itself in the footnote`,
+    );
+    assert.equal(M.modelVisionNote(state, { ok: false, error: 'boom' }).kind, 'none', `${label}: a failed probe says nothing rather than guessing`);
+    assert.equal(M.modelVisionNote(state, null).kind, 'none', `${label}: no probe, no claim`);
+    assert.equal(
+      M.modelVisionNote({ ...state, supportsVision: false }, { ok: true, dedicated: false, model: '' }).kind,
+      'none',
+      `${label}: a vision-less provider makes no image claim`,
+    );
+    assert.equal(
+      M.modelVisionNote({ ...state, visible: false }, { ok: true, dedicated: true, model: 'x' }).kind,
+      'none',
+      `${label}: a hidden chip renders no footnote`,
+    );
+  }
+});
+
+test('composer model chip is byte-identical across browsers and wired into panel, styles and background', () => {
+  const moduleCh = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/model-picker.js'), 'utf8');
+  const moduleFx = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/model-picker.js'), 'utf8');
+  assert.equal(moduleCh, moduleFx, 'model-picker helpers must remain byte-identical across browsers');
+
+  for (const [label, prefix] of [['chrome', 'src/chrome'], ['firefox', 'src/firefox']]) {
+    const html = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.html'), 'utf8');
+    assert.match(html, /id="btn-model-picker"/, `${label}: composer model chip markup present`);
+    assert.match(html, /id="model-picker-menu"[^>]*\n?[^>]*role="menu"/, `${label}: model menu markup present`);
+    assert.ok(
+      html.indexOf('id="btn-permission-mode"') < html.indexOf('id="btn-model-picker"'),
+      `${label}: the model chip sits after the permission chip in the footer`,
+    );
+
+    const panel = fs.readFileSync(path.join(ROOT, prefix, 'src/ui/sidepanel.js'), 'utf8');
+    assert.match(
+      panel,
+      /import \{ modelPickerState, modelShortName, modelVendorPrefix, modelVisionNote \} from '\.\/model-picker\.js';/,
+      `${label}: the panel uses the shared helpers`,
+    );
+    assert.match(panel, /refreshComposerModelPicker\(res\);/, `${label}: loadProviders refreshes the chip`);
+    assert.match(
+      panel,
+      /providerId: state\.providerId,\n\s*markConfigured: false,\n\s*config: \{ model \},/,
+      `${label}: switching writes the provider model without flipping configured`,
+    );
+    assert.match(panel, /closeModelPickerMenu\(\);\n  renderPermissionModeMenu\(\);/, `${label}: opening the permission menu closes the model menu`);
+    assert.match(panel, /closePermissionModeMenu\(\);\n  renderModelPickerMenu\(\);/, `${label}: opening the model menu closes the permission menu`);
+    assert.match(panel, /sendToBackground\('get_vision_provider_status'\)/, `${label}: the footnote asks the background for the standing vision route`);
+    assert.match(panel, /if \(changes\.visionModel\) \{/, `${label}: a Settings vision change refreshes the footnote`);
+
+    const css = fs.readFileSync(path.join(ROOT, prefix, 'styles/sidepanel.css'), 'utf8');
+    for (const selector of ['.model-chip {', '.model-picker-menu {', '.model-picker-item {', '.model-picker-note {']) {
+      assert.ok(css.includes(selector), `${label}: ${selector.replace(' {', '')} styles present`);
+    }
+    assert.match(css, /\.model-chip-label \{[^}]*text-overflow: ellipsis/s, `${label}: the chip label ellipsizes instead of overflowing`);
+    assert.match(css, /\.model-picker-item-label \{[^}]*text-overflow: ellipsis/s, `${label}: menu rows ellipsize long model ids`);
+    assert.match(css, /\.model-chip \{[^}]*margin-inline-start: auto/s, `${label}: the chip anchors to the footer's end without pushing the permission chip`);
+
+    const background = fs.readFileSync(path.join(ROOT, prefix, 'src/background.js'), 'utf8');
+    assert.match(background, /case 'get_vision_provider_status': \{/, `${label}: the background answers the vision route probe`);
+  }
+});
+
+test('switching the gateway model keeps the catalog, vision default and cloud config intact', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, PM] of [['chrome', ProviderManagerCh], ['firefox', ProviderManagerFx]]) {
+      const storedCloud = {
+        type: 'openai',
+        category: 'cloud',
+        providerName: 'webbrain-cloud',
+        baseUrl: 'https://gateway.example/v1',
+        apiKey: 'sk-gateway',
+        model: 'MiniMax/MiniMax-M3',
+        models: ['MiniMax/MiniMax-M3', 'Qwen/Qwen3-VL-32B'],
+        supportsVision: true,
+        enabled: true,
+      };
+      const storageApi = {
+        storage: {
+          local: {
+            async get(key) {
+              if (key === 'visionModel') return {};
+              return {
+                providers: { webbrain_cloud: storedCloud },
+                activeProvider: 'webbrain_cloud',
+                // A stored guid short-circuits device fingerprinting, which
+                // would otherwise need a full runtime.getPlatformInfo stub.
+                webbrainDeviceGuid: '3f2c1a99-6a2e-4a11-9c1b-88d1a2b3c4d5',
+              };
+            },
+            async set() {},
+          },
+        },
+        runtime: { id: 'test-extension' },
+      };
+      globalThis.chrome = storageApi;
+      globalThis.browser = storageApi;
+
+      const manager = new PM();
+      await manager.load();
+
+      // The composer chip's exact write: model only, markConfigured false.
+      await manager.updateProvider('webbrain_cloud', { model: 'Qwen/Qwen3-VL-32B' }, { markConfigured: false });
+      const config = manager.providers.get('webbrain_cloud').config;
+      assert.equal(config.model, 'Qwen/Qwen3-VL-32B', `${label}: the model switch lands`);
+      assert.deepEqual(config.models, storedCloud.models, `${label}: the catalog survives the switch`);
+      assert.equal(config.supportsVision, true, `${label}: the switched model keeps reading images (vision default)`);
+      assert.equal(config.apiKey, 'sk-gateway', `${label}: the credential survives the switch`);
+
+      const provider = manager.getActive();
+      assert.equal(provider.model, 'Qwen/Qwen3-VL-32B', `${label}: the live provider serves the new model`);
+      assert.equal(provider.supportsVision, true, `${label}: the live provider still advertises vision`);
+
+      // No dedicated vision model configured → getVisionProvider yields null,
+      // so the agent's fallback sends images to the active (switched) model.
+      assert.equal(await manager.getVisionProvider(), null, `${label}: no sidecar means the chat model reads images itself`);
+    }
+  } finally {
+    globalThis.chrome = originalChrome;
+    globalThis.browser = originalBrowser;
   }
 });
 

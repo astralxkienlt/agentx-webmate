@@ -438,6 +438,26 @@
             <path d="m6 15 6-6 6 6"/>
           </svg>
         </button>
+        <!-- Composer model chip. Hidden until the active provider exposes a
+             model catalog (managed cloud gateway); its menu opens upward from
+             the right corner, mirroring the permission chip on the left. Rows
+             are built in JS from the provider's catalog (src/ui/model-picker.js
+             holds the pure state helpers). -->
+        <div id="model-picker-menu" class="model-picker-menu hidden" role="menu"
+             data-i18n-aria-label="sp.model.open"></div>
+        <button id="btn-model-picker" class="model-chip hidden" type="button"
+                aria-haspopup="menu" aria-expanded="false" aria-controls="model-picker-menu"
+                data-i18n-title="sp.model.open" data-i18n-aria-label="sp.model.open">
+          <svg class="model-chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+            <path d="M20 3v4"/>
+            <path d="M22 5h-4"/>
+          </svg>
+          <span id="model-chip-label" class="model-chip-label"></span>
+          <svg class="model-chip-caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 15 6-6 6 6"/>
+          </svg>
+        </button>
       </div>
     </div>
   </div>
