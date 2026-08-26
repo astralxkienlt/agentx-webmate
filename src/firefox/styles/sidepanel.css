@@ -2774,21 +2774,27 @@ html[data-standalone="true"] #composer-footer {
   bottom: calc(100% + 6px);
   left: 0;
   z-index: 6;
-  width: max-content;
-  max-width: 100%;
+  /* Full composer width so every description gets the widest line it can have
+     — the narrower the rows, the more lines each mode costs and the sooner the
+     ladder stops fitting. Capped so a user-widened panel does not stretch a
+     four-row menu across the whole window. */
+  width: min(100%, 420px);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px;
+  gap: 1px;
+  padding: 5px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 32px var(--overlay-bg-strong), var(--shadow);
-  /* Tall enough for the whole ladder, but never taller than the window: the
-     menu grows UPWARD from the chip, so in a short panel it would otherwise
-     run off the top edge instead of scrolling. */
-  max-height: min(340px, 60vh);
+  /* The whole ladder should be on screen at once: a permission menu you have
+     to scroll hides its LAST rung, which is the widest grant of the set. So
+     the ceiling is the real room between the chip and the top of the panel,
+     measured at open time by sizePermissionModeMenu() — this value is only
+     the fallback for a panel too short to measure into. */
+  max-height: var(--permission-menu-max, 70vh);
   overflow-y: auto;
+  overscroll-behavior: contain;
   transform-origin: bottom left;
   animation: permission-menu-in 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -2811,7 +2817,7 @@ html[data-standalone="true"] #composer-footer {
 }
 
 .permission-mode-menu-heading {
-  padding: 5px 9px 6px;
+  padding: 4px 10px 5px;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
@@ -2823,9 +2829,9 @@ html[data-standalone="true"] #composer-footer {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: start;
-  gap: 3px 10px;
+  gap: 2px 10px;
   width: 100%;
-  padding: 8px 9px;
+  padding: 7px 10px 8px;
   background: none;
   border: none;
   border-radius: 8px;
@@ -2833,7 +2839,10 @@ html[data-standalone="true"] #composer-footer {
   font-family: inherit;
   text-align: start;
   cursor: pointer;
-  transition: background 0.15s ease;
+  /* Room for the 3px rail the standing row paints with an inset shadow, so
+     picking a row never shifts its text sideways. */
+  box-shadow: inset 0 0 0 0 transparent;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .permission-mode-item:hover {
@@ -2846,11 +2855,13 @@ html[data-standalone="true"] #composer-footer {
   outline-offset: -2px;
 }
 
-/* The standing choice is a filled row, not just a check, so the ladder can be
-   scanned for "where am I" in one glance. Declared after :hover so hovering
-   the chosen row keeps its fill. */
+/* The standing choice is a filled row with a left rail, not just a check, so
+   the ladder can be scanned for "where am I" in one glance — and still reads
+   as chosen where a tint alone would not (high contrast, colour blindness).
+   Declared after :hover so hovering the chosen row keeps its fill. */
 .permission-mode-item[aria-checked="true"] {
   background: var(--accent-dim);
+  box-shadow: inset 3px 0 0 0 var(--accent);
 }
 
 .permission-mode-item-label {
@@ -2858,11 +2869,14 @@ html[data-standalone="true"] #composer-footer {
   font-weight: 600;
 }
 
+/* Spans BOTH columns. Confined to column 1 it wrapped inside the ~80px the
+   check and keycap reserve, which cost most modes an extra line each. */
 .permission-mode-item-desc {
-  grid-column: 1;
+  grid-column: 1 / -1;
   color: var(--text-muted);
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.4;
+  text-wrap: pretty;
 }
 
 .permission-mode-item-shortcut {
@@ -2907,13 +2921,13 @@ html[data-standalone="true"] #composer-footer {
    graded modes above it. */
 .permission-mode-item[data-mode="bypass"] {
   position: relative;
-  margin-top: 9px;
+  margin-top: 8px;
 }
 
 .permission-mode-item[data-mode="bypass"]::before {
   content: '';
   position: absolute;
-  top: -6px;
+  top: -5px;
   left: 8px;
   right: 8px;
   height: 1px;
@@ -2926,6 +2940,7 @@ html[data-standalone="true"] #composer-footer {
 
 .permission-mode-item[data-mode="bypass"][aria-checked="true"] {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--warning);
 }
 
 .permission-mode-item[data-mode="bypass"][aria-checked="true"] .permission-mode-item-check {
