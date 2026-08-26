@@ -13051,6 +13051,58 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   /**
+   * Race a read-only wait's content-script response against this tab's Stop
+   * flag. wait_for_element / wait_for_stable run their whole poll loop inside
+   * the page (bounded at 5s / 20s) and the background only hears back when it
+   * ends, so a Stop pressed mid-wait used to sit invisible until the wait
+   * expired — the one place Stop still felt slow after the LLM fetch became
+   * abortable. Two invariants:
+   *  - PEEK at abortFlags, never _checkAbort(): consuming the flag here would
+   *    starve the run-loop checkpoint right after this tool returns, and that
+   *    checkpoint is what actually ends the run as '[Stopped by user]'.
+   *  - Only these two pure observers race. Action tools (click/type/...) keep
+   *    running to completion so a Stop never interrupts a mutation mid-action.
+   * The abandoned in-page poll keeps observing until its own bounded timeout —
+   * it mutates nothing and its late response is discarded.
+   */
+  async _raceWaitToolAgainstStop(tabId, name, sendContentAction) {
+    const stoppedResult = (elapsedMs) => (name === 'wait_for_stable'
+      ? { success: true, stable: false, aborted: true, elapsedMs, reason: 'Stopped by user before the page settled.' }
+      : { success: true, found: false, aborted: true, elapsedMs, reason: 'Stopped by user before the element appeared.' });
+    // Stop already pending (it can land between the batch checkpoint and this
+    // dispatch): don't even start a bounded in-page observer we'd throw away.
+    if (this.abortFlags.get(tabId) === true) return stoppedResult(0);
+    const startedAt = Date.now();
+    const contentPromise = sendContentAction();
+    let pollTimer = null;
+    const stopSeen = new Promise((resolve) => {
+      const poll = () => {
+        if (this.abortFlags.get(tabId) === true) { resolve(true); return; }
+        pollTimer = setTimeout(poll, 100);
+      };
+      pollTimer = setTimeout(poll, 100);
+    });
+    try {
+      const outcome = await Promise.race([
+        contentPromise.then((response) => ({ response }), (error) => ({ error })),
+        stopSeen.then(() => ({ stopped: true })),
+      ]);
+      if (outcome.stopped) {
+        // Abandoned wait — a late rejection (tab closed mid-wait) must not
+        // surface as an unhandled rejection.
+        contentPromise.catch(() => {});
+        return stoppedResult(Date.now() - startedAt);
+      }
+      // Rethrow dispatch failures so the caller's inject-content-scripts-and-
+      // retry path behaves exactly as before.
+      if ('error' in outcome) throw outcome.error;
+      return outcome.response;
+    } finally {
+      clearTimeout(pollTimer);
+    }
+  }
+
+  /**
    * Get or create a conversation for a tab.
    */
   /**
@@ -23792,7 +23844,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       action,
       params: contentArgs,
     }, messageOptions);
-    const dispatchContentAction = sendContentAction;
+    // wait_for_element / wait_for_stable are the only content actions that
+    // legitimately block for many seconds; make them Stop-abortable. Every
+    // other action — including every mutating one — still runs to completion
+    // even with a Stop pending.
+    const dispatchContentAction = (name === 'wait_for_element' || name === 'wait_for_stable')
+      ? () => this._raceWaitToolAgainstStop(tabId, name, sendContentAction)
+      : sendContentAction;
 
     let response;
     try {
