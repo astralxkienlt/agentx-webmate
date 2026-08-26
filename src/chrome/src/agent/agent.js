@@ -1257,6 +1257,7 @@ export class Agent extends LoopDetector {
     let extensionVersion = '';
     try { extensionVersion = chrome.runtime.getManifest().version || ''; } catch {}
     const effectiveMode = mode || (tabId != null ? this._effectiveRunMode(tabId) : null);
+    const selectionScope = tabId != null ? this.selectionGroundingScopes.get(tabId) : null;
     return normalizeRuntimeTraceConfig({
       extension_version: extensionVersion,
       browser_target: 'chrome',
@@ -1273,6 +1274,13 @@ export class Agent extends LoopDetector {
       ...(tabId != null ? {
         api_mutations_allowed: this.isApiMutationsAllowed(tabId),
         selection_grounded: this.selectionGroundingScopes.has(tabId),
+        ...(selectionScope?.sourceGrounding ? {
+          selection_scope_policy: selectionScope.sourceGrounding,
+          selection_scope_anchor_present: !!selectionScope.anchorFingerprint,
+          selection_scope_excluded_messages: Array.isArray(selectionScope.excludedFingerprints)
+            ? selectionScope.excludedFingerprints.length
+            : 0,
+        } : {}),
         standalone_chat_profile: this._standaloneChatRunTabs.has(tabId),
       } : {}),
       image_detail: this.imageDetail,
