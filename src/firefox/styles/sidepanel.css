@@ -2950,8 +2950,10 @@ html[data-standalone="true"] #composer-footer {
 /* ==========================================================================
    COMPOSER MODEL CHIP + MENU
    Which gateway model the conversation runs on (src/ui/model-picker.js).
-   The right-hand corner of the composer footer, mirroring the permission
-   chip on the left: quiet pill, upward menu, one glance to see the model.
+   The right-hand corner of the composer footer. Deliberately quieter than
+   the permission chip: that one is a bordered control because it names a
+   standing risk; the model is ambient state, so it renders as bare muted
+   text with a caret and only gains a soft fill on hover / while open.
    ========================================================================== */
 
 /* Both chips share the footer row; each may shrink (labels ellipsize) so the
@@ -2964,22 +2966,25 @@ html[data-standalone="true"] #composer-footer {
 .model-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   margin-inline-start: auto;
   min-width: 0;
   max-width: min(220px, 58%);
   flex: 0 1 auto;
-  padding: 3px 8px 3px 9px;
-  background: var(--tint-soft);
-  border: 1px solid var(--border);
+  /* The transparent border keeps this chip exactly as tall as the bordered
+     permission pill beside it, so the footer's two controls share one
+     optical line and hovering never shifts layout. */
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 999px;
   color: var(--text-secondary);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   font-family: inherit;
   line-height: 1.4;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  transition: color 0.2s, background 0.2s;
 }
 
 .model-chip.hidden {
@@ -2989,26 +2994,12 @@ html[data-standalone="true"] #composer-footer {
 .model-chip:hover,
 .model-chip[aria-expanded="true"] {
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--text-primary) 22%, transparent);
-  background: var(--tint-medium);
+  background: var(--tint-soft);
 }
 
 .model-chip:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
-}
-
-/* The sparkle carries the brand accent so the chip reads as "the model"
-   without shouting; label and caret stay quiet like the permission chip. */
-.model-chip-icon {
-  flex-shrink: 0;
-  color: var(--accent);
-  opacity: 0.85;
-}
-
-.model-chip:hover .model-chip-icon,
-.model-chip[aria-expanded="true"] .model-chip-icon {
-  opacity: 1;
 }
 
 .model-chip-label {
@@ -3023,7 +3014,7 @@ html[data-standalone="true"] #composer-footer {
 
 .model-chip-caret {
   flex-shrink: 0;
-  opacity: 0.75;
+  opacity: 0.55;
   transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -3160,24 +3151,15 @@ html[data-standalone="true"] #composer-footer {
 }
 
 /* Footnote: where images go with the current selection. Hairline-separated
-   so it reads as context, not as another row to click. */
+   plain text so it reads as context, not as another row to click. */
 .model-picker-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
   margin-top: 4px;
-  padding: 7px 10px 4px;
+  padding: 7px 10px 5px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 10.5px;
   line-height: 1.45;
   text-wrap: pretty;
-}
-
-.model-picker-note svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-  opacity: 0.8;
 }
 
 

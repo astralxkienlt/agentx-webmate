@@ -1834,12 +1834,9 @@ function renderModelPickerMenu() {
   if (note.kind !== 'none') {
     const noteEl = document.createElement('div');
     noteEl.className = 'model-picker-note';
-    noteEl.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
-    const noteText = document.createElement('span');
-    noteText.textContent = note.kind === 'dedicated'
+    noteEl.textContent = note.kind === 'dedicated'
       ? t('sp.model.vision_dedicated', { model: modelShortName(note.model) })
       : t('sp.model.vision_inherit');
-    noteEl.appendChild(noteText);
     modelPickerMenuEl.appendChild(noteEl);
   }
 }
