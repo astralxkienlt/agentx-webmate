@@ -3,8 +3,18 @@
 Une compétence est un texte d'instructions de confiance — éventuellement
 accompagné de son propre manifeste d'outils — que WebBrain charge dans une
 exécution **uniquement quand c'est pertinent**. Gérez-les dans Paramètres →
-Compétences, où vous pouvez importer un texte ou une URL de compétence, ou
-retirer n'importe quelle compétence intégrée.
+Compétences, où vous pouvez importer un texte de compétence, un fichier `.md`
+(sélecteur de fichiers ou glisser-déposer) ou une URL ; modifier sur place
+n'importe quelle compétence activée ; ou retirer n'importe quelle compétence
+intégrée. Le formulaire prévisualise le nom, le résumé, les modes, les
+intentions et les outils avec lesquels un brouillon sera enregistré, si bien
+qu'un bloc `webbrain-skill` malformé est visible avant l'enregistrement.
+
+La modification conserve l'id et la position de la compétence. Modifier une
+compétence empaquetée (ou changer le contenu d'une compétence importée par
+URL) la convertit en texte personnalisé avec le même id : elle ne suit plus la
+version empaquetée/URL, et supprimer la copie modifiée ne réensemencera pas la
+compétence par défaut empaquetée.
 
 ## Fonctionnement du chargement
 

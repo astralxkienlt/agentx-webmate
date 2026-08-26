@@ -29,14 +29,21 @@ import {
   CUSTOM_SKILLS_STORAGE_KEY,
   DEFAULT_SKILL_SOURCES,
   DEFAULT_SKILLS_REMOVED_STORAGE_KEY,
+  MAX_CUSTOM_SKILL_CHARS,
   MAX_CUSTOM_SKILL_IMPORT_BYTES,
   MAX_CUSTOM_SKILLS,
   PACKAGED_SKILL_SOURCES,
+  applySkillEdit,
+  describeSkillDraft,
   fetchSkillImportResponse,
+  inferSkillDisplayName,
+  isSupportedSkillFileName,
   normalizeCustomSkills,
   normalizeDefaultSkillRemovalIds,
   readSkillImportText,
   removeRetiredPackagedSkills,
+  shouldRecordDefaultSkillRemoval,
+  skillNameFromFileName,
 } from '../agent/skills.js';
 import {
   USER_MEMORY_AUTO_CAPTURE_KEY,
@@ -136,6 +143,17 @@ const skillTextArea = document.getElementById('skill-text');
 const btnAddSkillUrl = document.getElementById('btn-add-skill-url');
 const btnAddSkillText = document.getElementById('btn-add-skill-text');
 const btnClearSkillForm = document.getElementById('btn-clear-skill-form');
+const btnAddSkillFile = document.getElementById('btn-add-skill-file');
+const skillFileInput = document.getElementById('skill-file-input');
+const skillImportSources = document.getElementById('skill-import-sources');
+const skillEditingBanner = document.getElementById('skill-editing-banner');
+const skillEditingTitle = document.getElementById('skill-editing-title');
+const skillEditingHint = document.getElementById('skill-editing-hint');
+const skillCharCounter = document.getElementById('skill-char-counter');
+const skillDraftPreview = document.getElementById('skill-draft-preview');
+const btnSaveSkillEdit = document.getElementById('btn-save-skill-edit');
+const btnCancelSkillEdit = document.getElementById('btn-cancel-skill-edit');
+const skillsCard = document.getElementById('skills-card');
 const skillsResult = document.getElementById('skills-result');
 const skillsList = document.getElementById('skills-list');
 const packagedSkillsList = document.getElementById('packaged-skills-list');
@@ -1026,7 +1044,7 @@ async function saveCustomSkills(nextSkills, opts = {}) {
   const update = { [CUSTOM_SKILLS_STORAGE_KEY]: customSkills };
   const removedSkill = opts.removedSkill;
   const installedSkill = opts.installedSkill;
-  const removedDefault = removedSkill?.sourceType === 'built-in' && DEFAULT_SKILL_IDS.has(removedSkill.id);
+  const removedDefault = shouldRecordDefaultSkillRemoval(removedSkill);
   const installedDefault = installedSkill?.sourceType === 'built-in' && DEFAULT_SKILL_IDS.has(installedSkill.id);
   if (removedDefault || installedDefault) {
     const stored = await chrome.storage.local.get(DEFAULT_SKILLS_REMOVED_STORAGE_KEY);
@@ -1088,12 +1106,18 @@ function renderSkills() {
                   data-skill-preview-id="${escapeHtml(skill.id)}">${escapeHtml(skill.name)}</button>
           <div class="setting-desc skill-source">${escapeHtml(source)} · ${escapeHtml(t('st.skills.item.chars', { count: skill.content.length }))}${escapeHtml(toolSummary)}</div>
         </div>
-        <button class="btn-secondary" data-skill-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.remove'))}</button>
+        <div class="skill-row-actions">
+          <button class="btn-secondary" data-skill-edit-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.edit'))}</button>
+          <button class="btn-secondary" data-skill-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.remove'))}</button>
+        </div>
       </div>`;
   }).join('');
 
   skillsList.querySelectorAll('button[data-skill-preview-id]').forEach((btn) => {
     btn.addEventListener('click', () => previewEnabledSkill(btn.dataset.skillPreviewId));
+  });
+  skillsList.querySelectorAll('button[data-skill-edit-id]').forEach((btn) => {
+    btn.addEventListener('click', () => enterSkillEdit(btn.dataset.skillEditId));
   });
   skillsList.querySelectorAll('button[data-skill-id]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -1105,6 +1129,147 @@ function renderSkills() {
       flashSkillsResult('ok', t('st.skills.removed'));
     });
   });
+  if (editingSkillId) {
+    const editingSkill = customSkills.find((skill) => skill.id === editingSkillId);
+    if (editingSkill) setSkillFormMode(editingSkill);
+  }
+}
+
+let editingSkillId = null;
+let skillFormMetaTimer = 0;
+
+function skillFormDraft() {
+  return { name: skillNameInput?.value || '', content: skillTextArea?.value || '' };
+}
+
+// Character counter + a normalized preview of the draft (name, summary, modes,
+// intents, tools), so a malformed webbrain-skill fence is visible before saving
+// instead of silently degrading to Act-only defaults.
+function updateSkillFormMeta() {
+  const content = skillTextArea?.value || '';
+  if (skillCharCounter) {
+    const over = content.length > MAX_CUSTOM_SKILL_CHARS;
+    const counterText = t('st.skills.chars_count', { count: content.length, max: MAX_CUSTOM_SKILL_CHARS });
+    skillCharCounter.hidden = content.length === 0;
+    skillCharCounter.classList.toggle('skill-char-counter-over', over);
+    skillCharCounter.textContent = over
+      ? `${counterText} — ${t('st.skills.chars_over', { max: MAX_CUSTOM_SKILL_CHARS })}`
+      : counterText;
+  }
+  if (!skillDraftPreview) return;
+  const draft = describeSkillDraft(skillFormDraft());
+  if (!draft) {
+    skillDraftPreview.hidden = true;
+    skillDraftPreview.textContent = '';
+    return;
+  }
+  const modeLabels = draft.modes.map((mode) => t(`sp.mode.${mode}`)).join(', ');
+  const metaParts = [t('st.skills.draft.modes', { modes: modeLabels })];
+  if (draft.intents.length) metaParts.push(t('st.skills.draft.intents', { intents: draft.intents.join(', ') }));
+  if (draft.toolNames.length) metaParts.push(t('st.skills.item.tools', { tools: draft.toolNames.join(', ') }));
+  skillDraftPreview.innerHTML = `
+    <div class="skill-draft-title">${escapeHtml(t('st.skills.draft.title'))}</div>
+    <div class="skill-draft-name">${escapeHtml(draft.name)}</div>
+    ${draft.summary ? `<div class="skill-draft-summary">${escapeHtml(draft.summary)}</div>` : ''}
+    <div class="skill-draft-meta">${escapeHtml(metaParts.join(' · '))}</div>`;
+  skillDraftPreview.hidden = false;
+}
+
+function scheduleSkillFormMeta() {
+  clearTimeout(skillFormMetaTimer);
+  skillFormMetaTimer = setTimeout(updateSkillFormMeta, 250);
+}
+
+function setSkillFormMode(editingSkill) {
+  const editing = !!editingSkill;
+  if (skillImportSources) skillImportSources.hidden = editing;
+  if (btnAddSkillText) btnAddSkillText.hidden = editing;
+  if (btnClearSkillForm) btnClearSkillForm.hidden = editing;
+  if (btnSaveSkillEdit) btnSaveSkillEdit.hidden = !editing;
+  if (btnCancelSkillEdit) btnCancelSkillEdit.hidden = !editing;
+  if (skillEditingBanner) skillEditingBanner.hidden = !editing;
+  if (skillEditingTitle) {
+    skillEditingTitle.textContent = editing ? t('st.skills.editing', { name: editingSkill.name }) : '';
+  }
+  // Only non-text records lose provenance on save, so only they get the hint.
+  if (skillEditingHint) skillEditingHint.hidden = !editing || editingSkill.sourceType === 'text';
+}
+
+function enterSkillEdit(skillId) {
+  const skill = customSkills.find((item) => item.id === skillId);
+  if (!skill) return;
+  editingSkillId = skill.id;
+  if (skillNameInput) skillNameInput.value = skill.name;
+  if (skillTextArea) skillTextArea.value = skill.content;
+  setSkillFormMode(skill);
+  updateSkillFormMeta();
+  skillsCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  skillTextArea?.focus();
+}
+
+function exitSkillEdit() {
+  editingSkillId = null;
+  if (skillNameInput) skillNameInput.value = '';
+  if (skillTextArea) skillTextArea.value = '';
+  setSkillFormMode(null);
+  updateSkillFormMeta();
+}
+
+async function saveSkillEdit() {
+  if (!editingSkillId) return;
+  const result = applySkillEdit(customSkills, editingSkillId, skillFormDraft());
+  if (!result) {
+    const missing = !customSkills.some((skill) => skill.id === editingSkillId);
+    flashSkillsResult('fail', missing ? t('st.skills.error.update_missing') : t('st.skills.error.empty_content'));
+    return;
+  }
+  if (result.changed) await saveCustomSkills(result.skills);
+  exitSkillEdit();
+  flashSkillsResult('ok', t('st.skills.updated'));
+}
+
+async function addSkillFromFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  let added = 0;
+  let firstError = '';
+  for (const file of files) {
+    try {
+      if (!isSupportedSkillFileName(file.name)) {
+        throw new Error(t('st.skills.error.file_type', { name: file.name }));
+      }
+      if (file.size > MAX_CUSTOM_SKILL_IMPORT_BYTES) {
+        throw new Error(t('st.skills.error.too_large'));
+      }
+      let content = '';
+      try {
+        content = (await file.text()).trim();
+      } catch {
+        throw new Error(t('st.skills.error.file_read', { name: file.name }));
+      }
+      if (!content) throw new Error(t('st.skills.error.empty_content'));
+      const typedName = files.length === 1 ? (skillNameInput?.value || '') : '';
+      await addCustomSkill({
+        id: makeSkillId(),
+        name: typedName || inferSkillDisplayName(content) || skillNameFromFileName(file.name),
+        sourceType: 'text',
+        content,
+        createdAt: Date.now(),
+      });
+      added += 1;
+    } catch (e) {
+      if (!firstError) firstError = e?.message || t('st.skills.error.add_failed');
+    }
+  }
+  if (added > 0 && skillNameInput) skillNameInput.value = '';
+  const addedText = added > 1
+    ? t('st.skills.added_multi', { count: added })
+    : added === 1 ? t('st.skills.added') : '';
+  if (firstError) {
+    flashSkillsResult('fail', addedText ? `${addedText} ${firstError}` : firstError);
+  } else if (addedText) {
+    flashSkillsResult('ok', addedText);
+  }
 }
 
 async function addCustomSkill(record, opts = {}) {
@@ -1155,6 +1320,7 @@ async function addSkillFromText() {
     });
     if (skillNameInput) skillNameInput.value = '';
     if (skillTextArea) skillTextArea.value = '';
+    updateSkillFormMeta();
     flashSkillsResult('ok', t('st.skills.added'));
   } catch (e) {
     flashSkillsResult('fail', e.message || t('st.skills.error.add_failed'));
@@ -1218,7 +1384,58 @@ btnClearSkillForm?.addEventListener('click', () => {
   if (skillNameInput) skillNameInput.value = '';
   if (skillUrlInput) skillUrlInput.value = '';
   if (skillTextArea) skillTextArea.value = '';
+  updateSkillFormMeta();
   flashSkillsResult('ok', t('st.skills.form_cleared'));
+});
+btnSaveSkillEdit?.addEventListener('click', () => { saveSkillEdit(); });
+btnCancelSkillEdit?.addEventListener('click', exitSkillEdit);
+btnAddSkillFile?.addEventListener('click', () => skillFileInput?.click());
+skillFileInput?.addEventListener('change', async () => {
+  await addSkillFromFiles(skillFileInput.files);
+  skillFileInput.value = '';
+});
+skillTextArea?.addEventListener('input', scheduleSkillFormMeta);
+skillNameInput?.addEventListener('input', scheduleSkillFormMeta);
+skillsCard?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && editingSkillId) {
+    event.preventDefault();
+    exitSkillEdit();
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && event.target === skillTextArea) {
+    event.preventDefault();
+    if (editingSkillId) saveSkillEdit();
+    else addSkillFromText();
+  }
+});
+
+// Drag & drop .md files anywhere on the card. dragover must preventDefault for
+// every Files drag — otherwise the drop bubbles to the browser, which
+// navigates the settings page to the dropped file.
+function skillDragHasFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+skillsCard?.addEventListener('dragenter', (event) => {
+  if (!skillDragHasFiles(event)) return;
+  event.preventDefault();
+  if (!editingSkillId) skillsCard.classList.add('skill-drop-active');
+});
+skillsCard?.addEventListener('dragover', (event) => {
+  if (!skillDragHasFiles(event)) return;
+  event.preventDefault();
+  if (editingSkillId) event.dataTransfer.dropEffect = 'none';
+});
+skillsCard?.addEventListener('dragleave', (event) => {
+  if (event.target === skillsCard || !skillsCard.contains(event.relatedTarget)) {
+    skillsCard.classList.remove('skill-drop-active');
+  }
+});
+skillsCard?.addEventListener('drop', async (event) => {
+  if (!skillDragHasFiles(event)) return;
+  event.preventDefault();
+  skillsCard.classList.remove('skill-drop-active');
+  if (editingSkillId) return;
+  await addSkillFromFiles(event.dataTransfer.files);
 });
 
 if (globalThis.chrome?.storage?.onChanged) {

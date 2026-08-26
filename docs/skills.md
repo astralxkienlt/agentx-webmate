@@ -2,8 +2,16 @@
 
 A skill is trusted instruction text — optionally with its own tool manifest —
 that WebBrain loads into a run **only when it is relevant**. Manage them under
-Settings → Skills, where you can import skill text or a URL, or remove any
-bundled skill.
+Settings → Skills, where you can import skill text, a `.md` file (file picker
+or drag and drop), or a URL; edit any enabled skill in place; or remove any
+bundled skill. The form previews the name, summary, modes, intents, and tools
+a draft will be saved with, so a malformed `webbrain-skill` fence is visible
+before saving.
+
+Editing keeps the skill's id and position. Editing a packaged skill (or
+changing the content of a URL-imported one) converts it into custom text with
+the same id: it stops following the packaged/URL version, and deleting the
+edited copy will not reseed the packaged default.
 
 ## How loading works
 
