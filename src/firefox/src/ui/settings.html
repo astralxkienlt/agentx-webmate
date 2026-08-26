@@ -814,6 +814,65 @@
       outline-offset: 3px;
     }
     .skill-name-button:active { transform: none; }
+    .skill-editing-banner {
+      background: var(--bg3);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    .skill-editing-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .skill-editing-hint {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .skill-char-counter {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 4px;
+      text-align: right;
+    }
+    .skill-char-counter.skill-char-counter-over { color: var(--danger); }
+    .skill-draft-preview {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .skill-draft-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text2);
+      margin-bottom: 4px;
+    }
+    .skill-draft-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .skill-draft-summary { margin-top: 2px; }
+    .skill-draft-meta { margin-top: 4px; }
+    #skills-card.skill-drop-active {
+      outline: 2px dashed var(--accent);
+      outline-offset: -2px;
+    }
+    .skill-row-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
     .skill-preview-dialog {
       position: fixed;
       inset: 0;
@@ -1642,23 +1701,36 @@
   <section class="tab-panel" data-panel="skills" role="tabpanel">
     <div class="provider-card" id="skills-card">
       <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.55;" data-i18n-html="st.skills.desc_html"></div>
+      <div class="skill-editing-banner" id="skill-editing-banner" hidden>
+        <div class="skill-editing-title" id="skill-editing-title"></div>
+        <div class="skill-editing-hint" id="skill-editing-hint" data-i18n="st.skills.editing_hint" hidden></div>
+      </div>
       <div class="field">
         <label data-i18n="st.skills.name.label"></label>
         <input type="text" id="skill-name" data-i18n-placeholder="st.skills.name.placeholder">
       </div>
-      <div class="field">
-        <label data-i18n="st.skills.url.label"></label>
-        <input type="url" id="skill-url" placeholder="https://example.com/skill.md">
-      </div>
-      <div class="btn-row">
-        <button class="btn-primary" id="btn-add-skill-url" data-i18n="st.skills.add_url"></button>
+      <div id="skill-import-sources">
+        <div class="field">
+          <label data-i18n="st.skills.url.label"></label>
+          <input type="url" id="skill-url" placeholder="https://example.com/skill.md">
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="btn-add-skill-url" data-i18n="st.skills.add_url"></button>
+          <button class="btn-primary" id="btn-add-skill-file" data-i18n="st.skills.add_file"></button>
+          <input type="file" id="skill-file-input" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
+        </div>
+        <div class="setting-desc" style="margin-top:6px;" data-i18n="st.skills.file_hint"></div>
       </div>
       <div class="field" style="margin-top:16px;">
         <label data-i18n="st.skills.text.label"></label>
         <textarea id="skill-text" rows="10" data-i18n-placeholder="st.skills.text.placeholder"></textarea>
+        <div class="skill-char-counter" id="skill-char-counter" hidden></div>
       </div>
+      <div class="skill-draft-preview" id="skill-draft-preview" hidden></div>
       <div class="btn-row">
         <button class="btn-primary" id="btn-add-skill-text" data-i18n="st.skills.add_text"></button>
+        <button class="btn-primary" id="btn-save-skill-edit" data-i18n="st.skills.save_edit" hidden></button>
+        <button class="btn-secondary" id="btn-cancel-skill-edit" data-i18n="st.skills.cancel_edit" hidden></button>
         <button class="btn-secondary" id="btn-clear-skill-form" data-i18n="st.skills.clear_form"></button>
       </div>
       <div class="test-result" id="skills-result"></div>

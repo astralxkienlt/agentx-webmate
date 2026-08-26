@@ -1048,7 +1048,14 @@ const {
   MAX_CUSTOM_SKILL_INTENT_CHARS: MAX_CUSTOM_SKILL_INTENT_CHARS_CH,
   MAX_CUSTOM_SKILL_SUMMARY_CHARS: MAX_CUSTOM_SKILL_SUMMARY_CHARS_CH,
   MAX_CUSTOM_SKILL_IMPORT_BYTES: MAX_CUSTOM_SKILL_IMPORT_BYTES_CH,
+  MAX_CUSTOM_SKILL_CHARS: MAX_CUSTOM_SKILL_CHARS_CH,
   PACKAGED_SKILL_SOURCES: PACKAGED_SKILL_SOURCES_CH,
+  applySkillEdit: applySkillEditCh,
+  describeSkillDraft: describeSkillDraftCh,
+  inferSkillDisplayName: inferSkillDisplayNameCh,
+  isSupportedSkillFileName: isSupportedSkillFileNameCh,
+  shouldRecordDefaultSkillRemoval: shouldRecordDefaultSkillRemovalCh,
+  skillNameFromFileName: skillNameFromFileNameCh,
   fetchSkillImportResponse: fetchSkillImportResponseCh,
   normalizeCustomSkills: normalizeCustomSkillsCh,
   normalizeDefaultSkillRemovalIds: normalizeDefaultSkillRemovalIdsCh,
@@ -1073,7 +1080,14 @@ const {
   MAX_CUSTOM_SKILL_INTENT_CHARS: MAX_CUSTOM_SKILL_INTENT_CHARS_FX,
   MAX_CUSTOM_SKILL_SUMMARY_CHARS: MAX_CUSTOM_SKILL_SUMMARY_CHARS_FX,
   MAX_CUSTOM_SKILL_IMPORT_BYTES: MAX_CUSTOM_SKILL_IMPORT_BYTES_FX,
+  MAX_CUSTOM_SKILL_CHARS: MAX_CUSTOM_SKILL_CHARS_FX,
   PACKAGED_SKILL_SOURCES: PACKAGED_SKILL_SOURCES_FX,
+  applySkillEdit: applySkillEditFx,
+  describeSkillDraft: describeSkillDraftFx,
+  inferSkillDisplayName: inferSkillDisplayNameFx,
+  isSupportedSkillFileName: isSupportedSkillFileNameFx,
+  shouldRecordDefaultSkillRemoval: shouldRecordDefaultSkillRemovalFx,
+  skillNameFromFileName: skillNameFromFileNameFx,
   fetchSkillImportResponse: fetchSkillImportResponseFx,
   normalizeCustomSkills: normalizeCustomSkillsFx,
   normalizeDefaultSkillRemovalIds: normalizeDefaultSkillRemovalIdsFx,
@@ -23267,6 +23281,163 @@ test('retired packaged Chrome Web Store release records are purged in both build
       (settings.match(/removeRetiredPackagedSkills\(/g)?.length || 0) >= 2,
       `${label}: initial and live settings views should hide retired records`,
     );
+  }
+});
+
+test('applySkillEdit keeps identity, reparses manifests, and demotes provenance correctly', () => {
+  for (const [label, applyEdit, normalizeSkills] of [
+    ['chrome', applySkillEditCh, normalizeCustomSkillsCh],
+    ['firefox', applySkillEditFx, normalizeCustomSkillsFx],
+  ]) {
+    const skills = normalizeSkills([
+      { id: 'first', name: 'First', sourceType: 'text', content: '# First\n\nBody', createdAt: 11 },
+      { id: 'humanizer', name: 'Humanizer', sourceType: 'built-in', sourceUrl: 'skills/humanizer.md', content: '# Humanizer\n\nPackaged body', createdAt: 22 },
+      { id: 'from-url', name: 'From URL', sourceType: 'url', sourceUrl: 'https://example.com/skill.md', content: '# From URL\n\nFetched body', createdAt: 33 },
+    ]);
+
+    const textEdit = applyEdit(skills, 'first', { name: 'First renamed', content: skillContentWithTool('edited_tool', 'https://example.com/edited') });
+    assert.equal(textEdit.changed, true, `${label}: a real edit should report changed`);
+    assert.equal(textEdit.demoted, false, `${label}: text records have no provenance to lose`);
+    assert.equal(textEdit.skill.id, 'first', `${label}: edits must never reassign the id`);
+    assert.equal(textEdit.skill.createdAt, 11, `${label}: edits must keep the creation time`);
+    assert.equal(textEdit.skill.name, 'First renamed', `${label}: the typed name should win`);
+    assert.deepEqual(textEdit.skills.map((skill) => skill.id), ['first', 'humanizer', 'from-url'], `${label}: edits must keep list order`);
+    assert.equal(textEdit.skill.tools.length, 1, `${label}: edited content should reparse tool manifests`);
+    assert.equal(textEdit.skill.tools[0].name, 'edited_tool', `${label}: reparsed tool should come from the new content`);
+
+    const builtInRename = applyEdit(skills, 'humanizer', { name: 'My humanizer', content: '# Humanizer\n\nPackaged body' });
+    assert.equal(builtInRename.demoted, true, `${label}: any accepted built-in edit must demote or refresh reverts it`);
+    assert.equal(builtInRename.skill.sourceType, 'text', `${label}: demoted skill becomes custom text`);
+    assert.equal(builtInRename.skill.sourceUrl, '', `${label}: demoted skill drops packaged provenance`);
+
+    const urlRename = applyEdit(skills, 'from-url', { name: 'Renamed', content: '# From URL\n\nFetched body' });
+    assert.equal(urlRename.demoted, false, `${label}: a pure rename keeps URL provenance`);
+    assert.equal(urlRename.skill.sourceType, 'url', `${label}: rename should not change sourceType`);
+    assert.equal(urlRename.skill.sourceUrl, 'https://example.com/skill.md', `${label}: rename should keep the source URL`);
+    const urlEdit = applyEdit(skills, 'from-url', { name: 'From URL', content: '# From URL\n\nEdited body' });
+    assert.equal(urlEdit.demoted, true, `${label}: changed content no longer matches what the URL served`);
+    assert.equal(urlEdit.skill.sourceType, 'text', `${label}: content edit demotes URL records to text`);
+
+    const noop = applyEdit(skills, 'first', { name: 'First', content: '# First\n\nBody' });
+    assert.equal(noop.changed, false, `${label}: identical name and content is a no-op`);
+    assert.equal(noop.demoted, false, `${label}: a no-op never demotes`);
+    assert.equal(applyEdit(skills, 'missing', { name: 'X', content: 'Y' }), null, `${label}: unknown ids are rejected`);
+    assert.equal(applyEdit(skills, 'first', { name: 'First', content: '   ' }), null, `${label}: empty content is rejected`);
+  }
+});
+
+test('an edited default skill survives packaged refresh and its removal is recorded', () => {
+  for (const [label, applyEdit, normalizeSkills, refreshRecord, shouldRecord] of [
+    ['chrome', applySkillEditCh, normalizeCustomSkillsCh, refreshBuiltInSkillRecordCh, shouldRecordDefaultSkillRemovalCh],
+    ['firefox', applySkillEditFx, normalizeCustomSkillsFx, refreshBuiltInSkillRecordFx, shouldRecordDefaultSkillRemovalFx],
+  ]) {
+    const packaged = {
+      id: 'humanizer',
+      name: 'Humanizer',
+      sourceType: 'built-in',
+      sourceUrl: 'skills/humanizer.md',
+      content: '# Humanizer\n\nPackaged body',
+      createdAt: 0,
+    };
+    const edited = applyEdit(normalizeSkills([packaged]), 'humanizer', { name: 'Humanizer', content: '# Humanizer\n\nMy custom rules' }).skill;
+    assert.equal(edited.sourceType, 'text', `${label}: setup should demote the packaged record`);
+
+    const refresh = refreshRecord(edited, { ...packaged });
+    assert.equal(refresh.changed, false, `${label}: packaged refresh must not clobber the demoted fork`);
+    assert.equal(refresh.skill, edited, `${label}: refresh should hand back the fork untouched`);
+
+    assert.equal(shouldRecord(edited), true, `${label}: deleting the fork must record the default id or seeding restores it`);
+    assert.equal(shouldRecord(normalizeSkills([packaged])[0]), true, `${label}: deleting the packaged default is recorded as before`);
+    assert.equal(shouldRecord({ id: 'wikipedia', sourceType: 'built-in' }), false, `${label}: non-default packaged ids are never recorded`);
+    assert.equal(shouldRecord(null), false, `${label}: missing records are ignored`);
+  }
+});
+
+test('skill file import helpers validate file names and infer display names', () => {
+  for (const [label, isSupported, nameFromFile, inferDisplay] of [
+    ['chrome', isSupportedSkillFileNameCh, skillNameFromFileNameCh, inferSkillDisplayNameCh],
+    ['firefox', isSupportedSkillFileNameFx, skillNameFromFileNameFx, inferSkillDisplayNameFx],
+  ]) {
+    assert.equal(isSupported('notes.md'), true, `${label}: .md is importable`);
+    assert.equal(isSupported('NOTES.MARKDOWN'), true, `${label}: extension check is case-insensitive`);
+    assert.equal(isSupported('guide.txt'), true, `${label}: .txt is importable`);
+    assert.equal(isSupported('skill.pdf'), false, `${label}: unsupported extensions are rejected`);
+    assert.equal(isSupported('.md'), false, `${label}: bare-extension names are rejected`);
+    assert.equal(isSupported('no-extension'), false, `${label}: extension-less names are rejected`);
+
+    assert.equal(nameFromFile('cong-noi-bo_abc.md'), 'cong noi bo abc', `${label}: separators become spaces`);
+    assert.equal(nameFromFile('/tmp/deep/path/github-triage.markdown'), 'github triage', `${label}: directories are stripped`);
+
+    assert.equal(inferDisplay('# C\u1ed5ng n\u1ed9i b\u1ed9 ABC\n\nBody'), 'C\u1ed5ng n\u1ed9i b\u1ed9 ABC', `${label}: the first heading names the skill`);
+    assert.equal(inferDisplay('```webbrain-skill\n{}\n```\nprose only'), '', `${label}: fence-first content must fall back to the file name`);
+    assert.equal(inferDisplay('---\nname: internal-portal\ndescription: Guide\n---\n\nBody'), 'internal-portal', `${label}: Agent Skills frontmatter name wins`);
+  }
+});
+
+test('describeSkillDraft previews normalized draft metadata before saving', () => {
+  for (const [label, describeDraft, maxChars] of [
+    ['chrome', describeSkillDraftCh, MAX_CUSTOM_SKILL_CHARS_CH],
+    ['firefox', describeSkillDraftFx, MAX_CUSTOM_SKILL_CHARS_FX],
+  ]) {
+    const content = [
+      '# Draft skill',
+      '',
+      '```webbrain-skill',
+      '{"summary": "Draft summary.", "modes": ["ask", "act"], "intents": ["draft_intent"]}',
+      '```',
+      '',
+      'Prose body.',
+    ].join('\n');
+    const draft = describeDraft({ name: '', content });
+    assert.equal(draft.name, 'Draft skill', `${label}: the heading names an unnamed draft`);
+    assert.equal(draft.summary, 'Draft summary.', `${label}: the metadata summary should surface`);
+    assert.deepEqual([...draft.modes].sort(), ['act', 'ask'], `${label}: declared modes should surface`);
+    assert.deepEqual(draft.intents, ['draft_intent'], `${label}: declared intents should surface`);
+    assert.equal(draft.truncated, false, `${label}: short drafts are not truncated`);
+
+    const toolDraft = describeDraft({ name: 'Named', content: skillContentWithTool('draft_tool', 'https://example.com/draft') });
+    assert.equal(toolDraft.name, 'Named', `${label}: a typed name wins over inference`);
+    assert.deepEqual(toolDraft.toolNames, ['draft_tool'], `${label}: manifest tools should be listed`);
+
+    const broken = describeDraft({ name: '', content: '# Broken\n\n```webbrain-skill\n{not json}\n```\nBody' });
+    assert.deepEqual(broken.modes, ['act'], `${label}: invalid metadata JSON must degrade to Act-only`);
+
+    assert.equal(describeDraft({ name: '', content: '   ' }), null, `${label}: empty drafts have no preview`);
+
+    const long = describeDraft({ name: '', content: `# L\n\n${'x'.repeat(maxChars + 10)}` });
+    assert.equal(long.truncated, true, `${label}: over-limit drafts must flag truncation`);
+    assert.equal(long.chars, maxChars, `${label}: the preview reports the stored length`);
+  }
+});
+
+test('settings skills form supports editing and .md file import in both builds', () => {
+  for (const browser of ['chrome', 'firefox']) {
+    const html = fs.readFileSync(path.join(ROOT, `src/${browser}/src/ui/settings.html`), 'utf8');
+    for (const id of [
+      'skill-file-input', 'btn-add-skill-file', 'btn-save-skill-edit', 'btn-cancel-skill-edit',
+      'skill-editing-banner', 'skill-editing-hint', 'skill-import-sources', 'skill-draft-preview', 'skill-char-counter',
+    ]) {
+      assert.ok(html.includes(`id="${id}"`), `${browser}: settings.html missing #${id}`);
+    }
+    assert.ok(html.includes('accept=".md,.markdown,.txt,text/markdown,text/plain"'), `${browser}: file input must accept markdown and text files`);
+
+    const settings = fs.readFileSync(path.join(ROOT, `src/${browser}/src/ui/settings.js`), 'utf8');
+    assert.ok(settings.includes('applySkillEdit('), `${browser}: settings must save edits through applySkillEdit`);
+    assert.ok(settings.includes('addSkillFromFiles('), `${browser}: settings must import skill files`);
+    assert.ok(settings.includes('shouldRecordDefaultSkillRemoval(removedSkill)'), `${browser}: removal must record demoted defaults`);
+    assert.ok(settings.includes("data-skill-edit-id"), `${browser}: skill rows must render an Edit action`);
+    assert.ok(settings.includes('describeSkillDraft('), `${browser}: settings must preview drafts`);
+
+    const locale = fs.readFileSync(path.join(ROOT, `src/${browser}/src/ui/locales/en.js`), 'utf8');
+    for (const key of [
+      'st.skills.add_file', 'st.skills.file_hint', 'st.skills.added_multi', 'st.skills.error.file_read',
+      'st.skills.error.file_type', 'st.skills.edit', 'st.skills.editing', 'st.skills.editing_hint',
+      'st.skills.save_edit', 'st.skills.cancel_edit', 'st.skills.updated', 'st.skills.error.update_missing',
+      'st.skills.chars_count', 'st.skills.chars_over', 'st.skills.draft.title', 'st.skills.draft.modes',
+      'st.skills.draft.intents',
+    ]) {
+      assert.ok(locale.includes(`'${key}'`), `${browser}: en locale missing ${key}`);
+    }
   }
 });
 
@@ -67861,7 +68032,19 @@ test('the composer exposes a permission-mode chip and a menu built from the ladd
     // nothing else — no wrapping row, no reflowed input, no moving pill.
     assert.match(css, /#composer-footer \{[\s\S]*?position: relative;/, `${label}: the footer must anchor the pop-up menu`);
     assert.match(css, /\.permission-mode-menu \{\s*position: absolute;[\s\S]*?bottom: calc\(100% \+ 6px\);/, `${label}: the menu must open upward, over the conversation`);
-    assert.match(css, /max-height: min\(340px, 60vh\);\s*overflow-y: auto;/, `${label}: an upward menu must stay inside a short window and scroll instead`);
+    // A permission menu that scrolls hides its LAST rung — the widest grant of
+    // the set. So the ceiling is the room actually measured between the chip
+    // and the top of the panel, not a fixed cap that scrolled even where the
+    // whole ladder would have fit; scrolling survives only as the fallback for
+    // a window too short to hold it.
+    assert.match(css, /max-height: var\(--permission-menu-max, [^)]+\);\s*overflow-y: auto;/, `${label}: the menu's ceiling must be the measured room, with scroll as the fallback`);
+    assert.match(panel, /function sizePermissionModeMenu\(\) \{[\s\S]*?permissionModeBtn\.getBoundingClientRect\(\)\.top[\s\S]*?setProperty\('--permission-menu-max'/, `${label}: that room must be measured from the chip, which only JS can see`);
+    assert.match(panel, /classList\.remove\('hidden'\);\s*sizePermissionModeMenu\(\);/, `${label}: and measured on open, before the user sees the menu`);
+    assert.match(panel, /window\.addEventListener\('resize', sizePermissionModeMenu\);/, `${label}: resizing the panel under an open menu must re-measure it`);
+    assert.match(panel, /window\.removeEventListener\('resize', sizePermissionModeMenu\);/, `${label}: and that listener must be released on close`);
+    // Descriptions are what make the rows tall, so they get the full row width
+    // instead of wrapping inside the column the check and keycap reserve.
+    assert.match(css, /\.permission-mode-item-desc \{\s*grid-column: 1 \/ -1;/, `${label}: descriptions must span the whole row, not just the label column`);
     assert.doesNotMatch(css, /#mode-toggle \{[\s\S]*?flex: 1 1/, `${label}: the Ask/Act/Dev pill must keep its original full-width row`);
     // Selecting a mode returns focus to the chip (ARIA menu-button pattern), so
     // the ring has to be designed rather than the browser's default outline.
@@ -71311,7 +71494,7 @@ test('settings exposes custom skills tab and packaged skills resource directory'
     assert.doesNotMatch(previewPackagedBody, /saveCustomSkills|addCustomSkill|storage\.local\.set/, `${label}: previewing a packaged skill must not enable it`);
     assert.match(settingsJs, /runtime\.getURL\(source\.path\)/, `${label}: packaged skill should load from the extension resource`);
     assert.match(settingsJs, /DEFAULT_SKILLS_REMOVED_STORAGE_KEY/, `${label}: settings JS should remember removed default skills`);
-    assert.match(settingsJs, /removedSkill\?\.sourceType === 'built-in'/, `${label}: only built-in defaults should be marked removed`);
+    assert.match(settingsJs, /shouldRecordDefaultSkillRemoval\(removedSkill\)/, `${label}: default removals, including edit-demoted forks, should be recorded`);
     assert.match(settingsJs, /installedDefault/, `${label}: reinstalling a default should clear its removal tombstone`);
     assert.match(settingsJs, /st\.skills\.source\.built_in/, `${label}: settings should label packaged skills`);
     assert.match(settingsJs, /skill\.tools/, `${label}: settings should show exposed skill tools`);

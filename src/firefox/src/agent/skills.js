@@ -916,3 +916,112 @@ export function buildSkillToolRegistry(skillsValue, opts = {}) {
   }
   return registry;
 }
+
+// ── Settings-page editing and file-import helpers ───────────────────────────
+// Pure helpers behind Settings → Skills. They live here rather than in the UI
+// module so both browser builds share one implementation and node tests can
+// exercise the edit/demotion rules without a DOM.
+
+export const SKILL_FILE_EXTENSIONS = Object.freeze(['md', 'markdown', 'txt']);
+
+export function isSupportedSkillFileName(fileName) {
+  const name = cleanSingleLine(fileName).toLowerCase();
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return SKILL_FILE_EXTENSIONS.includes(name.slice(dot + 1));
+}
+
+export function skillNameFromFileName(fileName) {
+  const base = cleanSingleLine(fileName).split(/[\\/]/).pop() || '';
+  const withoutExt = base.replace(/\.(md|markdown|txt)$/i, '');
+  return cleanSingleLine(withoutExt.replace(/[-_]+/g, ' ')).slice(0, 80);
+}
+
+// Display-name inference for imported files: Agent Skills frontmatter name,
+// else the first Markdown heading. Unlike inferName there is no first-line
+// fallback — a fence or prose opener makes an ugly name, so the caller falls
+// back to the file name instead.
+export function inferSkillDisplayName(content) {
+  const text = cleanText(content);
+  if (!text) return '';
+  const agentSkill = parseAgentSkillFrontmatter(text);
+  if (agentSkill?.name) return agentSkill.name.slice(0, 80);
+  const body = agentSkill ? agentSkill.body : text;
+  const heading = body.match(/^\s{0,3}#{1,6}\s+(.+)$/m);
+  return heading ? cleanSingleLine(heading[1]).slice(0, 80) : '';
+}
+
+// Normalized preview of what a draft (name + content) would be saved as, so
+// the settings form can show the routing metadata a webbrain-skill fence
+// actually parsed to before the user commits. Returns null for empty drafts.
+export function describeSkillDraft(draft = {}) {
+  const rawContent = cleanText(draft.content);
+  if (!rawContent) return null;
+  const normalized = normalizeSkills([{
+    id: 'draft',
+    name: draft.name,
+    sourceType: 'text',
+    content: rawContent,
+    createdAt: 0,
+  }])[0];
+  if (!normalized) return null;
+  return {
+    name: normalized.name,
+    summary: normalized.summary,
+    modes: [...normalized.modes],
+    intents: [...normalized.intents],
+    toolNames: (normalized.tools || []).map((tool) => tool.name),
+    chars: normalized.content.length,
+    truncated: rawContent.length > MAX_CUSTOM_SKILL_CHARS,
+  };
+}
+
+// Whether removing this skill must be recorded in DEFAULT_SKILLS_REMOVED so
+// background seeding does not restore it. Matching by id — not sourceType —
+// covers a default that an edit demoted to custom text: it keeps its id, and
+// deleting the fork means the user wants the id gone, not reseeded.
+export function shouldRecordDefaultSkillRemoval(skill) {
+  return !!skill && DEFAULT_SKILL_SOURCES.some((source) => source.id === skill.id);
+}
+
+/**
+ * Apply a settings-page edit to one stored skill.
+ *
+ * Provenance rules: packaged records refresh name and content from the bundle
+ * at every background start, so any accepted edit of a 'built-in' record must
+ * demote it to 'text' or the edit would be silently reverted. URL provenance
+ * only lies once the content no longer matches what the URL served, so a pure
+ * rename keeps it; a content change demotes.
+ *
+ * Returns { skills, skill, changed, demoted }, or null when the id is gone or
+ * the edited content is empty. The record keeps its id, createdAt, and list
+ * position; tools and metadata are reparsed from the edited content.
+ */
+export function applySkillEdit(skillsValue, skillId, edit = {}) {
+  const skills = normalizeCustomSkills(skillsValue);
+  const index = skills.findIndex((skill) => skill.id === skillId);
+  if (index === -1) return null;
+  const existing = skills[index];
+  const nextContent = cleanText(edit.content).slice(0, MAX_CUSTOM_SKILL_CHARS);
+  if (!nextContent) return null;
+  const nextName = cleanSingleLine(edit.name).slice(0, 80);
+  const contentChanged = nextContent !== existing.content;
+  const nameChanged = nextName !== existing.name;
+  if (!contentChanged && !nameChanged) {
+    return { skills, skill: existing, changed: false, demoted: false };
+  }
+  const demoted = existing.sourceType === 'built-in'
+    || (existing.sourceType === 'url' && contentChanged);
+  const raw = {
+    id: existing.id,
+    name: nextName,
+    sourceType: demoted ? 'text' : existing.sourceType,
+    sourceUrl: demoted ? '' : existing.sourceUrl,
+    content: nextContent,
+    createdAt: existing.createdAt,
+  };
+  const nextSkills = normalizeCustomSkills(skills.map((skill, i) => (i === index ? raw : skill)));
+  const skill = nextSkills.find((item) => item.id === skillId) || null;
+  if (!skill) return null;
+  return { skills: nextSkills, skill, changed: true, demoted };
+}
