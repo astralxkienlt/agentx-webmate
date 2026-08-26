@@ -1569,12 +1569,33 @@ function focusPermissionModeItem(index) {
   try { target.focus(); } catch { /* focus can fail on a detached node */ }
 }
 
+/**
+ * The menu grows upward out of the chip, so the room it has is whatever sits
+ * between the chip and the top of the panel — which a stylesheet cannot know.
+ * Measure it on open (and on resize while open) instead of hard-coding a cap:
+ * on any ordinary panel that lets the whole ladder show at once, which is the
+ * point. A permission menu that scrolls hides its LAST rung, and the last rung
+ * is the widest grant of the set — the one nobody should have to go looking
+ * for. The CSS ceiling is only the fallback for the case this cannot measure.
+ */
+function sizePermissionModeMenu() {
+  if (!permissionModeMenuEl || !permissionModeBtn) return;
+  const chipTop = permissionModeBtn.getBoundingClientRect().top;
+  // 6px riser above the chip plus 10px so the menu never touches the top edge.
+  // Floored so a freak measurement can never collapse the menu to nothing;
+  // below that floor it scrolls, which beats being unreadable.
+  const room = Math.max(180, Math.round(chipTop - 16));
+  permissionModeMenuEl.style.setProperty('--permission-menu-max', `${room}px`);
+}
+
 function openPermissionModeMenu() {
   if (!permissionModeMenuEl || permissionModeMenuIsOpen()) return;
   renderPermissionModeMenu();
   permissionModeMenuEl.classList.remove('hidden');
+  sizePermissionModeMenu();
   permissionModeBtn?.setAttribute('aria-expanded', 'true');
   document.addEventListener('pointerdown', handlePermissionModeOutsidePointer, true);
+  window.addEventListener('resize', sizePermissionModeMenu);
   focusPermissionModeItem(Math.max(0, PERMISSION_MODES.indexOf(permissionMode)));
 }
 
@@ -1583,6 +1604,7 @@ function closePermissionModeMenu({ focusChip = false } = {}) {
   permissionModeMenuEl.classList.add('hidden');
   permissionModeBtn?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', handlePermissionModeOutsidePointer, true);
+  window.removeEventListener('resize', sizePermissionModeMenu);
   if (focusChip) {
     try { permissionModeBtn?.focus(); } catch { /* nothing to focus */ }
   }

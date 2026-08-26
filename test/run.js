@@ -67861,7 +67861,19 @@ test('the composer exposes a permission-mode chip and a menu built from the ladd
     // nothing else — no wrapping row, no reflowed input, no moving pill.
     assert.match(css, /#composer-footer \{[\s\S]*?position: relative;/, `${label}: the footer must anchor the pop-up menu`);
     assert.match(css, /\.permission-mode-menu \{\s*position: absolute;[\s\S]*?bottom: calc\(100% \+ 6px\);/, `${label}: the menu must open upward, over the conversation`);
-    assert.match(css, /max-height: min\(340px, 60vh\);\s*overflow-y: auto;/, `${label}: an upward menu must stay inside a short window and scroll instead`);
+    // A permission menu that scrolls hides its LAST rung — the widest grant of
+    // the set. So the ceiling is the room actually measured between the chip
+    // and the top of the panel, not a fixed cap that scrolled even where the
+    // whole ladder would have fit; scrolling survives only as the fallback for
+    // a window too short to hold it.
+    assert.match(css, /max-height: var\(--permission-menu-max, [^)]+\);\s*overflow-y: auto;/, `${label}: the menu's ceiling must be the measured room, with scroll as the fallback`);
+    assert.match(panel, /function sizePermissionModeMenu\(\) \{[\s\S]*?permissionModeBtn\.getBoundingClientRect\(\)\.top[\s\S]*?setProperty\('--permission-menu-max'/, `${label}: that room must be measured from the chip, which only JS can see`);
+    assert.match(panel, /classList\.remove\('hidden'\);\s*sizePermissionModeMenu\(\);/, `${label}: and measured on open, before the user sees the menu`);
+    assert.match(panel, /window\.addEventListener\('resize', sizePermissionModeMenu\);/, `${label}: resizing the panel under an open menu must re-measure it`);
+    assert.match(panel, /window\.removeEventListener\('resize', sizePermissionModeMenu\);/, `${label}: and that listener must be released on close`);
+    // Descriptions are what make the rows tall, so they get the full row width
+    // instead of wrapping inside the column the check and keycap reserve.
+    assert.match(css, /\.permission-mode-item-desc \{\s*grid-column: 1 \/ -1;/, `${label}: descriptions must span the whole row, not just the label column`);
     assert.doesNotMatch(css, /#mode-toggle \{[\s\S]*?flex: 1 1/, `${label}: the Ask/Act/Dev pill must keep its original full-width row`);
     // Selecting a mode returns focus to the chip (ARIA menu-button pattern), so
     // the ring has to be designed rather than the browser's default outline.
