@@ -25137,8 +25137,8 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
 
     assert.match(
       background,
-      /(?:async )?function showFirstInstallGuide\(details\) \{[\s\S]*?details\?\.reason !== 'install'[\s\S]*?tabs\.create\(\{[\s\S]*?runtime\.getURL\('src\/ui\/install\.html'\)/,
-      `${label}: the guide should open only for a genuine first install`,
+      /(?:async )?function showFirstInstallGuide\(details\) \{[\s\S]*?details\?\.reason !== 'install'[\s\S]*?storage\.local\.set\(\{ onboardingComplete: true \}\)/,
+      `${label}: the guide should mark onboarding complete on a genuine first install`,
     );
     assert.match(
       background,
@@ -25301,8 +25301,8 @@ test('first install opens a browser-aware panel launcher without fake toolbar co
   const firefoxPanelHtml = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/sidepanel.html'), 'utf8');
   assert.match(
     chromeBackground,
-    /storage\.local\.set\(\{ pinCoachmarkPending: true \}\)[\s\S]*?tabs\.create\(/,
-    'chrome: first install should prepare the pin coachmark before opening the guide tab',
+    /storage\.local\.set\(\{ onboardingComplete: true \}\)/,
+    'chrome: first install should mark onboarding complete immediately',
   );
   assert.match(
     chromeBackground,

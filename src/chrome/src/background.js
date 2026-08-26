@@ -993,17 +993,7 @@ const planReviewReady = loadPlanReviewSettings().catch((e) => {
 
 async function showFirstInstallGuide(details) {
   if (details?.reason !== 'install') return;
-  await chrome.storage.local.set({ pinCoachmarkPending: true }).catch((error) => {
-    console.warn('[WebBrain] Could not prepare the first-open pin coachmark:', error);
-  });
-  try {
-    await chrome.tabs.create({
-      url: chrome.runtime.getURL('src/ui/install.html'),
-      active: true,
-    });
-  } catch (error) {
-    console.warn('[WebBrain] Could not open the first-install pinning guide:', error);
-  }
+  await chrome.storage.local.set({ onboardingComplete: true }).catch(() => {});
 }
 
 // Initialize on install
