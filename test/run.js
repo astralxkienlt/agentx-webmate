@@ -65298,6 +65298,161 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
   }
 });
 
+test('synthetic clicks cancel placeholder javascript: URLs instead of tripping the page CSP', async () => {
+  const makeEventTarget = () => {
+    const listeners = [];
+    return {
+      listeners,
+      addEventListener(type, fn, capture = false) {
+        listeners.push({ type, fn, capture: !!capture });
+      },
+      removeEventListener(type, fn, capture = false) {
+        const index = listeners.findIndex(l => l.type === type && l.fn === fn && l.capture === !!capture);
+        if (index >= 0) listeners.splice(index, 1);
+      },
+      handlers(type, capture) {
+        return listeners
+          .filter(l => l.type === type && l.capture === !!capture)
+          .map(l => l.fn);
+      },
+    };
+  };
+  const element = (tagName, href) => ({
+    nodeType: 1,
+    tagName,
+    getAttribute: (name) => (name === 'href' ? (href ?? null) : null),
+  });
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  for (const relPath of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    const start = source.indexOf('  const FILE_PICKER_GUARD_SETTLE_MS = 500;');
+    const end = source.indexOf('  function filePickerBlockedResponse(', start);
+    assert.ok(start >= 0 && end > start, `${relPath}: the synthetic click guard should remain independently testable`);
+
+    const documentStub = makeEventTarget();
+    const attributes = new Map();
+    documentStub.documentElement = {
+      setAttribute: (name, value) => attributes.set(name, String(value)),
+      getAttribute: (name) => (attributes.has(name) ? attributes.get(name) : null),
+      removeAttribute: (name) => attributes.delete(name),
+    };
+    documentStub.dispatchEvent = () => true;
+    const windowStub = makeEventTarget();
+    const context = vm.createContext({
+      Node: { ELEMENT_NODE: 1 },
+      Event: class { constructor(type) { this.type = type; } },
+      document: documentStub,
+      window: windowStub,
+      setTimeout,
+      clearTimeout,
+      Date,
+      JSON,
+      uniqueFileInputSelector: () => null,
+      filePickerBlockedResponse: () => ({ success: false, filePickerBlocked: true }),
+    });
+    vm.runInContext(
+      `${source.slice(start, end)}\nglobalThis.guardApi = { clickWithoutNativeFilePicker, consumeFilePickerGuard, isNoOpJavascriptUrl };`,
+      context,
+    );
+    const { clickWithoutNativeFilePicker, consumeFilePickerGuard, isNoOpJavascriptUrl } = context.guardApi;
+
+    // Browser propagation order: window capture, document capture, the page's
+    // own handlers, document bubble, window bubble, then the default action.
+    const clickThrough = (nodePath, pageHandler) => {
+      const event = {
+        type: 'click',
+        target: nodePath[0],
+        defaultPrevented: false,
+        composedPath: () => nodePath,
+        preventDefault() { this.defaultPrevented = true; },
+        stopImmediatePropagation() {},
+      };
+      for (const fn of windowStub.handlers('click', true)) fn(event);
+      for (const fn of documentStub.handlers('click', true)) fn(event);
+      pageHandler?.(event);
+      for (const fn of documentStub.handlers('click', false)) fn(event);
+      for (const fn of windowStub.handlers('click', false)) fn(event);
+      return event;
+    };
+    const refuseJavascriptUrl = () => {
+      for (const fn of documentStub.handlers('securitypolicyviolation', true)) {
+        fn({ effectiveDirective: 'script-src', blockedURI: 'inline' });
+      }
+    };
+    const guardedClick = async (nodePath, { pageHandler, afterClick } = {}) => {
+      let event = null;
+      const guard = clickWithoutNativeFilePicker(() => { event = clickThrough(nodePath, pageHandler); }, 0);
+      afterClick?.();
+      await delay(5);
+      return { event, settled: consumeFilePickerGuard(guard.guardId) };
+    };
+
+    const placeholder = await guardedClick([element('SPAN'), element('A', 'javascript:void(0);')]);
+    assert.equal(placeholder.event.defaultPrevented, true, `${relPath}: a javascript:void(0) navigation should be cancelled, not sent to the CSP`);
+    assert.equal(placeholder.settled.javascriptUrlBlocked, undefined, `${relPath}: a placeholder href is not a lost action`);
+    assert.deepEqual(windowStub.listeners, [], `${relPath}: the suppressor must not outlive the synthetic click and cancel a real user's click`);
+
+    const realCode = [element('A', 'javascript:sendMail()')];
+    const firstRun = await guardedClick(realCode);
+    assert.equal(firstRun.event.defaultPrevented, false, `${relPath}: real javascript: code must run until the document is seen refusing it`);
+    assert.equal(firstRun.settled.javascriptUrlBlocked, undefined, `${relPath}: an href that ran is not a blocked action`);
+
+    const refused = await guardedClick(realCode, { afterClick: refuseJavascriptUrl });
+    assert.equal(refused.settled.javascriptUrlBlocked, true, `${relPath}: a refused javascript: URL should be reported, not returned as a clean click`);
+    assert.match(refused.settled.warning, /javascript:sendMail\(\)/, `${relPath}: the warning should name the refused URL`);
+
+    const afterLearning = await guardedClick(realCode);
+    assert.equal(afterLearning.event.defaultPrevented, true, `${relPath}: a document that refuses javascript: URLs should not be asked again`);
+    assert.equal(afterLearning.settled.javascriptUrlBlocked, true, `${relPath}: the suppressed action is still a lost action`);
+
+    const pageCancelled = await guardedClick([element('A', 'javascript:void(0)')], {
+      pageHandler: (event) => event.preventDefault(),
+    });
+    assert.equal(pageCancelled.settled.javascriptUrlBlocked, undefined, `${relPath}: a click the page already cancelled has no URL left to run`);
+
+    const plainLink = await guardedClick([element('A', 'https://example.com/inbox')]);
+    assert.equal(plainLink.event.defaultPrevented, false, `${relPath}: ordinary links must still navigate`);
+    assert.deepEqual(documentStub.listeners, [], `${relPath}: the violation observer should be released with the guard`);
+
+    assert.equal(isNoOpJavascriptUrl('javascript:void 0'), true);
+    assert.equal(isNoOpJavascriptUrl('  JavaScript:;  '), true);
+    assert.equal(isNoOpJavascriptUrl('javascript:undefined'), true);
+    assert.equal(isNoOpJavascriptUrl("javascript:openCompose('draft')"), false);
+    assert.equal(isNoOpJavascriptUrl('javascript:void(0);doSend()'), false);
+    assert.equal(isNoOpJavascriptUrl('https://example.com'), false);
+  }
+});
+
+test('a refused javascript: URL is wired through both content scripts and both agents', () => {
+  for (const relPath of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    assert.match(source, /function isNoOpJavascriptUrl\(href\)/, `${relPath}: missing placeholder javascript: URL classifier`);
+    assert.match(source, /window\.addEventListener\('click', suppressJavascriptUrl, false\)/, `${relPath}: the suppressor must run after every page handler`);
+    assert.match(source, /document\.addEventListener\('securitypolicyviolation', observeJavascriptUrlPolicyViolation, true\)/, `${relPath}: missing CSP refusal observer`);
+    assert.match(source, /runClick\(\);\s*\n\s*detachJavascriptUrlClickGuard\(\);/, `${relPath}: the suppressor must be released as soon as the synthetic click ends`);
+    assert.match(source, /if \(!info\.noOp && !_javascriptUrlBlockedByPolicy\) return;/, `${relPath}: real javascript: code must run until the document refuses it`);
+    assert.match(source, /javascriptUrlBlocked: true/, `${relPath}: a refused javascript: URL should be explicit to the model`);
+  }
+  for (const relPath of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    assert.match(
+      source,
+      /if \(settled\?\.javascriptUrlBlocked && settled\.warning\)/,
+      `${relPath}: the guard settle handshake should surface a refused javascript: URL`,
+    );
+  }
+});
+
 test('upload_file prefers a valid downloadId and falls back to filePath for an invalid id (chrome)', async () => {
   const originalChrome = globalThis.chrome;
   const originalCdp = {
