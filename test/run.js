@@ -29209,6 +29209,105 @@ test('no panel-open rejection is left to float', () => {
   assert.equal(seen, 7, `expected 7 panel-open call sites, found ${seen}`);
 });
 
+test('browser-lifecycle rejections are cancelled and everything else still reports', async () => {
+  // `Error: No SW` is Chromium answering an API request it can no longer
+  // attribute to a live worker (extension_function_dispatcher.cc) — the worker
+  // was starting, restarting or being killed when the call went out. It reaches
+  // the extension's Errors page as a stackless `Uncaught (in promise)` at
+  // background.js 0:1, tells the user nothing they can act on, and sits in the
+  // same list as failures that matter. Cancelling that family is the point of
+  // the module; cancelling anything else would hide our own bugs.
+  for (const tree of ['chrome', 'firefox']) {
+    const { isBrowserLifecycleError, installLifecycleRejectionGuard } = await import(
+      pathToFileURL(path.join(ROOT, `src/${tree}/src/lifecycle-errors.js`)).href
+    );
+
+    for (const reason of [
+      new Error('No SW'),
+      'No SW',
+      { message: '  no   sw.  ' },
+      new Error('Extension context invalidated.'),
+      new Error('The message port closed before a response was received.'),
+      new Error('Could not establish connection. Receiving end does not exist.'),
+      new Error('The browser is shutting down.'),
+      new Error('Message manager disconnected'),
+    ]) {
+      assert.equal(isBrowserLifecycleError(reason), true,
+        `${tree}: browser lifecycle noise should be recognised: ${reason?.message || reason}`);
+    }
+
+    for (const reason of [
+      new Error('No SWagger endpoint configured'), // near-miss: matching must not be loose
+      new Error('Cannot read properties of undefined (reading "id")'),
+      new Error('No tab with id: 42.'),            // a race we own, not the browser's lifecycle
+      new Error(''),
+      null,
+      undefined,
+      {},
+      42,
+    ]) {
+      assert.equal(isBrowserLifecycleError(reason), false,
+        `${tree}: a rejection we could act on must never be treated as noise: ${reason?.message ?? reason}`);
+    }
+
+    const listeners = new Map();
+    const scope = {
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: (type, fn) => { if (listeners.get(type) === fn) listeners.delete(type); },
+    };
+    const suppressed = [];
+    const uninstall = installLifecycleRejectionGuard(scope, { onSuppressed: (r) => suppressed.push(r) });
+    const fire = (reason) => {
+      let prevented = false;
+      listeners.get('unhandledrejection')({ reason, preventDefault: () => { prevented = true; } });
+      return prevented;
+    };
+
+    assert.equal(fire(new Error('No SW')), true,
+      `${tree}: only a cancelled rejection stays off the Errors page`);
+    assert.equal(fire(new Error('undefined is not a function')), false,
+      `${tree}: a real bug must keep being reported`);
+    assert.deepEqual(suppressed.map(String), ['Error: No SW'],
+      `${tree}: exactly the cancelled rejection is handed to the debug log`);
+
+    // A reporter that throws must not turn one swallowed rejection into two.
+    const noisy = installLifecycleRejectionGuard(scope, {
+      onSuppressed: () => { throw new Error('reporter blew up'); },
+    });
+    assert.equal(fire(new Error('No SW')), true, `${tree}: a broken reporter must not stop the cancel`);
+    noisy();
+
+    uninstall();
+    assert.equal(listeners.has('unhandledrejection'), false, `${tree}: uninstall should remove the listener`);
+    assert.equal(typeof installLifecycleRejectionGuard({}), 'function',
+      `${tree}: a scope without listeners is a no-op, not a crash`);
+  }
+});
+
+test('background boot hands every hydration promise a handler', () => {
+  assert.equal(
+    fs.readFileSync(path.join(ROOT, 'src/chrome/src/lifecycle-errors.js'), 'utf8'),
+    fs.readFileSync(path.join(ROOT, 'src/firefox/src/lifecycle-errors.js'), 'utf8'),
+    'chrome and firefox lifecycle-error modules must remain byte-identical',
+  );
+
+  // The guard is a backstop for rejections nobody could have caught. Settings
+  // hydration is not one of those: it runs on every worker start (an idle
+  // profile still wakes this one about once a minute for the cloud-bridge
+  // watchdog), so a floating `loadThing();` is nine chances a minute to file a
+  // stackless error against the extension.
+  for (const rel of ['src/chrome/src/background.js', 'src/firefox/src/background.js']) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /^installLifecycleRejectionGuard\(globalThis\);$/m,
+      `${rel}: the lifecycle guard must be installed at boot`);
+    const floating = [...source.matchAll(/^([A-Za-z_$][\w$]*)\(\);$/gm)].map(match => match[1]);
+    assert.deepEqual(floating, [],
+      `${rel}: a top-level call must hand its promise to hydrateAtBoot or catch it — floating: ${floating.join(', ')}`);
+    assert.equal((source.match(/^hydrateAtBoot\('/gm) || []).length, 9,
+      `${rel}: all nine boot-time setting loads should go through hydrateAtBoot`);
+  }
+});
+
 test('chrome opts the side panel in per tab and never pre-enables or disables it', () => {
   const background = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
   const agent = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');

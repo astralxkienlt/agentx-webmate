@@ -106,6 +106,7 @@ import {
   parseConfigPatchImport,
 } from './config-transfer.js';
 import { installDownloadDirectoryRouting } from './download-directory.js';
+import { isBrowserLifecycleError, installLifecycleRejectionGuard } from './lifecycle-errors.js';
 import {
   getChromeWebStoreOAuthStatus,
   signOutChromeWebStoreOAuth,
@@ -116,6 +117,32 @@ import {
  * WebBrain Service Worker (Background Script)
  * Routes messages between side panel, content scripts, and the agent.
  */
+
+// Installed before anything else runs. An MV3 worker is started and killed at
+// the browser's discretion — the cloud-bridge watchdog alarm alone wakes this
+// one about once a minute — and every start replays this whole module graph
+// against a browser that may not yet, or may no longer, hold a record of the
+// worker issuing the calls. What comes back then is `Error: No SW` and its
+// relatives: the browser describing its own lifecycle, not a defect here, and
+// stackless because the rejecting frame is a chrome binding. Left unhandled
+// they are filed as extension errors, which is where users look for real
+// failures.
+installLifecycleRejectionGuard(globalThis);
+
+/**
+ * Boot-time hydration has no caller to await it: each of these promises exists
+ * only to copy a stored setting onto the agent. Left bare they float, and a
+ * float that rejects is reported as a stackless `Uncaught (in promise)`. Every
+ * one of them is handed here instead — browser-lifecycle noise is dropped, and
+ * a real storage failure still names the setting it could not load.
+ */
+function hydrateAtBoot(label, promise) {
+  return Promise.resolve(promise).catch((error) => {
+    if (!isBrowserLifecycleError(error)) {
+      console.warn(`[WebBrain] ${label} could not be hydrated at boot:`, error);
+    }
+  });
+}
 
 const providerManager = new ProviderManager();
 // The stale-run repair scan waits a beat after wake so a run resuming from
@@ -351,7 +378,7 @@ async function loadMaxSteps() {
     await chrome.storage.local.set({ maxAgentSteps: 0 });
   }
 }
-loadMaxSteps();
+hydrateAtBoot('maxAgentSteps', loadMaxSteps());
 
 // Stored slider: 0 = Instant, 1–1200 = wait N s, >1200 (1205) = Off.
 // Runtime agent value: 0 = Instant, 1–1200 = wait, -1 = Off.
@@ -380,19 +407,19 @@ async function loadClarifyTimeout() {
     stored.clarifyTimeoutSec != null ? stored.clarifyTimeoutSec : 60,
   );
 }
-loadClarifyTimeout();
+hydrateAtBoot('clarifyTimeoutSec', loadClarifyTimeout());
 
 async function loadAutoScreenshot() {
   const stored = await chrome.storage.local.get('autoScreenshot');
   if (stored.autoScreenshot != null) agent.autoScreenshot = stored.autoScreenshot;
 }
-loadAutoScreenshot();
+hydrateAtBoot('autoScreenshot', loadAutoScreenshot());
 
 async function loadSiteAdapters() {
   const stored = await chrome.storage.local.get('useSiteAdapters');
   if (stored.useSiteAdapters != null) agent.useSiteAdapters = stored.useSiteAdapters;
 }
-loadSiteAdapters();
+hydrateAtBoot('useSiteAdapters', loadSiteAdapters());
 
 // Local screenshot redaction (issue #312): when on, screenshots are pixelated
 // over DOM-detected PII (form fields + email/phone text) BEFORE leaving the
@@ -418,7 +445,7 @@ async function loadStrictSecretMode() {
   const stored = await chrome.storage.local.get('strictSecretMode');
   if (stored.strictSecretMode != null) agent.strictSecretMode = !!stored.strictSecretMode;
 }
-loadStrictSecretMode();
+hydrateAtBoot('strictSecretMode', loadStrictSecretMode());
 
 async function loadWebMCPEnabled() {
   const stored = await chrome.storage.local.get('webMcpEnabled');
@@ -436,7 +463,7 @@ async function loadProfile() {
   // No need to refresh live conversations on initial load — they don't
   // exist yet. Refresh only fires on user-initiated setting changes below.
 }
-loadProfile();
+hydrateAtBoot('profile', loadProfile());
 
 async function syncAgentUserMemoryFromStorage() {
   const [store, settings] = await Promise.all([
@@ -920,7 +947,7 @@ async function loadCaptchaSolver() {
     stored.captchaSolverEnabled,
   );
 }
-loadCaptchaSolver();
+hydrateAtBoot('captchaSolver', loadCaptchaSolver());
 
 function normalizePlanBeforeActMode(stored = {}) {
   if (stored.planBeforeActMode === 'try' || stored.planBeforeActMode === 'strict' || stored.planBeforeActMode === 'off') {
@@ -1185,7 +1212,7 @@ function saveWebBrainGroups() {
     [WB_GROUPS_KEY]: Array.from(webBrainGroupByWindow.entries()),
   }).catch(() => {});
 }
-loadWebBrainGroups();
+hydrateAtBoot('webBrainGroups', loadWebBrainGroups());
 
 // Optional-chained like every other optional API here: a browser without
 // chrome.sidePanel would otherwise throw during module evaluation, before any
@@ -2165,7 +2192,7 @@ async function loadApiMutationObserverSetting() {
   }
 }
 
-loadApiMutationObserverSetting();
+hydrateAtBoot('apiMutationObserver', loadApiMutationObserverSetting());
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearUserMemoryTurnContext(tabId);
@@ -2211,7 +2238,10 @@ async function initAttachmentRetention() {
     await chrome.storage.session?.set({ [ATTACHMENT_SESSION_MARKER_KEY]: Date.now() });
   } catch { /* best-effort */ }
   try {
-    chrome.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES });
+    // The try only covers a missing alarms API; the call itself answers with
+    // a promise on MV3, and that promise is the one that rejects when the
+    // browser cannot place the request — catch it or it floats.
+    chrome.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES })?.catch?.(() => {});
   } catch { /* alarms unavailable */ }
   void sweepAttachmentStore();
   clearLegacyStagedScreenshots(chrome.storage.local).catch(() => {});

@@ -99,11 +99,36 @@ import {
   signOutChromeWebStoreOAuth,
   startChromeWebStoreOAuth,
 } from './chrome-web-store-release.js';
+import { isBrowserLifecycleError, installLifecycleRejectionGuard } from './lifecycle-errors.js';
 
 /**
  * WebBrain Background Script (Firefox)
  * Routes messages between sidebar, content scripts, and the agent.
  */
+
+// Installed before anything else runs. An event page is started and suspended
+// at the browser's discretion, and every start replays this whole module graph
+// against a browser that may not yet, or may no longer, hold a record of the
+// context issuing the calls. What comes back then belongs to the browser's own
+// lifecycle rather than to any defect here — and it is stackless, because the
+// rejecting frame is a WebExtension binding. Left unhandled such rejections are
+// filed as extension errors, which is where users look for real failures.
+installLifecycleRejectionGuard(globalThis);
+
+/**
+ * Boot-time hydration has no caller to await it: each of these promises exists
+ * only to copy a stored setting onto the agent. Left bare they float, and a
+ * float that rejects is reported as a stackless `Uncaught (in promise)`. Every
+ * one of them is handed here instead — browser-lifecycle noise is dropped, and
+ * a real storage failure still names the setting it could not load.
+ */
+function hydrateAtBoot(label, promise) {
+  return Promise.resolve(promise).catch((error) => {
+    if (!isBrowserLifecycleError(error)) {
+      console.warn(`[WebBrain] ${label} could not be hydrated at boot:`, error);
+    }
+  });
+}
 
 const providerManager = new ProviderManager();
 // The stale-run repair scan waits a beat after wake so a run resuming from
@@ -294,7 +319,7 @@ async function loadMaxSteps() {
     await browser.storage.local.set({ maxAgentSteps: 0 });
   }
 }
-loadMaxSteps();
+hydrateAtBoot('maxAgentSteps', loadMaxSteps());
 
 // Stored slider: 0 = Instant, 1–1200 = wait N s, >1200 (1205) = Off.
 // Runtime agent value: 0 = Instant, 1–1200 = wait, -1 = Off.
@@ -323,32 +348,32 @@ async function loadClarifyTimeout() {
     stored.clarifyTimeoutSec != null ? stored.clarifyTimeoutSec : 60,
   );
 }
-loadClarifyTimeout();
+hydrateAtBoot('clarifyTimeoutSec', loadClarifyTimeout());
 
 async function loadAutoScreenshot() {
   const stored = await browser.storage.local.get('autoScreenshot');
   if (stored.autoScreenshot != null) agent.autoScreenshot = stored.autoScreenshot;
 }
-loadAutoScreenshot();
+hydrateAtBoot('autoScreenshot', loadAutoScreenshot());
 
 async function loadSiteAdapters() {
   const stored = await browser.storage.local.get('useSiteAdapters');
   if (stored.useSiteAdapters != null) agent.useSiteAdapters = stored.useSiteAdapters;
 }
-loadSiteAdapters();
+hydrateAtBoot('useSiteAdapters', loadSiteAdapters());
 
 async function loadStrictSecretMode() {
   const stored = await browser.storage.local.get('strictSecretMode');
   if (stored.strictSecretMode != null) agent.strictSecretMode = !!stored.strictSecretMode;
 }
-loadStrictSecretMode();
+hydrateAtBoot('strictSecretMode', loadStrictSecretMode());
 
 async function loadProfile() {
   const stored = await browser.storage.local.get(['profileEnabled', 'profileText']);
   if (stored.profileEnabled != null) agent.profileEnabled = !!stored.profileEnabled;
   if (typeof stored.profileText === 'string') agent.profileText = stored.profileText;
 }
-loadProfile();
+hydrateAtBoot('profile', loadProfile());
 
 // Local screenshot redaction (issue #312): when on, screenshots are pixelated
 // over DOM-detected PII (form fields + email/phone text) BEFORE leaving the
@@ -850,7 +875,7 @@ async function loadCaptchaSolver() {
     stored.captchaSolverEnabled,
   );
 }
-loadCaptchaSolver();
+hydrateAtBoot('captchaSolver', loadCaptchaSolver());
 
 function normalizePlanBeforeActMode(stored = {}) {
   if (stored.planBeforeActMode === 'try' || stored.planBeforeActMode === 'strict' || stored.planBeforeActMode === 'off') {
@@ -1090,7 +1115,7 @@ function saveWebBrainGroups() {
     [WB_GROUPS_KEY]: Array.from(webBrainGroupByWindow.entries()),
   }).catch(() => {});
 }
-loadWebBrainGroups();
+hydrateAtBoot('webBrainGroups', loadWebBrainGroups());
 
 /**
  * When automatic grouping is enabled, make sure `tab.windowId` has a
@@ -1350,7 +1375,10 @@ async function initAttachmentRetention() {
     await browser.storage.session?.set({ [ATTACHMENT_SESSION_MARKER_KEY]: Date.now() });
   } catch { /* best-effort */ }
   try {
-    browser.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES });
+    // The try only covers a missing alarms API; the call itself answers with
+    // a promise on MV3, and that promise is the one that rejects when the
+    // browser cannot place the request — catch it or it floats.
+    browser.alarms.create(ATTACHMENT_SWEEP_ALARM, { periodInMinutes: ATTACHMENT_SWEEP_PERIOD_MINUTES })?.catch?.(() => {});
   } catch { /* alarms unavailable */ }
   void sweepAttachmentStore();
   clearLegacyStagedScreenshots(browser.storage.local).catch(() => {});
@@ -1631,7 +1659,7 @@ async function loadApiMutationObserverSetting() {
   }
 }
 
-loadApiMutationObserverSetting();
+hydrateAtBoot('apiMutationObserver', loadApiMutationObserverSetting());
 
 browser.tabs.onRemoved.addListener((tabId) => {
   apiRequestsByTab.delete(tabId);
