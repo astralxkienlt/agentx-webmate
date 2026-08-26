@@ -1640,7 +1640,7 @@ export class Agent extends LoopDetector {
     return /Subscribe for more usage:\s*https?:\/\/\S+/i.test(String(err?.message || ''));
   }
 
-  async _chat(provider, messages, options, requestContext = null) {
+  _usageTokenCounts(usage) {
     const positiveNumber = (value) => {
       const number = Number(value ?? 0);
       return Number.isFinite(number) && number > 0 ? number : 0;
