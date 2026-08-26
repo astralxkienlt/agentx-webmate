@@ -10089,6 +10089,157 @@ test('Stop kills an in-flight model call instantly and ends the run as a clean c
   }
 });
 
+test('Stop aborts in-flight read-only waits and leaves the flag for the loop checkpoint', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+      for (const [toolName, answeredKey] of [['wait_for_stable', 'stable'], ['wait_for_element', 'found']]) {
+        const path = `${label} ${toolName}`;
+        let dispatched = 0;
+        let releaseWait = null;
+        const api = {
+          runtime: {},
+          tabs: {
+            get: async () => ({ url: 'https://example.test/slow', active: true, status: 'complete' }),
+            // The content-script settle loop: only answers when the page
+            // settles / the element appears — here, not until released.
+            sendMessage: (_tabId, message) => {
+              assert.equal(message.action, toolName, `${path}: unexpected content action ${message.action}`);
+              dispatched += 1;
+              return new Promise((resolve) => { releaseWait = resolve; });
+            },
+          },
+        };
+        globalThis.chrome = api;
+        globalThis.browser = api;
+        const agent = new AgentClass({});
+        agent._isPdfTab = async () => false;
+        const tabId = 9450;
+        const args = toolName === 'wait_for_element'
+          ? { selector: '#late', timeout: 5000 }
+          : { timeout: 20000 };
+
+        // Stop pressed mid-wait: the tool returns promptly with a partial,
+        // aborted result instead of sitting out the full in-page timeout.
+        const waitPromise = agent.executeTool(tabId, toolName, args);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(dispatched, 1, `${path}: wait was not dispatched to the content script`);
+        agent.abort(tabId);
+        const result = await Promise.race([
+          waitPromise,
+          new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new Error(`${path}: Stop did not interrupt the wait`)), 3000).unref?.();
+          }),
+        ]);
+        assert.equal(result.aborted, true, `${path}: aborted wait must say so`);
+        assert.equal(result[answeredKey], false, `${path}: aborted wait must not claim ${answeredKey}`);
+        assert.equal(result.success, true, `${path}: an aborted wait is a partial answer, not a tool failure`);
+        assert.equal(
+          agent.abortFlags.get(tabId),
+          true,
+          `${path}: wait consumed the Stop flag — the loop checkpoint after the tool would miss the Stop`,
+        );
+        assert.equal(agent._checkAbort(tabId), true, `${path}: checkpoint after the tool must still see the Stop`);
+        releaseWait?.({ success: true, [answeredKey]: true }); // late in-page answer is discarded
+
+        // Stop already pending when the wait starts (it can land between the
+        // batch checkpoint and dispatch): abort instantly, without kicking
+        // off a bounded in-page observer whose answer would be thrown away.
+        agent.abortFlags.set(tabId, true);
+        const preStopped = await agent.executeTool(tabId, toolName, args);
+        assert.equal(preStopped.aborted, true, `${path}: pre-stopped wait must abort instantly`);
+        assert.equal(dispatched, 1, `${path}: pre-stopped wait must not reach the content script`);
+        assert.equal(agent._checkAbort(tabId), true, `${path}: pre-stopped wait must not consume the flag`);
+      }
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome; else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser; else globalThis.browser = originalBrowser;
+  }
+});
+
+test('wait racing leaves clean waits and every other content tool untouched', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+      const api = {
+        runtime: {},
+        tabs: {
+          get: async () => ({ url: 'https://example.test/page', active: true, status: 'complete' }),
+          sendMessage: (_tabId, message) => new Promise((resolve) => {
+            if (message.action === 'wait_for_stable') {
+              setTimeout(() => resolve({ success: true, stable: true, elapsedMs: 40, mutations: 0 }), 40);
+            } else {
+              setTimeout(() => resolve({ success: true, action: message.action }), 120);
+            }
+          }),
+        },
+      };
+      globalThis.chrome = api;
+      globalThis.browser = api;
+      const agent = new AgentClass({});
+      agent._isPdfTab = async () => false;
+      const tabId = 9460;
+
+      // No Stop: the raced wait must pass the content result through as-is.
+      const clean = await agent.executeTool(tabId, 'wait_for_stable', { timeout: 5000 });
+      assert.equal(clean.stable, true, `${label}: clean wait lost its content result`);
+      assert.equal('aborted' in clean, false, `${label}: clean wait must not carry an aborted marker`);
+
+      // Stop pending: any OTHER content tool still runs to completion — only
+      // the two read-only waits race, so a mutation is never interrupted.
+      agent.abortFlags.set(tabId, true);
+      const other = await agent.executeTool(tabId, 'get_selection', {});
+      assert.equal(other.success, true, `${label}: non-wait tool did not run to completion under Stop`);
+      assert.equal('aborted' in other, false, `${label}: non-wait tool must never be raced against Stop`);
+      assert.equal(agent._checkAbort(tabId), true, `${label}: non-wait tool must leave the Stop flag alone`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome; else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser; else globalThis.browser = originalBrowser;
+  }
+});
+
+test('Stop interrupts the Firefox restricted-tab wait_for_stable poll between iterations', async () => {
+  const originalBrowser = globalThis.browser;
+  try {
+    globalThis.browser = {
+      tabs: {
+        // Never reaches status 'complete', so only Stop can end the poll early.
+        get: async () => ({ status: 'loading', url: 'https://gemini.google.com/app' }),
+      },
+    };
+    const agent = new AgentFx({});
+    const tabId = 9470;
+    const waitPromise = agent._waitForRestrictedTabLoad(
+      tabId,
+      { timeout: 30000 },
+      { restrictedDomain: 'gemini.google.com' },
+    );
+    await new Promise(resolve => setTimeout(resolve, 30));
+    agent.abort(tabId);
+    const result = await Promise.race([
+      waitPromise,
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('Stop did not interrupt the restricted-tab poll')), 3000).unref?.();
+      }),
+    ]);
+    assert.equal(result.aborted, true, 'restricted-tab wait must report the Stop');
+    assert.equal(result.stable, false, 'aborted restricted-tab wait must not claim stability');
+    assert.equal(result.method, 'tab_load_status', 'aborted result must keep the restricted-tab method marker');
+    assert.equal(result.restrictedDomain, 'gemini.google.com', 'aborted result must keep the restricted domain');
+    assert.equal(
+      agent.abortFlags.get(tabId),
+      true,
+      'restricted-tab wait consumed the Stop flag — the loop checkpoint after the tool would miss the Stop',
+    );
+  } finally {
+    if (originalBrowser === undefined) delete globalThis.browser; else globalThis.browser = originalBrowser;
+  }
+});
+
 test('Enter SPA route changes reset dead-scroll state and defer queued ref reuse', async () => {
   for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
     const agent = new AgentClass({ getVisionProvider: async () => null });
