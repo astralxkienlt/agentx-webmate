@@ -1186,12 +1186,58 @@
   const _filePickerGuardStates = new Map();
   let _filePickerGuardSequence = 0;
 
+  // A synthetic click on <a href="javascript:…"> asks the browser to run the
+  // href as an inline script. That navigation is checked against the content
+  // security policy of the world the click came from, so a click dispatched
+  // from this content script is refused with "Running the JavaScript URL
+  // violates the following Content Security Policy directive 'script-src …'"
+  // and the violation is filed against the extension instead of the page.
+  // Nearly every such href is a `javascript:void(0)` placeholder whose real
+  // behaviour lives in a click handler, so cancelling that navigation costs
+  // nothing and keeps the click quiet. An href carrying real code is still
+  // allowed to run until this document is observed actually refusing one.
+  const JAVASCRIPT_URL_RE = /^javascript:/i;
+  let _javascriptUrlBlockedByPolicy = false;
+
+  function isNoOpJavascriptUrl(href) {
+    const raw = String(href || '').trim();
+    if (!JAVASCRIPT_URL_RE.test(raw)) return false;
+    const body = raw.slice('javascript:'.length).replace(/[\s;]+$/, '').trim();
+    if (!body) return true;
+    // Everything here evaluates to a non-string, which the browser treats as
+    // "do nothing" even when the URL is allowed to run.
+    return /^void\s*(?:\(\s*0?\s*\)|0)$/i.test(body)
+      || /^(?:undefined|null|false|true|0)$/i.test(body);
+  }
+
+  function javascriptUrlAnchorInPath(path) {
+    for (const node of path || []) {
+      const tag = node?.nodeType === Node.ELEMENT_NODE
+        ? String(node.tagName || '').toLowerCase()
+        : '';
+      if (tag !== 'a' && tag !== 'area') continue;
+      const href = String(node.getAttribute?.('href') || '').trim();
+      if (JAVASCRIPT_URL_RE.test(href)) return { anchor: node, href };
+    }
+    return null;
+  }
+
+  function javascriptUrlBlockedResponse(href) {
+    const shown = String(href || '').slice(0, 120);
+    return {
+      javascriptUrlBlocked: true,
+      warning: `The clicked link's action is the URL "${shown}", and the browser refused to run it under the active Content Security Policy — only the page's own click handlers ran. If the page did not change, reach the same action another way (an equivalent button or menu item, or navigate to the destination URL) instead of clicking this link again.`,
+    };
+  }
+
   function clickWithoutNativeFilePicker(runClick, settleMs = FILE_PICKER_GUARD_SETTLE_MS) {
     const guardId = `fpg_${Date.now().toString(36)}_${++_filePickerGuardSequence}`;
     const state = {
       blocked: null,
       settled: false,
       guard: null,
+      javascriptUrl: null,
+      detachJavascriptUrlGuard: null,
       cleanupPageShowPickerGuard: null,
       settleTimer: null,
       cleanupTimer: null,
@@ -1243,16 +1289,68 @@
         document.removeEventListener(blockedEvent, onBlocked, true);
       };
     };
+    const eventPath = (event) => (typeof event.composedPath === 'function'
+      ? event.composedPath()
+      : [event.target]);
+    const observeJavascriptUrl = (event) => {
+      const hit = javascriptUrlAnchorInPath(eventPath(event));
+      if (!hit) return;
+      state.javascriptUrl = {
+        href: hit.href.slice(0, 200),
+        noOp: isNoOpJavascriptUrl(hit.href),
+        suppressed: false,
+        blockedByPolicy: false,
+      };
+    };
+    // Runs last, after every page handler, so cancelling the JavaScript URL
+    // navigation never hides the click from the page itself.
+    const suppressJavascriptUrl = (event) => {
+      const info = state.javascriptUrl;
+      // A handler that already cancelled the click leaves the browser nothing
+      // to run, so there is no violation left to prevent.
+      if (!info || info.suppressed || event.defaultPrevented) return;
+      if (!info.noOp && !_javascriptUrlBlockedByPolicy) return;
+      event.preventDefault();
+      info.suppressed = true;
+    };
+    // The refusal is reported asynchronously, after el.click() has returned,
+    // so this observer outlives the click and only the settle window closes it.
+    const observeJavascriptUrlPolicyViolation = (event) => {
+      const info = state.javascriptUrl;
+      if (!info || info.suppressed) return;
+      const directive = String(event?.effectiveDirective || event?.violatedDirective || '');
+      if (!/^script-src/i.test(directive)) return;
+      const blockedUri = String(event?.blockedURI || '');
+      if (blockedUri && blockedUri !== 'inline' && !JAVASCRIPT_URL_RE.test(blockedUri)) return;
+      _javascriptUrlBlockedByPolicy = true;
+      info.blockedByPolicy = true;
+    };
+    // The click is over once runClick() returns; leaving the suppressor armed
+    // for the whole settle window would also cancel a real user's click.
+    const detachJavascriptUrlClickGuard = () => {
+      window.removeEventListener('click', observeJavascriptUrl, true);
+      window.removeEventListener('click', suppressJavascriptUrl, false);
+    };
+    const detachJavascriptUrlGuard = () => {
+      detachJavascriptUrlClickGuard();
+      document.removeEventListener('securitypolicyviolation', observeJavascriptUrlPolicyViolation, true);
+    };
     const cleanupGuard = () => {
       document.removeEventListener('click', guard, true);
+      detachJavascriptUrlGuard();
       state.cleanupPageShowPickerGuard?.();
     };
     state.guard = guard;
+    state.detachJavascriptUrlGuard = detachJavascriptUrlGuard;
     _filePickerGuardStates.set(guardId, state);
     document.addEventListener('click', guard, true);
+    window.addEventListener('click', observeJavascriptUrl, true);
+    window.addEventListener('click', suppressJavascriptUrl, false);
+    document.addEventListener('securitypolicyviolation', observeJavascriptUrlPolicyViolation, true);
     state.cleanupPageShowPickerGuard = installPageShowPickerGuard();
     try {
       runClick();
+      detachJavascriptUrlClickGuard();
     } catch (error) {
       cleanupGuard();
       _filePickerGuardStates.delete(guardId);
@@ -1281,6 +1379,7 @@
     if (!state.settled) return { success: true, settled: false, filePickerBlocked: false };
     if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
     document.removeEventListener('click', state.guard, true);
+    state.detachJavascriptUrlGuard?.();
     // If nothing was observed, stop content-side observation but leave the
     // page-world programmatic click/showPicker guard active until its own
     // short TTL. This suppresses longer debounces without blocking the tool
@@ -1289,6 +1388,17 @@
     _filePickerGuardStates.delete(guardId);
     if (state.blocked) {
       return { ...filePickerBlockedResponse(state.blocked), settled: true };
+    }
+    // A refused JavaScript URL means the link's own action never ran, so the
+    // click must not read as a clean success.
+    const javascriptUrl = state.javascriptUrl;
+    if (javascriptUrl && !javascriptUrl.noOp && (javascriptUrl.blockedByPolicy || javascriptUrl.suppressed)) {
+      return {
+        success: true,
+        settled: true,
+        filePickerBlocked: false,
+        ...javascriptUrlBlockedResponse(javascriptUrl.href),
+      };
     }
     return { success: true, settled: true, filePickerBlocked: false };
   }

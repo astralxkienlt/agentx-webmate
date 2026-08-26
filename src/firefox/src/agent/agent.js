@@ -15967,6 +15967,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           ...(originalResponse.ref_id ? { ref_id: originalResponse.ref_id } : {}),
         };
       }
+      // A JavaScript URL the browser refused to run means only the page's own
+      // handlers ever saw the click, so the link's action did not happen.
+      if (settled?.javascriptUrlBlocked && settled.warning) {
+        return {
+          ...originalResponse,
+          javascriptUrlBlocked: true,
+          warning: originalResponse.warning
+            ? `${originalResponse.warning}\n${settled.warning}`
+            : settled.warning,
+        };
+      }
     } catch {
       // The delivered click may have navigated or submitted the old document.
       // Keep its original response and never re-inject/replay the action just
