@@ -1138,6 +1138,26 @@ function renderSkills() {
 let editingSkillId = null;
 let skillFormMetaTimer = 0;
 
+// Fit the raw-text editor to its content, between the CSS min-height and
+// ~60% of the window, so a long skill (packaged ones run to 14k characters)
+// opens as a real editor instead of a ten-line slot. A manual drag-resize is
+// simply refit on the next input rather than tracked.
+function autosizeSkillTextArea() {
+  if (!skillTextArea) return;
+  // Clear the inline height first: an empty editor falls back to the CSS
+  // rows/min-height (a textarea's scrollHeight can stay stuck at the old
+  // content's extent after value = ''), and a refit measures from a clean
+  // layout instead of the previous fit.
+  skillTextArea.style.height = '';
+  if (!skillTextArea.value) return;
+  const viewport = Math.max(
+    window.innerHeight || 0,
+    document.documentElement?.clientHeight || 0,
+  ) || 480;
+  const max = Math.max(280, Math.round(viewport * 0.6));
+  skillTextArea.style.height = `${Math.min(skillTextArea.scrollHeight + 2, max)}px`;
+}
+
 function skillFormDraft() {
   return { name: skillNameInput?.value || '', content: skillTextArea?.value || '' };
 }
@@ -1202,6 +1222,7 @@ function enterSkillEdit(skillId) {
   if (skillNameInput) skillNameInput.value = skill.name;
   if (skillTextArea) skillTextArea.value = skill.content;
   setSkillFormMode(skill);
+  autosizeSkillTextArea();
   updateSkillFormMeta();
   skillsCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   skillTextArea?.focus();
@@ -1212,6 +1233,7 @@ function exitSkillEdit() {
   if (skillNameInput) skillNameInput.value = '';
   if (skillTextArea) skillTextArea.value = '';
   setSkillFormMode(null);
+  autosizeSkillTextArea();
   updateSkillFormMeta();
 }
 
@@ -1320,6 +1342,7 @@ async function addSkillFromText() {
     });
     if (skillNameInput) skillNameInput.value = '';
     if (skillTextArea) skillTextArea.value = '';
+    autosizeSkillTextArea();
     updateSkillFormMeta();
     flashSkillsResult('ok', t('st.skills.added'));
   } catch (e) {
@@ -1384,6 +1407,7 @@ btnClearSkillForm?.addEventListener('click', () => {
   if (skillNameInput) skillNameInput.value = '';
   if (skillUrlInput) skillUrlInput.value = '';
   if (skillTextArea) skillTextArea.value = '';
+  autosizeSkillTextArea();
   updateSkillFormMeta();
   flashSkillsResult('ok', t('st.skills.form_cleared'));
 });
@@ -1394,7 +1418,10 @@ skillFileInput?.addEventListener('change', async () => {
   await addSkillFromFiles(skillFileInput.files);
   skillFileInput.value = '';
 });
-skillTextArea?.addEventListener('input', scheduleSkillFormMeta);
+skillTextArea?.addEventListener('input', () => {
+  autosizeSkillTextArea();
+  scheduleSkillFormMeta();
+});
 skillNameInput?.addEventListener('input', scheduleSkillFormMeta);
 skillsCard?.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && editingSkillId) {
