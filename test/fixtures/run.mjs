@@ -785,6 +785,86 @@ for (const [label, sourcePath, manualOpen] of [
     }
   });
 
+  test(`${label}: selection question sends on Enter and breaks lines on Alt+Enter`, async (page) => {
+    await setupSelectionShortcut(page, sourcePath, { requiresManualOpen: manualOpen });
+    const selectedState = await selectFixtureText(page);
+    await page.mouse.click(
+      selectedState.shortcutRect.left + selectedState.shortcutRect.width / 2,
+      selectedState.shortcutRect.top + selectedState.shortcutRect.height / 2,
+    );
+    const openState = await page.evaluate(() => window.__webbrainSelectionShortcut.getState());
+    await page.mouse.click(
+      openState.questionRect.left + openState.questionRect.width / 2,
+      openState.questionRect.top + openState.questionRect.height / 2,
+    );
+
+    await page.keyboard.type('Xin chào');
+    await page.keyboard.press('Alt+Enter');
+    await page.keyboard.type('bạn');
+    await page.keyboard.press('Shift+Enter');
+    let state = await page.evaluate(() => ({
+      surface: window.__webbrainSelectionShortcut.getState(),
+      messages: window.__selectionMessages.length,
+    }));
+    if (state.surface.questionValue !== 'Xin chào\nbạn\n' || state.messages !== 0) {
+      throw new Error(`Alt+Enter and Shift+Enter should insert newlines without sending: ${JSON.stringify(state)}`);
+    }
+
+    // A trusted Enter carrying the IME keyCode only confirms composition
+    // (Vietnamese Telex, CJK); it must never send the draft.
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229, nativeVirtualKeyCode: 229,
+    });
+    await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter' });
+    // A synthetic page-dispatched Enter is untrusted and must not send either.
+    await page.evaluate(() => {
+      document.getElementById('webbrain-selection-shortcut-host').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }),
+      );
+    });
+    state = await page.evaluate(() => ({
+      surface: window.__webbrainSelectionShortcut.getState(),
+      messages: window.__selectionMessages.length,
+    }));
+    if (state.messages !== 0 || !state.surface.popupVisible) {
+      throw new Error(`IME and synthetic Enter must not submit the question: ${JSON.stringify(state)}`);
+    }
+
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__selectionMessages.length === 1);
+    const submitted = await page.evaluate(() => ({
+      message: window.__selectionMessages[0],
+      surface: window.__webbrainSelectionShortcut.getState(),
+    }));
+    if (submitted.message.action !== 'custom' || submitted.message.question !== 'Xin chào\nbạn') {
+      throw new Error(`Enter should send the multiline question: ${JSON.stringify(submitted.message)}`);
+    }
+    if (submitted.surface.popupVisible || submitted.surface.shortcutVisible) {
+      throw new Error(`Enter submission should dismiss the surface: ${JSON.stringify(submitted.surface)}`);
+    }
+
+    await page.waitForFunction(() => !window.__webbrainSelectionShortcut.getState().submitting);
+    const nextSelection = await selectFixtureText(page);
+    await page.mouse.click(
+      nextSelection.shortcutRect.left + nextSelection.shortcutRect.width / 2,
+      nextSelection.shortcutRect.top + nextSelection.shortcutRect.height / 2,
+    );
+    const reopened = await page.evaluate(() => window.__webbrainSelectionShortcut.getState());
+    await page.mouse.click(
+      reopened.questionRect.left + reopened.questionRect.width / 2,
+      reopened.questionRect.top + reopened.questionRect.height / 2,
+    );
+    await page.keyboard.press('Enter');
+    state = await page.evaluate(() => ({
+      surface: window.__webbrainSelectionShortcut.getState(),
+      messages: window.__selectionMessages.length,
+    }));
+    if (state.messages !== 1 || !state.surface.popupVisible || state.surface.questionValue !== '') {
+      throw new Error(`Enter on an empty question must neither send nor add a newline: ${JSON.stringify(state)}`);
+    }
+  });
+
   test(`${label}: selection highlight stays bounded for long documents`, async (page) => {
     await setupSelectionShortcut(page, sourcePath, { requiresManualOpen: manualOpen });
     const rawRectCount = await page.evaluate(() => {

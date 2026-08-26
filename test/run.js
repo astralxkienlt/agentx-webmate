@@ -33422,6 +33422,9 @@ test('selection shortcut is shipped, enabled by default, and keeps browser-speci
     assert.match(content, /rects: \(highlightRects\.length \? highlightRects : \[rect\]\)\.map\(serializeRect\)/, `${label}: selection snapshots should use the bounded highlight rectangles`);
     assert.match(content, /function showSelectionHighlight\(\)[\s\S]*?highlightLayer\.appendChild\(highlight\);/, `${label}: opening the dialog should render a sticky selection highlight`);
     assert.match(content, /function containSurfaceKeyboardEvent\(event\)[\s\S]*?event\.stopImmediatePropagation\(\);/, `${label}: selection dialog keyboard events should stop page capture listeners`);
+    assert.match(content, /if \(!event\.isTrusted \|\| event\.isComposing \|\| event\.keyCode === 229 \|\| event\.shiftKey\) return;/, `${label}: Enter handling must ignore IME composition, Shift newlines, and untrusted synthetic keys`);
+    assert.match(content, /event\.preventDefault\(\);\s*if \(event\.altKey\) insertQuestionNewline\(\);\s*else submitSelection\('custom', question\.value\);/, `${label}: Enter should send the question while Alt\+Enter inserts a newline`);
+    assert.match(content, /function insertQuestionNewline\(\)\s*\{\s*question\.setRangeText\('\\n', question\.selectionStart, question\.selectionEnd, 'end'\);[\s\S]*?question\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\);/, `${label}: the manual newline must go through setRangeText and refresh the send state`);
     assert.match(content, /window\.addEventListener\('keydown', containSurfaceKeyboardEvent, true\);\s*window\.addEventListener\('keypress', containSurfaceKeyboardEvent, true\);\s*window\.addEventListener\('keyup', containSurfaceKeyboardEvent, true\);/, `${label}: keyboard containment should run during window capture`);
     assert.match(content, /function dismissSurface\(\) \{\s*clearSelectionHighlight\(\);/, `${label}: dismissing the selection surface should clear the sticky highlight`);
     assert.match(content, /message\?\.type === 'WB_HIDE_FOR_TOOL_USE'[\s\S]*?suppressed = true;[\s\S]*?message\?\.type === 'WB_SHOW_AFTER_TOOL_USE'[\s\S]*?suppressed = false;/, `${label}: screenshot capture should suppress and restore future shortcut detection`);
@@ -33461,6 +33464,10 @@ test('selection shortcut is shipped, enabled by default, and keeps browser-speci
     assert.match(agentSource, /const action = normalizeSelectionAction\(entry\.selectionGroundingScope\.action\);[\s\S]*?action,[\s\S]*?normalizeSelectionScopeSourceGrounding\([\s\S]*?entry\.selectionGroundingScope\.sourceGrounding,[\s\S]*?action,/, `${label}: a restarted worker should restore the action and fail closed on contradictory broader grounding`);
     assert.match(agentSource, /selectionAction: normalizeSelectionAction\(scope\?\.action\),/, `${label}: follow-up turns should read the action off the scope, not a resent field`);
   }
+
+  const chromeShortcut = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/selection-shortcut.js'), 'utf8');
+  const firefoxShortcut = fs.readFileSync(path.join(ROOT, 'src/firefox/src/content/selection-shortcut.js'), 'utf8');
+  assert.equal(chromeShortcut, firefoxShortcut, 'selection shortcut content script must remain byte-identical across browsers');
 
   const chromeBg = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
   const chromeStart = chromeBg.indexOf("if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;");

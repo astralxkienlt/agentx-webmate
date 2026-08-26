@@ -1,0 +1,58 @@
+--- a/src/content/selection-shortcut.js
++++ b/src/content/selection-shortcut.js
+@@ -200,10 +200,7 @@ host.lang = localization.locale;
+           cursor:pointer; pointer-events:auto; transition:transform 130ms ease,box-shadow 130ms ease;
+         }
+         .shortcut:hover { transform:translateY(-1px) scale(1.03); box-shadow:0 13px 30px rgba(35,30,95,.27),0 3px 8px rgba(35,30,95,.14); }
+-        .shortcut-icon {
+-          display:block; font:700 25px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+-          transform:translateY(-1px);
+-        }
++        .shortcut-icon { display:block; width:26px; height:26px; }
+         .popup {
+           position:fixed; width:min(${POPUP_WIDTH}px,calc(100vw - 16px));
+           max-height:calc(100vh - 16px); overflow-y:auto; overscroll-behavior:contain;
+@@ -212,6 +209,9 @@ host.lang = localization.locale;
+           color:var(--text); box-shadow:var(--shadow); pointer-events:auto;
+           font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         }
++        .brand-row { display:flex; align-items:center; gap:7px; margin:1px 2px 9px; }
++        .brand-mark { width:18px; height:18px; flex:0 0 18px; }
++        .brand-name { color:var(--muted); font-size:12.5px; font-weight:650; letter-spacing:.2px; }
+         .actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2px; }
+         .action,.hide {
+           border:0; border-radius:10px; background:transparent;
+@@ -276,10 +276,32 @@ host.lang = localization.locale;
+       </style>
+       <div class="selection-highlights" aria-hidden="true"></div>
+       <button class="shortcut" type="button" aria-label="Ask WebBrain about selected text" title="Ask WebBrain" hidden>
+-        <span class="shortcut-icon" aria-hidden="true">?</span>
++        <svg class="shortcut-icon" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
++          <defs>
++            <linearGradient id="nmb-l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d02026"/><stop offset="1" stop-color="#ef3b3c"/></linearGradient>
++            <linearGradient id="nmb-r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef3c3d"/><stop offset="1" stop-color="#d02026"/></linearGradient>
++            <linearGradient id="nmb-w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cc2028"/><stop offset="1" stop-color="#a81b20"/></linearGradient>
++          </defs>
++          <path fill="url(#nmb-r)" d="M117 9 L100 118 L76 118 L88 36 Q92 12 117 9 Z"/>
++          <path fill="url(#nmb-w)" d="M46 12 L57 12 C68 40 84 67 100 94 C90 102 81 108 77 116 L50 64 C47 52 46 30 46 12 Z"/>
++          <path fill="url(#nmb-l)" d="M27 9 L56 9 L39 88 C36 103 30 112 20 116 C15 119 9.5 117 9 111 Z"/>
++        </svg>
+       </button>
+       <div class="popup" role="dialog" aria-label="Ask WebBrain about selected text" hidden>
+         <div class="main-view">
++          <div class="brand-row" aria-hidden="true">
++            <svg class="brand-mark" viewBox="0 0 128 128" focusable="false">
++              <defs>
++                <linearGradient id="nmp-l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d02026"/><stop offset="1" stop-color="#ef3b3c"/></linearGradient>
++                <linearGradient id="nmp-r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef3c3d"/><stop offset="1" stop-color="#d02026"/></linearGradient>
++                <linearGradient id="nmp-w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cc2028"/><stop offset="1" stop-color="#a81b20"/></linearGradient>
++              </defs>
++              <path fill="url(#nmp-r)" d="M117 9 L100 118 L76 118 L88 36 Q92 12 117 9 Z"/>
++              <path fill="url(#nmp-w)" d="M46 12 L57 12 C68 40 84 67 100 94 C90 102 81 108 77 116 L50 64 C47 52 46 30 46 12 Z"/>
++              <path fill="url(#nmp-l)" d="M27 9 L56 9 L39 88 C36 103 30 112 20 116 C15 119 9.5 117 9 111 Z"/>
++            </svg>
++            <span class="brand-name">netMind</span>
++          </div>
+           <div class="actions">
+             <button class="action" type="button" data-action="summarize">
+               <svg class="action-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">

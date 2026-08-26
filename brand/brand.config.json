@@ -140,6 +140,85 @@
       "only": ["src/content/teacher-capture.js"]
     },
     {
+      "_why": "The selected-text ask bubble is the third indigo content script, again with every colour written literally inside its closed shadow DOM. Rules, not a patch, for the same reason as the visual indicator: colour swaps survive upstream rearranging the stylesheet and catch any accent they add later. Patch 090 carries only the structural netMind delta (the N-mark logo and popup brand row). This rule is the light accent.",
+      "from": "#6c63ff",
+      "to": "#f1143c",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the pressed/hover accent, mapped to the brand accent-hover.",
+      "from": "#554cf2",
+      "to": "#d41034",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the accent as an rgb() triple (this file writes rgba() without spaces): the selection highlight wash, the button border, and the focus rings.",
+      "from": "108,99,255",
+      "to": "241,20,60",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the accent-strong triple: the highlight's inset hairline.",
+      "from": "85,76,242",
+      "to": "212,16,52",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the lavender row-hover wash. Brand blush, as on the indicator's stop button.",
+      "from": "#f4f3ff",
+      "to": "#fce0e4",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, light-theme navy ink and violet-grey neutrals, mapped to the raspberry paper palette: text to brand ink, muted to text-secondary, border to ink at 12% over white.",
+      "from": "#171722",
+      "to": "#2c2020",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "from": "#666679",
+      "to": "#786c70",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "from": "#dedee9",
+      "to": "#e6e4e4",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the two navy shadow triples behind the button and the popup. Brand ink keeps them warm.",
+      "from": "24,20,70",
+      "to": "44,32,32",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "from": "35,30,95",
+      "to": "44,32,32",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, dark theme. Upstream's dark block only re-tints neutrals and keeps one indigo accent for both themes; netMind's dark accent is the lightened raspberry, so the swap that moves the surface onto the dark palette also introduces the two accent overrides upstream never declares.",
+      "from": "--bg:#20202a; --hover:#2d2c42;",
+      "to": "--accent:#ff4d6d; --accent-strong:#ff6a84; --bg:#251c1e; --hover:#34282b;",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "_why": "Same bubble, the remaining dark-theme neutrals: text, muted, border.",
+      "from": "#f5f4ff",
+      "to": "#f7f3f4",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "from": "#b5b3c7",
+      "to": "#c4b6b9",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
+      "from": "#444355",
+      "to": "#4a3d40",
+      "only": ["src/content/selection-shortcut.js"]
+    },
+    {
       "_why": "Fallback prefix for downloaded screenshot filenames.",
       "from": "|| 'webbrain'",
       "to": "|| 'netmind-extension'",

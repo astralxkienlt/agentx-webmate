@@ -1628,6 +1628,37 @@ test('both branded targets gate the side panel and keep Cloud management in sett
   assert.match(recorderHost, /allowedModels: cloudTranscription\?\.models/);
 });
 
+test('both branded targets ship the raspberry selection bubble with the N-mark logo', async () => {
+  const shortcuts = await Promise.all(['chrome', 'firefox'].map((target) =>
+    fs.readFile(path.join(ROOT, 'brand-dist', target, 'src/content/selection-shortcut.js'), 'utf8'),
+  ));
+  assert.equal(shortcuts[0], shortcuts[1], 'branded selection shortcut must stay byte-identical across targets');
+  const content = shortcuts[0];
+
+  // Patch 090: the question-mark glyph gives way to the netMind N-mark, and
+  // the popup opens with a small logo + wordmark row.
+  assert.doesNotMatch(content, /class="shortcut-icon" aria-hidden="true">\?</, 'the upstream question-mark glyph must not survive branding');
+  assert.match(content, /<svg class="shortcut-icon" viewBox="0 0 128 128" aria-hidden="true" focusable="false">/);
+  assert.match(content, /<div class="brand-row" aria-hidden="true">[\s\S]*?<svg class="brand-mark" viewBox="0 0 128 128"[\s\S]*?<span class="brand-name">netMind<\/span>/);
+  const markPaths = content.match(/M117 9 L100 118 L76 118 L88 36 Q92 12 117 9 Z/g) || [];
+  assert.equal(markPaths.length, 2, 'button and popup must both carry the same N-mark geometry');
+
+  // Colour rules: raspberry accents in, upstream indigo out, in both themes.
+  assert.match(content, /--accent:#f1143c; --accent-strong:#d41034;/);
+  assert.match(content, /--accent:#ff4d6d; --accent-strong:#ff6a84; --bg:#251c1e;/);
+  for (const leftover of ['#6c63ff', '#554cf2', '108,99,255', '85,76,242', '#f4f3ff', '#20202a', '#f5f4ff']) {
+    assert.ok(!content.includes(leftover), `upstream indigo leftover ${leftover} survived branding`);
+  }
+
+  // The Enter-to-send contract must ride into the branded build unchanged.
+  assert.match(content, /if \(!event\.isTrusted \|\| event\.isComposing \|\| event\.keyCode === 229 \|\| event\.shiftKey\) return;/);
+  assert.match(content, /if \(event\.altKey\) insertQuestionNewline\(\);/);
+
+  // The bubble's own strings arrive from the background already rebranded.
+  const i18n = await fs.readFile(path.join(CHROME_ROOT, 'src/selection-shortcut-i18n.js'), 'utf8');
+  assert.match(i18n, /askQuestion: 'Hỏi netMind Extension',/);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

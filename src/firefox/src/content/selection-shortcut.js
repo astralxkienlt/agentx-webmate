@@ -417,6 +417,12 @@ host.lang = localization.locale;
     }
   }
 
+  function insertQuestionNewline() {
+    question.setRangeText('\n', question.selectionStart, question.selectionEnd, 'end');
+    if (question.selectionStart === question.value.length) question.scrollTop = question.scrollHeight;
+    question.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   function containSurfaceKeyboardEvent(event) {
     if (!host || !event.composedPath?.().includes(host)) return;
     event.stopImmediatePropagation();
@@ -425,10 +431,15 @@ host.lang = localization.locale;
       event.preventDefault();
       if (!popup.hidden) closePopup(true);
       else dismissSurface();
-    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && shadow?.activeElement === question) {
-      event.preventDefault();
-      submitSelection('custom', question.value);
+      return;
     }
+    if (event.key !== 'Enter' || shadow?.activeElement !== question) return;
+    // An Enter that confirms IME composition (Vietnamese, CJK) is not a send,
+    // and synthetic page-dispatched keys must never trigger one either.
+    if (!event.isTrusted || event.isComposing || event.keyCode === 229 || event.shiftKey) return;
+    event.preventDefault();
+    if (event.altKey) insertQuestionNewline();
+    else submitSelection('custom', question.value);
   }
 
   function showShortcut(nextSnapshot) {
