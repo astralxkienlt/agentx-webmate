@@ -62,8 +62,10 @@ export class LlamaCppProvider extends BaseLLMProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw new Error(`llama.cpp network error — could not reach ${url} (${e.message}). Is the server running?`);
     }
 
@@ -98,8 +100,10 @@ export class LlamaCppProvider extends BaseLLMProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw this._askStreamTransportError(
         `llama.cpp network error — could not reach ${streamUrl} (${e.message}). Is the server running?`,
       );
@@ -131,6 +135,7 @@ export class LlamaCppProvider extends BaseLLMProvider {
       try {
         chunk = await reader.read();
       } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         if (finalUsage) yield { type: 'usage', usage: finalUsage };
         throw this._askStreamTransportError(
           `llama.cpp stream transport error (${error?.message || 'read failed'}).`,

@@ -114,8 +114,9 @@ export class AzureOpenAIProvider extends BaseLLMProvider {
     const url = this._chatUrl();
     let res;
     try {
-      res = await fetchWithTimeout(url, { method: 'POST', headers: this._headers(), body: JSON.stringify(body) });
+      res = await fetchWithTimeout(url, { method: 'POST', headers: this._headers(), body: JSON.stringify(body), signal: options?.signal });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw new Error(`${this.name} network error — could not reach ${url} (${e.message}). Is the server running?`);
     }
     if (!res.ok) {
@@ -144,8 +145,9 @@ export class AzureOpenAIProvider extends BaseLLMProvider {
     const url = this._chatUrl();
     let res;
     try {
-      res = await fetchWithTimeout(url, { method: 'POST', headers: this._headers(), body: JSON.stringify(body) });
+      res = await fetchWithTimeout(url, { method: 'POST', headers: this._headers(), body: JSON.stringify(body), signal: options?.signal });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw this._askStreamTransportError(
         `${this.name} network error — could not reach ${url} (${e.message}). Is the server running?`,
       );
@@ -176,6 +178,7 @@ export class AzureOpenAIProvider extends BaseLLMProvider {
       try {
         chunk = await reader.read();
       } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         if (finalUsage) yield { type: 'usage', usage: finalUsage };
         throw this._askStreamTransportError(
           `${this.name} stream transport error (${error?.message || 'read failed'}).`,

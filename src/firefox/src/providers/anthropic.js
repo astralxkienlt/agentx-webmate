@@ -353,6 +353,7 @@ export class AnthropicProvider extends BaseLLMProvider {
       method: 'POST',
       headers: this._headers(),
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
 
     if (!res.ok) {
@@ -432,8 +433,10 @@ export class AnthropicProvider extends BaseLLMProvider {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (error) {
+      if (error?.name === 'AbortError') throw error;
       throw this._askStreamTransportError(
         `Anthropic network error — could not reach ${url} (${error?.message || 'request failed'}).`,
       );
@@ -499,6 +502,7 @@ export class AnthropicProvider extends BaseLLMProvider {
       try {
         chunk = await reader.read();
       } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         const usage = usageChunk();
         if (usage) yield { type: 'usage', usage };
         throw this._askStreamTransportError(
