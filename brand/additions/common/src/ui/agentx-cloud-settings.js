@@ -86,6 +86,34 @@ export function createAgentXCloudSettingsController({
     return status;
   }
 
+  // The composer model chip writes the same provider entry this card renders
+  // (update_provider with { model }), so a Settings page left open must follow
+  // storage instead of keeping the model that was current at initialize time.
+  // Managed catalog fields only — session state and credentials stay owned by
+  // the flows below, and a cleared entry (sign-out in flight) is ignored so
+  // the card never repaints half-removed values before the sign-out settles.
+  api?.storage?.onChanged?.addListener?.((changes, area) => {
+    if (area && area !== 'local') return;
+    const config = changes?.providers?.newValue?.[PROVIDER_ID];
+    if (!config || typeof config !== 'object') return;
+    if (config.agentxCloudManaged !== true || !String(config.apiKey || '').trim()) return;
+    if (!status.connected || !status.provider) return;
+    const list = (value, fallback) => (Array.isArray(value) && value.length
+      ? value.map(String)
+      : fallback);
+    const next = {
+      ...status.provider,
+      model: String(config.model || ''),
+      models: list(config.models, status.provider.models),
+      visionModel: String(config.agentxCloudVisionModel || ''),
+      visionModels: list(config.agentxCloudVisionModels, status.provider.visionModels),
+      transcriptionModel: String(config.agentxCloudTranscriptionModel || ''),
+      transcriptionModels: list(config.agentxCloudTranscriptionModels, status.provider.transcriptionModels),
+    };
+    if (JSON.stringify(next) === JSON.stringify(status.provider)) return;
+    paint({ provider: next });
+  });
+
   async function refreshProviders() {
     const refreshed = await sendToBackground('get_providers');
     onProvidersChanged?.(refreshed);

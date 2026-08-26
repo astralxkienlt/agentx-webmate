@@ -46,6 +46,7 @@ import { getSharedAttachmentStore, isAttachmentId, newAttachmentId } from '../me
 import { claimRunError } from './run-error-dedupe.js';
 import { RUN_CAPTURE_START_ERROR_PREFIX } from '../run-capture.js';
 import { runUiUnavailableBeforeSeq } from '../run-ui-journal.js';
+import { modelPickerState, modelShortName, modelVendorPrefix, modelVisionNote } from './model-picker.js';
 import { formatErrorMessage } from '../error-format.js';
 import { buildMessageInfoPills } from '../message-info.js';
 import { escapeHtml } from './utils.js';
@@ -467,6 +468,9 @@ const modeToggleEl = document.getElementById('mode-toggle');
 const permissionModeBtn = document.getElementById('btn-permission-mode');
 const permissionModeChipLabel = document.getElementById('permission-mode-chip-label');
 const permissionModeMenuEl = document.getElementById('permission-mode-menu');
+const modelPickerBtn = document.getElementById('btn-model-picker');
+const modelChipLabel = document.getElementById('model-chip-label');
+const modelPickerMenuEl = document.getElementById('model-picker-menu');
 const modeToggleHighlight = (() => {
   const el = document.createElement('div');
   el.className = 'mode-toggle-highlight instant';
@@ -1687,6 +1691,8 @@ function sizePermissionModeMenu() {
 
 function openPermissionModeMenu() {
   if (!permissionModeMenuEl || permissionModeMenuIsOpen()) return;
+  // The two composer menus share the footer; only one may stand open.
+  closeModelPickerMenu();
   renderPermissionModeMenu();
   permissionModeMenuEl.classList.remove('hidden');
   sizePermissionModeMenu();
@@ -1830,6 +1836,248 @@ permissionModeMenuEl?.addEventListener('keydown', (event) => {
 document.addEventListener('wb-locale-changed', () => {
   renderPermissionModeChip();
   if (permissionModeMenuIsOpen()) renderPermissionModeMenu();
+});
+
+// --- Composer model picker ------------------------------------------------
+// Which gateway model the conversation runs on. The chip sits in the composer
+// footer's right corner and surfaces only while the ACTIVE provider carries a
+// model catalog (config.models — the managed cloud gateway does). Switching
+// writes the provider's `model` through the same update_provider message the
+// Settings card uses, so the chip, Settings and the agent can never disagree.
+// With no dedicated vision model configured, that same selection also reads
+// images (the agent falls back to the active provider); the menu's footnote
+// spells out whichever route is standing.
+
+let composerModelState = null;
+let composerVisionStatus = null;
+let composerModelSelectionId = 0;
+let composerVisionStatusId = 0;
+
+function modelPickerMenuIsOpen() {
+  return !!modelPickerMenuEl && !modelPickerMenuEl.classList.contains('hidden');
+}
+
+function renderComposerModelChip() {
+  if (!modelPickerBtn || !modelChipLabel) return;
+  const state = composerModelState;
+  const visible = !!state?.visible;
+  modelPickerBtn.classList.toggle('hidden', !visible);
+  if (!visible) {
+    closeModelPickerMenu();
+    return;
+  }
+  modelChipLabel.textContent = modelShortName(state.model);
+  // Full id on hover. applyDOMTranslations restores the generic title on a
+  // locale pass; the wb-locale-changed re-render below puts the id back.
+  modelPickerBtn.title = state.model;
+}
+
+function renderModelPickerMenu() {
+  if (!modelPickerMenuEl) return;
+  modelPickerMenuEl.textContent = '';
+  const state = composerModelState;
+  if (!state?.visible) return;
+
+  const heading = document.createElement('div');
+  heading.className = 'model-picker-heading';
+  const headingLabel = document.createElement('span');
+  headingLabel.textContent = t('sp.model.heading');
+  heading.appendChild(headingLabel);
+  if (state.providerLabel) {
+    const headingProvider = document.createElement('span');
+    headingProvider.className = 'model-picker-heading-provider';
+    headingProvider.textContent = state.providerLabel;
+    headingProvider.title = state.providerLabel;
+    heading.appendChild(headingProvider);
+  }
+  modelPickerMenuEl.appendChild(heading);
+
+  for (const model of state.models) {
+    const active = model === state.model;
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'model-picker-item';
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(active));
+    item.dataset.model = model;
+    // Only the active row is tabbable; arrow keys move within the menu
+    // (WAI-ARIA menu pattern, same as the permission ladder).
+    item.tabIndex = active ? 0 : -1;
+    item.title = model;
+
+    const label = document.createElement('span');
+    label.className = 'model-picker-item-label';
+    const vendor = modelVendorPrefix(model);
+    if (vendor) {
+      const vendorEl = document.createElement('span');
+      vendorEl.className = 'model-picker-item-vendor';
+      vendorEl.textContent = vendor;
+      label.append(vendorEl, model.slice(vendor.length));
+    } else {
+      label.textContent = model;
+    }
+
+    const check = document.createElement('span');
+    check.className = 'model-picker-item-check';
+    check.textContent = '✓';
+    check.setAttribute('aria-hidden', 'true');
+
+    item.append(label, check);
+    item.addEventListener('click', () => { void selectComposerModel(model); });
+    modelPickerMenuEl.appendChild(item);
+  }
+
+  const note = modelVisionNote(state, composerVisionStatus);
+  if (note.kind !== 'none') {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'model-picker-note';
+    noteEl.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
+    const noteText = document.createElement('span');
+    noteText.textContent = note.kind === 'dedicated'
+      ? t('sp.model.vision_dedicated', { model: modelShortName(note.model) })
+      : t('sp.model.vision_inherit');
+    noteEl.appendChild(noteText);
+    modelPickerMenuEl.appendChild(noteEl);
+  }
+}
+
+function modelPickerMenuItems() {
+  return modelPickerMenuEl
+    ? [...modelPickerMenuEl.querySelectorAll('.model-picker-item')]
+    : [];
+}
+
+function focusModelPickerItem(index) {
+  const items = modelPickerMenuItems();
+  if (!items.length) return;
+  const target = items[(index + items.length) % items.length];
+  for (const item of items) item.tabIndex = item === target ? 0 : -1;
+  try { target.focus(); } catch { /* focus can fail on a detached node */ }
+}
+
+// Same measurement the permission menu does: the real ceiling is the room
+// between the chip and the top of the panel, so a long catalog scrolls
+// instead of clipping past the header.
+function sizeModelPickerMenu() {
+  if (!modelPickerMenuEl || !modelPickerBtn) return;
+  const chipTop = modelPickerBtn.getBoundingClientRect().top;
+  const room = Math.max(160, Math.round(chipTop - 16));
+  modelPickerMenuEl.style.setProperty('--model-menu-max', `${room}px`);
+}
+
+function openModelPickerMenu() {
+  if (!modelPickerMenuEl || modelPickerMenuIsOpen() || !composerModelState?.visible) return;
+  closePermissionModeMenu();
+  renderModelPickerMenu();
+  modelPickerMenuEl.classList.remove('hidden');
+  sizeModelPickerMenu();
+  modelPickerBtn?.setAttribute('aria-expanded', 'true');
+  document.addEventListener('pointerdown', handleModelPickerOutsidePointer, true);
+  window.addEventListener('resize', sizeModelPickerMenu);
+  focusModelPickerItem(Math.max(0, composerModelState.models.indexOf(composerModelState.model)));
+  // The footnote reflects the background's standing vision route; re-check on
+  // open so a change made in Settings elsewhere corrects a stale answer.
+  void refreshComposerVisionStatus();
+}
+
+function closeModelPickerMenu({ focusChip = false } = {}) {
+  if (!modelPickerMenuEl) return;
+  modelPickerMenuEl.classList.add('hidden');
+  modelPickerBtn?.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('pointerdown', handleModelPickerOutsidePointer, true);
+  window.removeEventListener('resize', sizeModelPickerMenu);
+  if (focusChip) {
+    try { modelPickerBtn?.focus(); } catch { /* nothing to focus */ }
+  }
+}
+
+function handleModelPickerOutsidePointer(event) {
+  if (!modelPickerMenuIsOpen()) return;
+  if (modelPickerMenuEl?.contains(event.target)) return;
+  if (modelPickerBtn?.contains(event.target)) return;
+  closeModelPickerMenu();
+}
+
+async function selectComposerModel(model) {
+  const state = composerModelState;
+  closeModelPickerMenu({ focusChip: true });
+  if (!state?.visible || !state.models.includes(model) || model === state.model) return;
+  const requestId = ++composerModelSelectionId;
+  try {
+    // markConfigured:false — switching models is not (re)configuring the
+    // provider; mirrors the Settings card's select-model action.
+    await sendToBackground('update_provider', {
+      providerId: state.providerId,
+      markConfigured: false,
+      config: { model },
+    });
+  } catch (e) {
+    if (requestId === composerModelSelectionId) {
+      showComposerToast(t('sp.model.switch_failed', { error: e?.message || String(e || 'unknown error') }));
+    }
+    return;
+  }
+  if (requestId !== composerModelSelectionId) return;
+  // Optimistic paint; the providers storage change re-runs loadProviders and
+  // confirms the same answer from the background.
+  composerModelState = { ...state, model };
+  renderComposerModelChip();
+  showComposerToast(t('sp.model.changed', { model: modelShortName(model) }));
+}
+
+async function refreshComposerVisionStatus() {
+  const requestId = ++composerVisionStatusId;
+  let status = null;
+  try {
+    status = await sendToBackground('get_vision_provider_status');
+  } catch { /* leave the footnote off rather than guessing */ }
+  if (requestId !== composerVisionStatusId) return;
+  const previous = JSON.stringify(composerVisionStatus);
+  composerVisionStatus = status && status.ok === true
+    ? { ok: true, dedicated: status.dedicated === true, model: String(status.model || '') }
+    : null;
+  if (JSON.stringify(composerVisionStatus) !== previous && modelPickerMenuIsOpen()) {
+    renderModelPickerMenu();
+  }
+}
+
+function refreshComposerModelPicker(providersResponse) {
+  composerModelState = modelPickerState(providersResponse);
+  renderComposerModelChip();
+  if (modelPickerMenuIsOpen()) renderModelPickerMenu();
+  void refreshComposerVisionStatus();
+}
+
+modelPickerBtn?.addEventListener('click', () => {
+  if (modelPickerMenuIsOpen()) closeModelPickerMenu({ focusChip: true });
+  else openModelPickerMenu();
+});
+
+modelPickerBtn?.addEventListener('keydown', (event) => {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  if (!modelPickerMenuIsOpen()) openModelPickerMenu();
+});
+
+modelPickerMenuEl?.addEventListener('keydown', (event) => {
+  const items = modelPickerMenuItems();
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement);
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeModelPickerMenu({ focusChip: true });
+    return;
+  }
+  if (event.key === 'ArrowDown') { event.preventDefault(); focusModelPickerItem(current + 1); return; }
+  if (event.key === 'ArrowUp') { event.preventDefault(); focusModelPickerItem(current - 1); return; }
+  if (event.key === 'Home') { event.preventDefault(); focusModelPickerItem(0); return; }
+  if (event.key === 'End') { event.preventDefault(); focusModelPickerItem(items.length - 1); return; }
+  if (event.key === 'Tab') { closeModelPickerMenu(); }
+});
+
+document.addEventListener('wb-locale-changed', () => {
+  renderComposerModelChip();
+  if (modelPickerMenuIsOpen()) renderModelPickerMenu();
 });
 
 // Per-tab chat history (stores innerHTML of messages container).
@@ -4423,6 +4671,11 @@ async function init() {
     if (changes.providers || changes.activeProvider) {
       void loadProviders();
     }
+    if (changes.visionModel) {
+      // A dedicated vision endpoint changed in Settings; the model menu's
+      // image-route footnote must not keep the stale answer.
+      void refreshComposerVisionStatus();
+    }
   });
 }
 
@@ -6800,6 +7053,7 @@ async function loadProviders() {
     selectedProviderId = selectableProviderIds.has(res.active) ? res.active : 'webbrain_cloud';
     providerSelect.value = selectedProviderId;
     syncProviderPickerButton();
+    refreshComposerModelPicker(res);
   } catch (e) {
     console.error('Failed to load providers:', e);
   }
