@@ -923,12 +923,7 @@ const planReviewReady = loadPlanReviewSettings().catch((e) => {
 
 function showFirstInstallGuide(details) {
   if (details?.reason !== 'install') return;
-  browser.tabs.create({
-    url: browser.runtime.getURL('src/ui/install.html'),
-    active: true,
-  }).catch((error) => {
-    console.warn('[WebBrain] Could not open the first-install pinning guide:', error);
-  });
+  browser.storage.local.set({ onboardingComplete: true }).catch(() => {});
 }
 
 // Initialize on install
