@@ -9424,14 +9424,17 @@ test('nudge counter resets after a sustained healthy streak', () => {
   d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
   d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
   assert.equal(d._checkLoop(tab, 'click', { selector: '#a' }, { success: true }).kind, 'nudge');
-  // Four distinct healthy calls — resets nudge state (threshold is 2) AND
-  // pushes old #a entries out of the 6-element buffer window.
+  // Four distinct healthy calls — resets the nudge counter (threshold is 2).
   for (let i = 0; i < 4; i++) {
     d._checkLoop(tab, 'read_page', { i }, { ok: true });
   }
-  // Now nudges should be cleared and buffer doesn't have 3× #a.
+  assert.equal(d.loopNudges.has(tab), false, 'sustained healthy streak must clear the nudge counter');
+  // The 12-entry window still remembers the three #a clicks, so a fourth is
+  // re-detected — but as a FRESH nudge #1, not a continuation of the old
+  // streak that was two detections from a hard stop.
   const result = d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
-  assert.equal(result.kind, 'none');
+  assert.equal(result.kind, 'nudge');
+  assert.equal(d.loopNudges.get(tab), 1, 'post-streak detection must restart the nudge count at 1');
 });
 
 test('tabs are isolated from each other', () => {
@@ -10226,19 +10229,131 @@ test('coord click: window of 12 — old entries roll out', () => {
   assert.equal(d._checkCoordClickLoop(1, 100, 200).kind, 'none');
 });
 
-test('window of 6 means a loop can fall out of the window', () => {
+test('window of 12 means a loop can fall out of the window', () => {
   const d = new ConfiguredLoopDetector();
   const tab = 11;
-  // Two #a, then 5 distinct calls — by then the buffer has rolled past #a.
+  // Two #a, then 11 distinct calls — by then the buffer has rolled past one #a.
   d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
   d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 11; i++) {
     d._checkLoop(tab, 'read_page', { i }, { ok: true });
   }
-  // The buffer is now: [a, read_page×5] — only one #a remains. Another #a
+  // The buffer is now: [a, read_page×11] — only one #a remains. Another #a
   // makes it 2× — still under the 3× threshold.
   const result = d._checkLoop(tab, 'click', { selector: '#a' }, { success: true });
   assert.equal(result.kind, 'none');
+});
+
+test('act-then-verify with distinct successful actions never accumulates loop evidence', () => {
+  // The false positive that hard-stopped legitimate same-page form fills
+  // around step 20: fill a field → re-read the page with identical args →
+  // fill the NEXT field → re-read … Every successful mutation advances the
+  // progress epoch, so the identical verify reads are progress, not a loop.
+  const d = new ConfiguredLoopDetector();
+  const tab = 12;
+  for (let i = 0; i < 12; i++) {
+    assert.equal(
+      d._checkLoop(tab, 'set_field', { ref_id: `ref_${i}`, text: `value ${i}` }, { success: true, verified: true }).kind,
+      'none',
+      `field ${i}: distinct successful action flagged as a loop`,
+    );
+    assert.equal(
+      d._checkLoop(tab, 'read_page', {}, { ok: true }).kind,
+      'none',
+      `verify read ${i}: act-then-verify observation flagged as a loop`,
+    );
+  }
+  assert.equal(d.loopNudges.has(tab), false, 'a clean 12-field fill must not accumulate nudges');
+
+  // Same rhythm with screenshot verification (the common weak-model pattern).
+  const shotTab = 13;
+  for (let i = 0; i < 6; i++) {
+    assert.equal(d._checkLoop(shotTab, 'click', { selector: `#item-${i}` }, { success: true }).kind, 'none');
+    assert.equal(
+      d._checkLoop(shotTab, 'screenshot', {}, { success: true }).kind,
+      'none',
+      `screenshot ${i}: screenshot-after-action verification flagged as a loop`,
+    );
+  }
+});
+
+test('identical reads with no successful action in between remain loop-detectable', () => {
+  const d = new ConfiguredLoopDetector();
+  const tab = 14;
+  assert.equal(d._checkLoop(tab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(d._checkLoop(tab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(
+    d._checkLoop(tab, 'read_page', {}, { ok: true }).kind,
+    'nudge',
+    'a third identical re-read of an unchanged page must still be flagged',
+  );
+});
+
+test('failed or unverified mutations do not launder identical verify reads', () => {
+  // Failed actions are not page progress: the reads around them stay in one
+  // epoch and the third identical read is still loop evidence.
+  const failed = new ConfiguredLoopDetector();
+  const failedTab = 15;
+  assert.equal(failed._checkLoop(failedTab, 'set_field', { ref_id: 'ref_1', text: 'x' }, { success: false, error: 'detached' }).kind, 'none');
+  assert.equal(failed._checkLoop(failedTab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(failed._checkLoop(failedTab, 'set_field', { ref_id: 'ref_2', text: 'y' }, { success: false, error: 'detached' }).kind, 'none');
+  assert.equal(failed._checkLoop(failedTab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(failed._checkLoop(failedTab, 'set_field', { ref_id: 'ref_3', text: 'z' }, { success: false, error: 'detached' }).kind, 'none');
+  assert.equal(
+    failed._checkLoop(failedTab, 'read_page', {}, { ok: true }).kind,
+    'nudge',
+    'failed actions must not advance the progress epoch',
+  );
+
+  const unverified = new ConfiguredLoopDetector();
+  const unverifiedTab = 16;
+  assert.equal(unverified._checkLoop(unverifiedTab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(unverified._checkLoop(unverifiedTab, 'type_ax', { ref_id: 'ref_1', text: 'a' }, { success: true, verified: false }).kind, 'none');
+  assert.equal(unverified._checkLoop(unverifiedTab, 'read_page', {}, { ok: true }).kind, 'none');
+  assert.equal(unverified._checkLoop(unverifiedTab, 'type_ax', { ref_id: 'ref_2', text: 'b' }, { success: true, verified: false }).kind, 'none');
+  assert.equal(
+    unverified._checkLoop(unverifiedTab, 'read_page', {}, { ok: true }).kind,
+    'nudge',
+    'unverified actions must not advance the progress epoch',
+  );
+});
+
+test('period-3 cycles are detected and eventually stop', () => {
+  // A→B→C→A→B→C… was invisible to the old 6-entry repeat/ABAB rules: the
+  // simulated cycle produced zero detections and burned the full step budget.
+  const d = new ConfiguredLoopDetector();
+  const tab = 17;
+  const readCycle = step => d._checkLoop(
+    tab,
+    'get_page_text',
+    { section: ['a', 'b', 'c'][step % 3] },
+    { ok: true },
+  );
+  for (let step = 0; step < 5; step++) {
+    assert.equal(readCycle(step).kind, 'none', `cycle warm-up step ${step + 1} fired too early`);
+  }
+  const first = readCycle(5);
+  assert.equal(first.kind, 'nudge', 'two full periods must trigger the first cycle nudge');
+  assert.match(first.warning, /cycle/i, 'cycle nudge must name the repeating cycle');
+
+  let stopped = null;
+  let step = 6;
+  for (; step < 20; step++) {
+    const result = readCycle(step);
+    if (result.kind === 'stop') { stopped = result; break; }
+  }
+  assert.ok(stopped, 'a sustained period-3 cycle must hard-stop');
+  assert.ok(step < 14, `cycle should stop within ~14 steps, took ${step + 1}`);
+});
+
+test('progress epochs are tab-isolated and clear at the run boundary', () => {
+  const d = new ConfiguredLoopDetector();
+  const tab = 18;
+  d._checkLoop(tab, 'click', { selector: '#go' }, { success: true });
+  assert.equal(d.progressEpochs.get(tab), 1, 'successful mutation must advance the tab epoch');
+  assert.equal(d.progressEpochs.has(19), false, 'epochs must be tab-isolated');
+  d._clearRunLoopState(tab);
+  assert.equal(d.progressEpochs.has(tab), false, 'run cleanup must clear the progress epoch');
 });
 
 // ────────────────────────────────────────────────────────────────────────

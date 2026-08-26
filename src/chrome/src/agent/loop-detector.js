@@ -3,11 +3,15 @@ import { URL_FAMILY_TOOLS, bucketArgsKey } from './loop-bucket.js';
 /**
  * Browser-free loop detection used by Agent and the unit tests.
  *
- * Catches the agent stuck repeating an ineffective action or oscillating
- * between two calls. Cheap, runs after every tool execution. On first
- * detection we soft-nudge by injecting a [LOOP DETECTED] note into the
- * tool result the model sees. On second detection within the same loop,
- * we hard-stop the run with a clear final message.
+ * Catches the agent stuck repeating an ineffective action, oscillating
+ * between two calls, or walking a short A→B→C cycle. Cheap, runs after
+ * every tool execution. On first detection we soft-nudge by injecting a
+ * [LOOP DETECTED] note into the tool result the model sees. Repeated
+ * detections without a healthy streak hard-stop the run with a clear
+ * final message. Successful read-only observations are partitioned by a
+ * progress epoch that advances on each successful page mutation, so an
+ * act-then-verify rhythm (set field → read page → set next field → read
+ * page …) is real progress, not loop evidence.
  *
  * This module is deliberately browser-free so both extension builds and the
  * unit suite exercise the same production class. Subclasses supply the
@@ -46,6 +50,13 @@ export class LoopDetector {
     // separately so ref churn and interleaved close/Continue calls cannot
     // disguise the same challenge loop.
     this.verificationChallengeStates = new Map(); // tabId -> { key, active, reopenCount }
+    // Act-then-verify runs (set field → read page → set next field → read
+    // page …) repeat the same successful observation forever while making
+    // real progress. Partition successful read-only calls by a progress
+    // epoch that advances on every successful page mutation, so only
+    // re-reads with NO intervening successful action count as loop
+    // evidence. Mutations and errored calls keep window-wide identity.
+    this.progressEpochs = new Map(); // tabId -> successful-mutation counter
   }
 
   /**
@@ -153,10 +164,27 @@ export class LoopDetector {
   }
 
   _recordCall(tabId, name, args, result) {
-    const key = this._loopCallKey(name, args, result);
+    const baseKey = this._loopCallKey(name, args, result);
+    const errored = this._isToolResultErroredForLoop(name, args, result);
+    const mutation = this._isBrowserMutationTool(name);
+    let epoch = this.progressEpochs.get(tabId) || 0;
+    if (mutation && !errored && result?.verified !== false) {
+      // Page state credibly changed: later observations describe a new page,
+      // not a re-read of the old one. Unverified or failed mutations do NOT
+      // advance the epoch — they are not progress evidence.
+      epoch += 1;
+      this.progressEpochs.set(tabId, epoch);
+    }
+    // Epoch-partition ONLY successful read-only calls. Errored calls (and the
+    // nonretryable/checkbox semantic keys, which only arise from them) must
+    // keep one window-wide identity so repeat failures cannot be laundered by
+    // an unrelated successful action in between.
+    const key = !mutation && !errored && !baseKey.startsWith('nonretryable|') && !baseKey.startsWith('checkbox|')
+      ? `${baseKey}|e${epoch}`
+      : baseKey;
     const buf = this.recentCalls.get(tabId) || [];
     buf.push({ key, name, ts: Date.now() });
-    if (buf.length > 6) buf.shift();
+    if (buf.length > 12) buf.shift();
     this.recentCalls.set(tabId, buf);
     return { buf, key };
   }
@@ -181,6 +209,26 @@ export class LoopDetector {
       ) {
         return { type: 'oscillation', a: last4[0].name, b: last4[1].name };
       }
+    }
+    // 3. Period-3/4 cycles (A→B→C→A→B→C…) ending at the current call. Exact
+    // key equality across two full periods; all-identical tails are rule 1's
+    // job and pure ABAB never reaches here because rule 2 returns first, so
+    // the find_text wrap exemption on oscillations is preserved.
+    for (const period of [3, 4]) {
+      if (buf.length < period * 2) continue;
+      const tail = buf.slice(-period * 2);
+      let repeats = true;
+      for (let i = 0; i < period; i++) {
+        if (tail[i].key !== tail[i + period].key) { repeats = false; break; }
+      }
+      if (!repeats) continue;
+      const cycleKeys = new Set(tail.slice(0, period).map(e => e.key));
+      if (cycleKeys.size < 2) continue;
+      return {
+        type: 'cycle',
+        period,
+        names: [...new Set(tail.slice(0, period).map(e => e.name))],
+      };
     }
     return null;
   }
@@ -255,6 +303,7 @@ export class LoopDetector {
     this.recentNavUrls.delete(tabId);
     this._clearLoopState(tabId);
     this.verificationChallengeStates.delete(tabId);
+    this.progressEpochs.delete(tabId);
   }
 
   /**
@@ -624,7 +673,9 @@ export class LoopDetector {
       this._clearLoopState(tabId);
       const desc = loop.type === 'repeat'
         ? `the same call to ${loop.name}`
-        : `between ${loop.a} and ${loop.b}`;
+        : loop.type === 'cycle'
+          ? `a repeating ${loop.period}-step cycle (${loop.names.join(' → ')})`
+          : `between ${loop.a} and ${loop.b}`;
       return {
         kind: 'stop',
         message: `Stopped: I detected I was looping on ${desc} without making progress after multiple warnings. Please tell me what's blocking, give me a different instruction, or take a look at the page yourself.`,
@@ -642,6 +693,8 @@ export class LoopDetector {
         : shortcut
         ? `[LOOP DETECTED + API SHORTCUT FOUND: You've called ${loop.name} ${loop.count} times. Each click triggered the same background request pattern: ${shortcut.method} ${shortcut.url}. Instead of clicking again, consider fetch_url({url: "${shortcut.url}", method: "${shortcut.method}"${shortcut.replayRequestId ? `, replayRequestId: "${shortcut.replayRequestId}"` : ''}}) with the same method; follow the UI/API mutation policy for mutating methods.]`
         : `[LOOP DETECTED: You've just called ${loop.name} ${loop.count} times with the same arguments and the same outcome. The current approach is NOT working. Try something fundamentally different: a different selector, a different tool, scroll to find a different element, or re-read the page/tree to see what's actually on screen. DO NOT repeat this exact call again — try a creative alternative.]`;
+    } else if (loop.type === 'cycle') {
+      warning = `[LOOP DETECTED: You're repeating the same ${loop.period}-step cycle (${loop.names.join(' → ')}) with identical arguments and outcomes, so nothing is changing. Break the cycle now: act on an element already found, choose a genuinely different tool or target, or finish with the evidence you already have.]`;
     } else {
       warning = `[LOOP DETECTED: You're oscillating between ${loop.a} and ${loop.b} without making progress. Stop. Re-read the page/tree to see what's actually happening, then try a completely different approach.]`;
     }
