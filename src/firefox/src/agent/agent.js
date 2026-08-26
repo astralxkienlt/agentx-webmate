@@ -8940,7 +8940,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           { tabId, generationName: 'read_scope' },
         );
       } catch (firstError) {
-        if (this._checkAbort(tabId)) {
+        if (this._isAbortError(firstError) || this._checkAbort(tabId)) {
+          this.abortFlags.delete(tabId);
           return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
         }
         if (this._isUsageLimitError(firstError)) throw firstError;
@@ -9043,7 +9044,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this._armReadCompletenessFromPlan(tabId, { request_kind: 'execute', read_scope: readScope });
       return { proceed: true, readScope };
     } catch (error) {
-      if (this._checkAbort(tabId)) {
+      if (this._isAbortError(error) || this._checkAbort(tabId)) {
+        this.abortFlags.delete(tabId);
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
       if (this._isUsageLimitError(error)) {
@@ -9117,7 +9119,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           runId, plannerStep, provider, result, 'intent', 1, startedAt,
         );
       } catch (firstError) {
-        if (this._checkAbort(tabId) || this._isUsageLimitError(firstError)) throw firstError;
+        // PEEK the Stop flag here instead of consuming it: this rethrow lands
+        // in the phase's outer catch, which is the single decision point that
+        // consumes the flag. Consuming it early made an aborted planner call
+        // read as a plain request error there, so one Stop press fell through
+        // to "Planning failed … continuing in Act mode" and the run went on.
+        if (
+          this._isAbortError(firstError)
+          || this.abortFlags.get(tabId) === true
+          || this._isUsageLimitError(firstError)
+        ) throw firstError;
         plannerRepairUsed = true;
         await this._tracePlannerAttemptFailure(runId, 'intent', 1, firstError);
         onUpdate('thinking', { step: plannerStep, note: 'Understanding request… retrying with portable JSON options' });
@@ -9243,7 +9254,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ...this._plannerProgressLedgerGateFields(plan),
       };
     } catch (e) {
-      if (this._checkAbort(tabId)) {
+      // Identity first: the inner attempt catches rethrow an aborted call
+      // without consuming the Stop flag, but even a stray consumed flag must
+      // not let a user Stop degrade into the "Planning failed … continuing in
+      // Act mode" fallback below.
+      if (this._isAbortError(e) || this._checkAbort(tabId)) {
+        this.abortFlags.delete(tabId);
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
       if (this._isUsageLimitError(e)) {
@@ -9316,7 +9332,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
       } catch (firstError) {
         plannerRequestInFlight = false;
-        if (this._checkAbort(tabId) || this._isUsageLimitError(firstError)) throw firstError;
+        // PEEK the Stop flag here instead of consuming it: this rethrow lands
+        // in the phase's outer catch, which is the single decision point that
+        // consumes the flag. Consuming it early made an aborted planner call
+        // read as a plain request error there, so one Stop press fell through
+        // to "Planning failed … continuing in Act mode" and the run went on.
+        if (
+          this._isAbortError(firstError)
+          || this.abortFlags.get(tabId) === true
+          || this._isUsageLimitError(firstError)
+        ) throw firstError;
         plannerRepairUsed = true;
         await this._tracePlannerAttemptFailure(runId, 'planner', 1, firstError);
         onUpdate('thinking', { step: plannerStep, note: 'Planning… retrying with portable JSON options' });
@@ -9593,7 +9618,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ...approvedProgressLedger,
       };
     } catch (e) {
-      if (this._checkAbort(tabId)) {
+      // Identity first — see the intent-phase catch above: a Stop must never
+      // fall through to the planner-failure Act continuation.
+      if (this._isAbortError(e) || this._checkAbort(tabId)) {
+        this.abortFlags.delete(tabId);
         return { proceed: false, message: '[Stopped by user]', reason: 'cancelled' };
       }
       if (this._isUsageLimitError(e)) {

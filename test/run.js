@@ -10089,6 +10089,48 @@ test('Stop kills an in-flight model call instantly and ends the run as a clean c
   }
 });
 
+test('Stop during the planner cancels the run instead of degrading to the Act-continuation fallback', async () => {
+  for (const [index, [label, AgentClass]] of [['chrome', AgentCh], ['firefox', AgentFx]].entries()) {
+    for (const phase of ['intent', 'planner']) {
+      const tabId = 9320 + (index * 10) + (phase === 'planner' ? 1 : 0);
+      const provider = {
+        supportsTools: true,
+        supportsVision: false,
+        promptTier: 'full',
+        contextWindow: 128000,
+        model: 'test-model',
+        name: 'test-provider',
+      };
+      const agent = new AgentClass({ getActive: () => provider });
+      const updates = [];
+      agent._persist = () => {};
+      agent._chat = async () => {
+        // Simulate Stop landing while the planner request is in flight: the
+        // per-tab controller kills the fetch, and the Stop flag is still set
+        // when the AbortError surfaces.
+        agent.abort(tabId);
+        throw new DOMException('Stopped by user', 'AbortError');
+      };
+      const onUpdate = (type, data) => updates.push({ type, data });
+      const tabInfo = { tabUrl: 'https://example.com', tabTitle: 'Example' };
+
+      const gate = phase === 'intent'
+        ? await agent._runPlannerIntentGate(tabId, { role: 'user', content: 'Fill the form.' }, onUpdate, null, '', tabInfo, 'act', {})
+        : await agent._runPlannerGate(tabId, { role: 'user', content: 'Fill the form.' }, onUpdate, null, '', tabInfo);
+
+      const path = `${label} ${phase}`;
+      assert.equal(gate?.proceed, false, `${path}: aborted planner call still let the run proceed`);
+      assert.equal(gate?.message, '[Stopped by user]', `${path}: cancellation message mismatch`);
+      assert.equal(
+        updates.some(update => update.data?.code === 'planner_failed_continue_act'),
+        false,
+        `${path}: Stop degraded into the planner-failure Act continuation`,
+      );
+      assert.equal(agent.abortFlags.has(tabId), false, `${path}: Stop flag left pending after the gate`);
+    }
+  }
+});
+
 test('Stop aborts in-flight read-only waits and leaves the flag for the loop checkpoint', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
