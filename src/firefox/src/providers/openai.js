@@ -720,8 +720,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify(this._responsesBody(messages, options, false)),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw new Error(`${this.name} network error — could not reach ${url} (${e.message}). Is the server running?`);
     }
     if (!res.ok) {
@@ -744,8 +746,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify(this._responsesBody(messages, options, true)),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw this._responsesStreamTransportError(
         `${this.name} network error — could not reach ${url} (${e.message}). Is the server running?`,
       );
@@ -792,6 +796,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       try {
         chunk = await reader.read();
       } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         throw this._responsesStreamTransportError(
           `${this.name} Responses stream transport error (${error?.message || 'read failed'}).`,
         );
@@ -889,8 +894,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw new Error(`${this.name} network error — could not reach ${url} (${e.message}). Is the server running?`);
     }
 
@@ -928,8 +935,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw this._chatCompletionsStreamTransportError(
         `${this.name} network error — could not reach ${streamUrl} (${e.message}). Is the server running?`,
       );
@@ -965,6 +974,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       try {
         chunk = await reader.read();
       } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         if (finalUsage) yield { type: 'usage', usage: finalUsage };
         throw this._chatCompletionsStreamTransportError(
           `${this.name} Chat Completions stream transport error (${error?.message || 'read failed'}).`,

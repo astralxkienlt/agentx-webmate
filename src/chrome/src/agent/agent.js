@@ -467,6 +467,7 @@ export class Agent extends LoopDetector {
     this._hydrationPromises = new Map(); // tabId -> shared in-flight storage hydration
     this.persistTimers = new Map(); // tabId -> debounce handle
     this.abortFlags = new Map(); // tabId -> boolean
+    this.abortControllers = new Map(); // tabId -> AbortController killing in-flight LLM fetches on Stop
     this.currentRunId = new Map(); // tabId -> active trace runId (for recorder hooks)
     this.maxSteps = 130; // safety limit for autonomous loops (configurable via settings)
     // Seconds to wait on clarify() before auto-picking the first option.
@@ -1884,9 +1885,12 @@ export class Agent extends LoopDetector {
   }
 
   async _chat(provider, messages, options, requestContext = null) {
-    const result = await provider.chat(messages, requestContext
+    let finalOptions = requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
-      : options);
+      : options;
+    const signal = this._abortSignalForTab(requestContext?.tabId);
+    if (signal) finalOptions = { ...finalOptions, signal };
+    const result = await provider.chat(messages, finalOptions);
     if (result && typeof result.content === 'string') {
       result.content = Agent._stripReasoningTags(result.content);
     }
@@ -1985,9 +1989,11 @@ export class Agent extends LoopDetector {
   }
 
   async _chatStream(provider, messages, options, requestContext = null, onTextDelta = () => {}) {
-    const streamOptions = requestContext
+    let streamOptions = requestContext
       ? this._cloudGenerationOptions(provider, options, requestContext)
       : options;
+    const abortSignal = this._abortSignalForTab(requestContext?.tabId);
+    if (abortSignal) streamOptions = { ...streamOptions, signal: abortSignal };
     let content = '';
     let reasoningContent = '';
     let usage = null;
@@ -9228,6 +9234,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    */
   abort(tabId) {
     this.abortFlags.set(tabId, true);
+    // Kill the in-flight LLM fetch (if any) so Stop takes effect immediately
+    // instead of waiting out the full model response. The flag is set first so
+    // the AbortError surfaces into a context that already reads as "stopped".
+    const controller = this.abortControllers.get(tabId);
+    this.abortControllers.delete(tabId);
+    try {
+      controller?.abort(new DOMException('Stopped by user', 'AbortError'));
+    } catch { /* abort() must never throw into the Stop path */ }
     this._cancelClarifications(tabId, 'aborted by user');
     this._cancelPendingPlans(tabId, 'aborted by user');
     // Stop cancels the current run; it is not an answer to a prior timed-out
@@ -13204,6 +13218,34 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return true;
     }
     return false;
+  }
+
+  /**
+   * True for the AbortError raised when Stop cancels an in-flight LLM fetch.
+   */
+  _isAbortError(error) {
+    return error?.name === 'AbortError';
+  }
+
+  /**
+   * Abort signal wired to Stop for this tab's LLM requests. While a Stop is
+   * still pending (flag set but not yet consumed by a checkpoint) this returns
+   * an already-aborted signal so new LLM calls fail fast instead of paying for
+   * a response that would be thrown away. abort() is the only place a live
+   * controller gets aborted, and it drops it from the map in the same breath,
+   * so the map never holds an aborted controller.
+   */
+  _abortSignalForTab(tabId) {
+    if (tabId == null) return null;
+    if (this.abortFlags.get(tabId)) {
+      return AbortSignal.abort(new DOMException('Stopped by user', 'AbortError'));
+    }
+    let controller = this.abortControllers.get(tabId);
+    if (!controller) {
+      controller = new AbortController();
+      this.abortControllers.set(tabId, controller);
+    }
+    return controller.signal;
   }
 
   /**
@@ -18393,6 +18435,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this._resetRichTextToolbarAudit(tabId);
       this._clickAxCdpFallbacks?.delete(tabId);
       this.abortFlags.delete(tabId);
+      this.abortControllers.delete(tabId);
       await this._prepareClarificationAuthorizationForRun(tabId);
       this.permissions.beginTurn(tabId);
       this.conversationModes.set(tabId, 'act');
@@ -25739,6 +25782,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (typeof runOptions?.isDetachedStartCancelled === 'function'
         && runOptions.isDetachedStartCancelled()) {
       this.abortFlags.delete(tabId);
+      this.abortControllers.delete(tabId);
       const stopped = 'Stopped by user before the run started.';
       if (Array.isArray(attachments) && attachments.length) {
         onUpdate('attachment_rejected', { error: stopped });
@@ -25748,8 +25792,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
     // Clear any stale abort flag before any LLM work. The planner gate makes a
     // paid LLM call and checks/consumes this flag, so a leftover flag from a
-    // prior run must not cancel this fresh task. (#1)
+    // prior run must not cancel this fresh task. (#1) The controller rotates
+    // with it so this run's LLM fetches get a fresh, un-listened signal.
     this.abortFlags.delete(tabId);
+    this.abortControllers.delete(tabId);
 
     let runId = null;
     let finalResponse = '';
@@ -26006,6 +26052,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         });
         return result;
       } catch (error) {
+        // A Stop-aborted stream is not a transport failure: never burn a
+        // second request on the non-streaming fallback for it.
+        if (this._isAbortError(error)) throw error;
         const fallbackSafe = this._shouldFallbackAskStream(error);
         recordAskStreaming({
           status: fallbackSafe ? 'fallback' : 'failed',
@@ -26065,6 +26114,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       _traceStatus = 'cancelled';
       return finalResponse;
     }
+
+    // Shared handler for an LLM call killed mid-flight by Stop: close the
+    // step as cancelled and end the run exactly like the polled abort path,
+    // instead of treating the AbortError as a transport failure to retry.
+    const stopIfAborted = (error) => {
+      if (!this._isAbortError(error)) return false;
+      this._checkAbort(tabId); // consume the pending Stop flag
+      finalResponse = '[Stopped by user]';
+      _traceStatus = 'cancelled';
+      if (runId) trace.recordStepEnd(runId, steps, { ok: false, code: 'CANCELLED' });
+      onUpdate('warning', { message: 'Stopped by user.' });
+      messages.push(this._localCancellationMessage(finalResponse));
+      return true;
+    };
 
     while (steps < this.maxSteps) {
       // Check for abort before each step
@@ -26156,6 +26219,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (runId) trace.recordStepEnd(runId, steps, this._traceStepEndForResult(result));
       } catch (e) {
         this._logDebug({ type: 'llm_error', step: steps, error: e.message });
+        if (stopIfAborted(e)) break;
         if (this._isUsageLimitError(e)) {
           finalResponse = e.message;
           _traceStatus = 'cost_limit';
@@ -26180,6 +26244,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             if (runId) trace.recordStepEnd(runId, steps, this._traceStepEndForResult(result, { retried: true }));
           } catch (e2) {
             this._logDebug({ type: 'llm_error_retry', step: steps, error: e2.message });
+            if (stopIfAborted(e2)) break;
             if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
@@ -26220,6 +26285,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             if (runId) trace.recordStepEnd(runId, steps, this._traceStepEndForResult(result, { retried: true }));
           } catch (e2) {
             this._logDebug({ type: 'llm_error_final', step: steps, error: e2.message });
+            if (stopIfAborted(e2)) break;
             if (this._isUsageLimitError(e2)) {
               finalResponse = e2.message;
               _traceStatus = 'cost_limit';
@@ -26514,6 +26580,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._persist(tabId);
     return finalResponse;
     } catch (error) {
+      // Stop killed an LLM call outside the main loop (planner gate, vision
+      // enrichment, …): end the run as a clean cancellation, not an error.
+      if (this._isAbortError(error)) {
+        this._checkAbort(tabId); // consume the pending Stop flag
+        finalResponse = '[Stopped by user]';
+        _traceStatus = 'cancelled';
+        onUpdate('warning', { message: 'Stopped by user.' });
+        messages.push(this._localCancellationMessage(finalResponse));
+        this._persist(tabId);
+        return finalResponse;
+      }
       const message = formatErrorMessage(error);
       _traceStatus = 'error';
       traceFailureCode = this._traceErrorCodeFor(error);
@@ -26704,8 +26781,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
     // Clear any stale abort flag before any LLM work. The planner gate makes a
     // paid LLM call and checks/consumes this flag, so a leftover flag from a
-    // prior run must not cancel this fresh task. (#1)
+    // prior run must not cancel this fresh task. (#1) The controller rotates
+    // with it so this run's LLM fetches get a fresh, un-listened signal.
     this.abortFlags.delete(tabId);
+    this.abortControllers.delete(tabId);
 
     let runId = null;
     let finalResponse = '';
@@ -26881,6 +26960,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           tools: provider.supportsTools && tools.length > 0 ? tools : undefined,
           temperature: plannerTemperature,
           maxTokens: 4096,
+          signal: this._abortSignalForTab(tabId),
         }, { tabId, generationName: 'main' });
         const prunedMessages = this._pruneOldImages(modelMessagesForRun(), provider);
         this._logDebug({ type: 'llm_stream_request', step: steps, provider: provider.constructor.name, messages: prunedMessages, options: streamOpts });
@@ -27134,6 +27214,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return finish(fullText);
 
       } catch (e) {
+        // Stop killed the streaming LLM call mid-flight: end the run exactly
+        // like the polled abort path instead of surfacing an error card.
+        if (this._isAbortError(e)) {
+          await closeTraceStep({ ok: false, code: 'CANCELLED' });
+          this._checkAbort(tabId); // consume the pending Stop flag
+          const content = '[Stopped by user]';
+          messages.push(this._localCancellationMessage(content));
+          this._persist(tabId);
+          onUpdate('warning', { message: 'Stopped by user.' });
+          return finish(content, 'cancelled');
+        }
         const caughtMessage = formatErrorMessage(e);
         const stepErrorCode = this._traceErrorCodeFor(e);
         await closeTraceStep({ ok: false, code: stepErrorCode });
@@ -27165,6 +27256,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     onUpdate('text', { content: summary });
     return finish(summary, 'max_steps');
     } catch (error) {
+      // Stop killed an LLM call outside the step loop (planner gate, vision
+      // enrichment, …): end the run as a clean cancellation, not an error.
+      if (this._isAbortError(error)) {
+        this._checkAbort(tabId); // consume the pending Stop flag
+        const content = '[Stopped by user]';
+        messages.push(this._localCancellationMessage(content));
+        this._persist(tabId);
+        onUpdate('warning', { message: 'Stopped by user.' });
+        return finish(content, 'cancelled');
+      }
       const message = formatErrorMessage(error);
       _traceStatus = 'error';
       traceFailureCode = this._traceErrorCodeFor(error);

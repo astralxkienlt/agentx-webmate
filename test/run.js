@@ -9973,6 +9973,122 @@ test('tool-free response and recovery calls honor Stop before rendering model ou
   }
 });
 
+test('Stop aborts the per-tab LLM signal immediately and rotates it per run', () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    const tabId = 915;
+
+    assert.equal(agent._abortSignalForTab(null), null, `${label}: tabless calls must not get a signal`);
+    const signal = agent._abortSignalForTab(tabId);
+    assert.ok(signal instanceof AbortSignal, `${label}: expected an AbortSignal`);
+    assert.equal(signal.aborted, false, `${label}: fresh signal must be live`);
+    assert.equal(agent._abortSignalForTab(tabId), signal, `${label}: one live controller per tab`);
+
+    agent.abort(tabId);
+    assert.equal(signal.aborted, true, `${label}: Stop did not abort the in-flight signal`);
+    assert.equal(agent._isAbortError(signal.reason), true, `${label}: abort reason must read as AbortError`);
+    assert.equal(agent.abortFlags.get(tabId), true, `${label}: Stop flag missing after abort`);
+
+    // While the Stop flag is still pending, new LLM calls must fail fast.
+    const pending = agent._abortSignalForTab(tabId);
+    assert.equal(pending.aborted, true, `${label}: pending Stop must pre-abort new LLM calls`);
+
+    // A checkpoint consumes the flag; the next run gets a fresh live signal.
+    assert.equal(agent._checkAbort(tabId), true, `${label}: checkpoint should consume the flag`);
+    const fresh = agent._abortSignalForTab(tabId);
+    assert.equal(fresh.aborted, false, `${label}: next run inherited an aborted signal`);
+    assert.notEqual(fresh, signal, `${label}: aborted controller must not be reused`);
+  }
+});
+
+test('_chat and _chatStream hand the Stop signal to the provider', async () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    let chatOptions = null;
+    let streamOptions = null;
+    const provider = {
+      chat: async (_messages, options) => { chatOptions = options; return { content: 'ok' }; },
+      async *chatStream(_messages, options) {
+        streamOptions = options;
+        yield { type: 'text', content: 'ok' };
+        yield { type: 'done' };
+      },
+    };
+
+    await agent._chat(provider, [], { maxTokens: 5 }, { tabId: 916, generationName: 'main' });
+    assert.ok(chatOptions?.signal instanceof AbortSignal, `${label}: _chat dropped the abort signal`);
+    assert.equal(chatOptions.signal.aborted, false, `${label}: _chat handed over an aborted signal`);
+
+    await agent._chat(provider, [], { maxTokens: 5 });
+    assert.equal(chatOptions.signal, undefined, `${label}: context-free _chat must stay signal-free`);
+
+    await agent._chatStream(provider, [], { maxTokens: 5 }, { tabId: 916, generationName: 'main' });
+    assert.ok(streamOptions?.signal instanceof AbortSignal, `${label}: _chatStream dropped the abort signal`);
+  }
+});
+
+test('Stop kills an in-flight model call instantly and ends the run as a clean cancellation', async () => {
+  for (const [index, [label, AgentClass]] of [['chrome', AgentCh], ['firefox', AgentFx]].entries()) {
+    for (const streaming of [false, true]) {
+      const tabId = 9300 + (index * 10) + (streaming ? 1 : 0);
+      const hangUntilAborted = (options) => new Promise((_resolve, reject) => {
+        assert.ok(options?.signal instanceof AbortSignal, `${label}: main-turn request carried no abort signal`);
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+        // Fail loudly instead of hanging the suite if Stop never reaches the fetch.
+        setTimeout(() => reject(new Error('abort signal never fired')), 3000).unref?.();
+      });
+      const provider = {
+        supportsTools: true,
+        supportsVision: false,
+        promptTier: 'full',
+        contextWindow: 128000,
+        model: 'test-model',
+        name: 'test-provider',
+        chat: (_messages, options) => hangUntilAborted(options),
+        async *chatStream(_messages, options) { await hangUntilAborted(options); },
+      };
+      const agent = new AgentClass({
+        getActive: () => provider,
+        getVisionProvider: async () => null,
+      });
+      agent.conversationModes.set(tabId, 'ask');
+      agent.conversations.set(tabId, [{ role: 'system', content: 'sys' }]);
+      agent.maxSteps = 3;
+      agent._hydrate = async () => {};
+      agent._manageContext = async () => {};
+      agent._enrichUserMessageWithCurrentPage = async (_t, _h, content) => ({ role: 'user', content });
+      agent._startTraceRun = async () => null;
+      agent._endTraceRun = () => {};
+      agent._persist = () => {};
+      agent._persistNow = async () => true;
+      const updates = [];
+      const onUpdate = (type, data) => updates.push({ type, data });
+
+      const runPromise = streaming
+        ? agent.processMessageStream(tabId, 'Long research task.', onUpdate, 'ask')
+        : agent.processMessage(tabId, 'Long research task.', onUpdate, 'ask');
+      // Let the run reach the provider call, then press Stop mid-flight.
+      await new Promise(resolve => setTimeout(resolve, 20));
+      agent.abort(tabId);
+      const final = await runPromise;
+      const path = `${label} ${streaming ? 'streaming' : 'non-streaming'}`;
+
+      assert.equal(final, '[Stopped by user]', `${path}: aborted run did not end as a user stop`);
+      assert.equal(
+        updates.some(update => update.type === 'warning' && update.data?.message === 'Stopped by user.'),
+        true,
+        `${path}: Stopped-by-user notice missing`,
+      );
+      assert.equal(
+        updates.some(update => update.type === 'error'),
+        false,
+        `${path}: Stop surfaced an error card`,
+      );
+      assert.equal(agent.abortFlags.has(tabId), false, `${path}: Stop flag left pending after the run`);
+    }
+  }
+});
+
 test('Enter SPA route changes reset dead-scroll state and defer queued ref reuse', async () => {
   for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
     const agent = new AgentClass({ getVisionProvider: async () => null });

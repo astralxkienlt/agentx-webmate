@@ -173,7 +173,7 @@ export class AwsBedrockProvider extends BaseLLMProvider {
     return payload;
   }
 
-  async _signAndFetch({ url, host, path }, body) {
+  async _signAndFetch({ url, host, path }, body, signal = undefined) {
     const method = 'POST';
     const service = 'bedrock';
 
@@ -231,6 +231,7 @@ export class AwsBedrockProvider extends BaseLLMProvider {
       method,
       headers: finalHeaders,
       body: payload,
+      signal,
     });
   }
 
@@ -288,8 +289,9 @@ export class AwsBedrockProvider extends BaseLLMProvider {
 
     let res;
     try {
-      res = await this._signAndFetch(endpoint, payload);
+      res = await this._signAndFetch(endpoint, payload, options?.signal);
     } catch (e) {
+      if (e?.name === 'AbortError') throw e;
       throw new Error(`${this.name} network error — could not reach ${endpoint.url} (${e.message}).`);
     }
 
