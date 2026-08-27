@@ -3368,6 +3368,7 @@ const SCHEDULED_VISIBLE_STATUSES = new Set(['pending', 'queued', 'paused', 'runn
 const COMPLETED_SCHEDULED_JOB_AUTO_HIDE_MS = 15 * 1000;
 const pinnedCompletedScheduledJobIds = new Set();
 const pendingScheduledPlannerFallbackMessages = new Map();
+const scheduledAssistantPreparationJobIds = new Set();
 let scheduledJobAutoHideTimer = null;
 
 function visibleScheduledJobs(jobs = []) {
@@ -3435,8 +3436,11 @@ function findScheduledClarifyCardForJob(jobId) {
 function findScheduledAssistantMessageForJob(jobId) {
   const id = String(jobId || '');
   if (!id) return null;
-  for (const msgEl of messagesEl?.querySelectorAll?.('.message.assistant[data-scheduled-job-id]') || []) {
-    if (msgEl.dataset.scheduledJobId === id) return msgEl;
+  const messages = Array.from(
+    messagesEl?.querySelectorAll?.('.message.assistant[data-scheduled-job-id]') || [],
+  );
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].dataset.scheduledJobId === id) return messages[i];
   }
   const card = findScheduledClarifyCardForJob(id);
   const msgEl = card?.closest?.('.message.assistant');
@@ -3472,6 +3476,7 @@ function ensureScheduledTerminalMessage(job) {
   const jobId = job?.id ? String(job.id) : '';
   if (!jobId || !isUrlTargetScheduledJob(job)) return null;
   const existing = findScheduledAssistantMessageForJob(jobId);
+  if (existing && scheduledAssistantPreparationJobIds.has(jobId)) return existing;
   if (existing) {
     flushScheduledPlannerFallbackMessage(jobId, existing);
     return existing;
@@ -3738,30 +3743,41 @@ async function handleScheduledJobEvent(data, tabId) {
     || terminalScheduledEvent
     || watchPollEvent
     || event === 'needs_user_input';
+  const preparingScheduledAssistant = event === 'running' && !!jobId;
+  if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.add(jobId);
   if (scopeChangingScheduledEvent && runTabId != null) {
-    await refreshConversationScopeState(runTabId);
+    try {
+      await refreshConversationScopeState(runTabId);
+    } catch (error) {
+      if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.delete(jobId);
+      throw error;
+    }
   }
 
   const title = scheduledJobTitle(job);
   if (event === 'created') {
     renderScheduledJobCreatedMessage(job);
   } else if (event === 'running') {
-    clearActiveChatPayloadForTab(runTabId);
-    setTabProcessing(runTabId, true);
-    setTabAbortRequested(runTabId, false);
-    syncSendButtonState();
-    if (job?.source === 'watch') {
-      hideRecommendedActions();
-      resetChatNavigation();
-      currentAssistantEl = ensureScheduledTerminalMessage(job);
-    } else {
-      hideRecommendedActions();
-      resetChatNavigation();
-      currentAssistantEl = addMessage('assistant', '');
+    try {
+      clearActiveChatPayloadForTab(runTabId);
+      setTabProcessing(runTabId, true);
+      setTabAbortRequested(runTabId, false);
+      syncSendButtonState();
+      if (job?.source === 'watch') {
+        hideRecommendedActions();
+        resetChatNavigation();
+        currentAssistantEl = ensureScheduledTerminalMessage(job);
+      } else {
+        hideRecommendedActions();
+        resetChatNavigation();
+        currentAssistantEl = addMessage('assistant', '');
+      }
+      if (jobId) currentAssistantEl.dataset.scheduledJobId = jobId;
+      flushScheduledPlannerFallbackMessage(jobId, currentAssistantEl);
+      showActivity(t('sp.scheduled.running', { title }));
+    } finally {
+      if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.delete(jobId);
     }
-    if (jobId) currentAssistantEl.dataset.scheduledJobId = jobId;
-    flushScheduledPlannerFallbackMessage(jobId, currentAssistantEl);
-    showActivity(t('sp.scheduled.running', { title }));
   } else if (event === 'completed') {
     ensureScheduledTerminalMessage(job);
     await settleScheduledRun(event, job, runTabId);
@@ -9938,10 +9954,11 @@ function handleAgentUpdateMessage(msg) {
       } else if (data?.code === 'planner_failed_continue_act') {
         const message = data?.message || t('sp.plan.intent_unavailable');
         const scheduledJobId = String(data?.scheduledJobId || '');
-        const scheduledAssistantEl = scheduledJobId
+        const scheduledAssistantPending = scheduledAssistantPreparationJobIds.has(scheduledJobId);
+        const scheduledAssistantEl = scheduledJobId && !scheduledAssistantPending
           ? findScheduledAssistantMessageForJob(scheduledJobId)
           : null;
-        if (scheduledJobId && !scheduledAssistantEl) {
+        if (scheduledJobId && (scheduledAssistantPending || !scheduledAssistantEl)) {
           queueScheduledPlannerFallbackMessage(scheduledJobId, message);
         } else {
           addPlannerFallbackNote(message, scheduledAssistantEl || eventAssistantEl || currentAssistantEl);
