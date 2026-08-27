@@ -84,6 +84,70 @@ export class BridgeError extends Error {
   }
 }
 
+/**
+ * The bridge port was already taken. Its own error type because it is the one
+ * startup failure the caller must NOT treat as fatal: dying here takes all six
+ * tools with it, leaving the agent no way to tell anyone what went wrong.
+ */
+export class PortInUseError extends Error {
+  readonly port: number;
+  constructor(port: number) {
+    super(`Port ${port} is already in use.`);
+    this.name = "PortInUseError";
+    this.port = port;
+  }
+}
+
+/**
+ * Best-effort "who has the port?", for the diagnostic message only.
+ *
+ * Read-only, POSIX-only, and bounded: a missing or slow `lsof` degrades to an
+ * unnamed holder rather than delaying startup. Naming the process matters here
+ * because the holder is almost always another copy of THIS server, and the
+ * fix — quit that process — is impossible to guess without a PID.
+ */
+async function portHolder(port: number): Promise<string | null> {
+  if (process.platform !== "darwin" && process.platform !== "linux") return null;
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const run = promisify(execFile);
+    // -F pc emits one field per line: `p<pid>` then `c<command>`.
+    const { stdout } = await run(
+      "lsof",
+      ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-F", "pc"],
+      { timeout: 1_000 },
+    );
+    const pid = /^p(\d+)$/m.exec(stdout)?.[1];
+    if (!pid) return null;
+    const command = /^c(.+)$/m.exec(stdout)?.[1];
+    return command ? `PID ${pid} (${command})` : `PID ${pid}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The message the agent relays when the port is taken. Written to be acted on
+ * without further investigation: it names the likely cause, explains why the
+ * browser still claims to be connected, and gives both ways out.
+ */
+export async function describePortConflict(port: number): Promise<string> {
+  const holder = await portHolder(port);
+  return (
+    `Port ${port} is already in use${holder ? ` by ${holder}` : ""}, so the ` +
+    `${BRAND.extensionName} bridge could not start. Every tool here is unavailable ` +
+    "until that is resolved.\n\n" +
+    "This is almost always an older MCP server left running by a previous session " +
+    "(a crashed or force-quit host does not always reap it). The extension is " +
+    `attached to THAT process, which is why ${BRAND.productName} still shows ` +
+    '"Connected" in the browser while these tools cannot reach it.\n\n' +
+    `To fix: quit ${holder ?? "the process holding the port"}, then start a new ` +
+    "session. Alternatively, point both sides at a free port by setting " +
+    `${BRAND.envPrefix}BRIDGE_PORT and updating the extension's Cloud bridge URL.`
+  );
+}
+
 /** Log to stderr only — stdout is the MCP stdio transport and must stay clean. */
 function log(...args: unknown[]): void {
   console.error(`[${BRAND.serverName}-mcp]`, ...args);
@@ -119,6 +183,23 @@ export class WebMateBridge {
   private waiters: Array<() => void> = [];
   private heartbeat: NodeJS.Timeout | null = null;
   private missedPongs = 0;
+  private unavailableReason: string | null = null;
+
+  /**
+   * Record that this bridge will never attach, and why.
+   *
+   * Set when the listener could not be opened at all. Every command then fails
+   * fast with this explanation instead of waiting out a connect grace for a
+   * browser that has nothing to dial.
+   */
+  markUnavailable(reason: string): void {
+    this.unavailableReason = reason;
+  }
+
+  /** The reason the bridge is unusable, or null when it is merely unattached. */
+  unavailable(): string | null {
+    return this.unavailableReason;
+  }
 
   async start(): Promise<void> {
     if (this.wss) return;
@@ -128,10 +209,21 @@ export class WebMateBridge {
       // anything that can reach it can drive the user's logged-in browser.
       const wss = new WebSocketServer(
         { host: "127.0.0.1", port: config.bridgePort },
-        () => resolve(),
+        () => {
+          // Only own the server once it is actually listening. Keeping a failed
+          // one would make the `if (this.wss) return` guard above swallow a
+          // later retry, and leave stop() closing a server that never opened.
+          this.wss = wss;
+          resolve();
+        },
       );
-      wss.on("error", reject);
-      this.wss = wss;
+      wss.on("error", (error) => {
+        if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+          reject(new PortInUseError(config.bridgePort));
+          return;
+        }
+        reject(error);
+      });
     });
 
     this.wss!.on("connection", (socket, request) => {
@@ -310,6 +402,7 @@ export class WebMateBridge {
   }
 
   isConnected(): boolean {
+    if (this.unavailableReason !== null) return false;
     return (
       this.socket !== null &&
       this.socket.readyState === 1 &&
@@ -323,6 +416,8 @@ export class WebMateBridge {
 
   /** Resolve once the extension has connected and completed its handshake. */
   waitForExtension(timeoutMs: number): Promise<boolean> {
+    // No listener means nothing can ever dial in — don't burn the grace period.
+    if (this.unavailableReason !== null) return Promise.resolve(false);
     if (this.isConnected()) return Promise.resolve(true);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -343,6 +438,13 @@ export class WebMateBridge {
     payload: Record<string, unknown> = {},
     timeoutMs = config.commandTimeoutMs,
   ): Promise<T> {
+    // A bridge that never opened its listener fails with the reason why, not
+    // with "no extension is connected" — that wording sends the user off to
+    // check browser settings that are already correct.
+    if (this.unavailableReason !== null) {
+      throw new BridgeError(this.unavailableReason);
+    }
+
     // The extension dials us, so a command issued right after this process
     // binds the port arrives while the browser is still inside its reconnect
     // backoff. Failing instantly there turns an ordinary cold start into a

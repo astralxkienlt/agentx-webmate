@@ -1,0 +1,174 @@
+/**
+ * A taken bridge port must degrade, never kill the server.
+ *
+ * The failure this pins down: an MCP server left running by a previous session
+ * keeps the fixed bridge port, the next one exits on EADDRINUSE, and the host
+ * loses all six tools — so the agent cannot say why the browser tools vanished
+ * while the extension, still attached to the old process, reports "Connected".
+ *
+ * Run: node --test test/bridge-port-conflict.test.mjs   (after `npm run build`)
+ */
+
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { createInterface } from "node:readline";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+const packageDir = fileURLToPath(new URL("..", import.meta.url));
+
+async function freePort() {
+  const probe = createServer();
+  probe.listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const { port } = probe.address();
+  probe.close();
+  await once(probe, "close");
+  return port;
+}
+
+async function occupy(port) {
+  const squatter = createServer();
+  squatter.listen(port, "127.0.0.1");
+  await once(squatter, "listening");
+  return squatter;
+}
+
+// Import-time config: the bridge reads its port once, so the env must be set
+// before the module graph loads.
+const BUSY_PORT = await freePort();
+process.env.WEBMATE_BRIDGE_PORT = String(BUSY_PORT);
+process.env.WEBMATE_CONNECT_GRACE_MS = "5000";
+
+const { WebMateBridge, PortInUseError, describePortConflict } = await import(
+  "../dist/bridge.js"
+);
+
+test("binding a taken port rejects with a typed, identifiable error", async () => {
+  const squatter = await occupy(BUSY_PORT);
+  const bridge = new WebMateBridge();
+  try {
+    await assert.rejects(
+      () => bridge.start(),
+      (error) => {
+        assert.ok(error instanceof PortInUseError, `got ${error?.name}`);
+        assert.equal(error.port, BUSY_PORT);
+        return true;
+      },
+    );
+    // A failed bind must not be remembered as a live server, or a retry after
+    // the port frees up would be swallowed by start()'s idempotence guard.
+    await bridge.stop();
+  } finally {
+    squatter.close();
+    await once(squatter, "close");
+  }
+});
+
+test("an unavailable bridge fails commands with the reason, without waiting", async () => {
+  const bridge = new WebMateBridge();
+  bridge.markUnavailable("Port 17374 is already in use by PID 999 (node).");
+
+  assert.equal(bridge.isConnected(), false);
+  assert.match(bridge.unavailable(), /already in use/);
+
+  // The connect grace exists for a browser that is mid-backoff. With no
+  // listener there is nothing to wait for, so the answer must be immediate.
+  const started = Date.now();
+  await assert.rejects(
+    () => bridge.request("cloud_status", {}),
+    /already in use by PID 999/,
+  );
+  assert.ok(Date.now() - started < 1_000, "should not burn the connect grace");
+  assert.equal(await bridge.waitForExtension(5_000), false);
+});
+
+test("the conflict message names the port and how to get out of it", async () => {
+  const squatter = await occupy(BUSY_PORT);
+  try {
+    const message = await describePortConflict(BUSY_PORT);
+    assert.match(message, new RegExp(`Port ${BUSY_PORT} is already in use`));
+    assert.match(message, /previous session/);
+    assert.match(message, /BRIDGE_PORT/);
+    // Best-effort holder lookup: on this platform lsof can see our squatter.
+    if (process.platform === "darwin" || process.platform === "linux") {
+      assert.match(message, /by PID \d+/);
+    }
+  } finally {
+    squatter.close();
+    await once(squatter, "close");
+  }
+});
+
+test("the server still serves its tools when the port is taken", async () => {
+  const port = await freePort();
+  const squatter = await occupy(port);
+  const child = spawn(process.execPath, ["dist/index.js"], {
+    cwd: packageDir,
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  const replies = new Map();
+  createInterface({ input: child.stdout }).on("line", (line) => {
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (msg.id != null) replies.get(msg.id)?.(msg);
+  });
+
+  let nextId = 0;
+  const call = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = ++nextId;
+      const timer = setTimeout(
+        () => reject(new Error(`no reply to ${method}`)),
+        10_000,
+      );
+      replies.set(id, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+
+  try {
+    // Not exiting is the whole point: a fatal EADDRINUSE never gets here.
+    const init = await call("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "port-conflict-test", version: "1" },
+    });
+    assert.equal(init.result.serverInfo.name, "agentx-webmate");
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`,
+    );
+
+    const listed = await call("tools/list", {});
+    assert.equal(listed.result.tools.length, 6);
+
+    const probe = await call("tools/call", {
+      name: "webmate_connection",
+      arguments: {},
+    });
+    const text = probe.result.content[0].text;
+    assert.match(text, new RegExp(`Port ${port} is already in use`));
+    assert.equal(probe.result.isError, true);
+
+    // And a real command says the same thing rather than blaming the browser.
+    const run = await call("tools/call", {
+      name: "webmate_run",
+      arguments: { task: "read the page", mode: "ask" },
+    });
+    assert.match(run.result.content[0].text, /already in use/);
+  } finally {
+    child.stdin.end();
+    squatter.close();
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  }
+});

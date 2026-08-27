@@ -27,7 +27,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { BRAND, tool } from "./brand.generated.js";
-import { BridgeError, WebMateBridge, connectInstructions, type CloudSnapshot } from "./bridge.js";
+import {
+  BridgeError,
+  PortInUseError,
+  WebMateBridge,
+  connectInstructions,
+  describePortConflict,
+  type CloudSnapshot,
+} from "./bridge.js";
 import { bridgeUrl, config } from "./config.js";
 import { abort, awaitSettled, describeSnapshot, getStatus, respond, startRun } from "./runs.js";
 
@@ -414,6 +421,12 @@ server.registerTool(
     inputSchema: {},
   },
   async (): Promise<TextResult> => {
+    // A bridge that never opened its listener has a specific, actionable
+    // answer. Report it before the generic "check your browser settings"
+    // text below, which would send the user to settings that are already fine.
+    const unavailable = bridge.unavailable();
+    if (unavailable) return fail(unavailable);
+
     // Same grace the command path uses, so this diagnostic never reports
     // "not connected" for a browser that is one backoff tick from attaching.
     if (!bridge.isConnected() && config.connectProbeMs > 0) {
@@ -439,12 +452,24 @@ server.registerTool(
 );
 
 async function main(): Promise<void> {
-  await bridge.start();
+  try {
+    await bridge.start();
 
-  // Give an already-open extension a bounded chance to reconnect before the
-  // stdio server advertises browser tools. If this promise is discarded, the
-  // grace period is illusory and the first tool call can race the reconnect.
-  await bridge.waitForExtension(3_000);
+    // Give an already-open extension a bounded chance to reconnect before the
+    // stdio server advertises browser tools. If this promise is discarded, the
+    // grace period is illusory and the first tool call can race the reconnect.
+    await bridge.waitForExtension(3_000);
+  } catch (error) {
+    // A taken port must NOT be fatal. Exiting here kills all six tools, so the
+    // MCP host only sees "server failed" and the agent has no way to explain
+    // anything — which is precisely how a leftover server from a previous
+    // session turns into a silent loss of browser tools. Serve stdio anyway
+    // and let every tool answer with the reason.
+    if (!(error instanceof PortInUseError)) throw error;
+    const reason = await describePortConflict(error.port);
+    bridge.markUnavailable(reason);
+    console.error(`[${SERVER_NAME}-mcp] ${reason.split("\n")[0]}`);
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
