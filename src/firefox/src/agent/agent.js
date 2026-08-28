@@ -8109,11 +8109,63 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return -1;
   }
 
+  _plannerClarificationTaskBinding(messages, answerIndex) {
+    if (!Array.isArray(messages) || answerIndex < 1) return null;
+    const answerMessage = messages[answerIndex];
+    if (answerMessage?.role !== 'user' || this._isAgentInjectedUserMessage(answerMessage)) return null;
+    const answerText = this._plannerUserAuthoredText(answerMessage);
+    if (!answerText) return null;
+
+    // A planner clarification is terminal for its turn. Skip only app-owned
+    // state projected around it; any other real conversational turn breaks the
+    // binding so an old clarification cannot capture a later independent task.
+    let clarificationIndex = -1;
+    for (let index = answerIndex - 1; index >= 1; index -= 1) {
+      const message = messages[index];
+      if (this._isPinnedAgentStateMessage(message) || this._isLocalConversationStatusMessage(message)) continue;
+      if (message?.role === 'user' && this._isAgentInjectedUserMessage(message)) continue;
+      if (message?.role === 'assistant' && message.webbrainPlannerClarification) clarificationIndex = index;
+      break;
+    }
+    if (clarificationIndex < 0) return null;
+
+    const metadata = messages[clarificationIndex].webbrainPlannerClarification || {};
+    let taskText = this._progressTaskTextKey(metadata.taskText).slice(0, 1600);
+    let taskIndex = -1;
+    for (let index = clarificationIndex - 1; index >= 1; index -= 1) {
+      const message = messages[index];
+      if (message?.role !== 'user') continue;
+      if (this._isScheduledResumeTurn(message.content) || this._isAgentInjectedUserMessage(message)) continue;
+      const candidate = this._plannerUserAuthoredText(message);
+      if (!candidate) continue;
+      const normalized = candidate.toLowerCase();
+      if (this._isProgressContinuationText(normalized) || this._isProgressAckText(normalized)) continue;
+      if (!taskText) taskText = candidate.slice(0, 1600);
+      if (this._progressTaskTextKey(candidate) === this._progressTaskTextKey(taskText)) taskIndex = index;
+      break;
+    }
+    if (!taskText) return null;
+
+    // Both values came from genuine user turns. JSON quoting keeps their
+    // boundary unambiguous when this composite is later embedded in the
+    // trusted recovery anchor or hashed as execution evidence authority.
+    const text = `User task clarified by the latest answer: ${JSON.stringify({
+      request: taskText,
+      answer: answerText.slice(0, 1600),
+    })}`;
+    const pinnedIndices = [taskIndex, clarificationIndex, answerIndex]
+      .filter(index => index >= 0)
+      .filter((index, position, all) => all.indexOf(index) === position)
+      .sort((a, b) => a - b);
+    return { index: answerIndex, taskIndex, clarificationIndex, text, pinnedIndices };
+  }
+
   // Return the latest genuine task-bearing user turn, not a synthetic runtime
   // note, scheduled resume, bare acknowledgment, or continuation command.
-  // When every genuine turn is only a continuation/acknowledgment, retain the
-  // original task as the authority instead of promoting "ok" or "continue".
-  _findActiveTaskIndex(messages) {
+  // Planner clarification answers retain the request they answer as a single
+  // composite authority. When every genuine turn is only a continuation or
+  // acknowledgment, retain the original task instead of promoting it.
+  _activeTaskBinding(messages) {
     for (let i = messages.length - 1; i >= 1; i--) {
       const message = messages[i];
       if (message?.role !== 'user') continue;
@@ -8121,12 +8173,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (this._isAgentInjectedUserMessage(message)) continue;
       const text = this._plannerUserAuthoredText(message);
       if (!text) continue;
+      const clarification = this._plannerClarificationTaskBinding(messages, i);
+      if (clarification) return clarification;
       const normalized = text.toLowerCase();
       if (this._isProgressContinuationText(normalized)) continue;
       if (this._isProgressAckText(normalized)) continue;
-      return i;
+      return { index: i, taskIndex: i, clarificationIndex: -1, text, pinnedIndices: [i] };
     }
-    return this._findOriginalTaskIndex(messages);
+    const index = this._findOriginalTaskIndex(messages);
+    return index >= 0
+      ? { index, taskIndex: index, clarificationIndex: -1, text: this._plannerUserAuthoredText(messages[index]), pinnedIndices: [index] }
+      : { index: -1, taskIndex: -1, clarificationIndex: -1, text: '', pinnedIndices: [] };
+  }
+
+  _findActiveTaskIndex(messages) {
+    return this._activeTaskBinding(messages).index;
   }
 
   /**
@@ -8466,7 +8527,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         tabId, enriched, onUpdate, runId, historyDigest, tabInfo, mode, runOptions, followUpContext,
       );
       if (!gate.proceed) {
-        messages.push(this._plannerTerminalAssistantMessage(gate, tabInfo));
+        messages.push(this._plannerTerminalAssistantMessage(gate, tabInfo, this._progressTaskAnchorText(tabId)));
         this._persist(tabId);
       }
       return gate;
@@ -8497,7 +8558,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
     }
     if (!gate.proceed) {
-      messages.push(this._plannerTerminalAssistantMessage(gate, tabInfo));
+      messages.push(this._plannerTerminalAssistantMessage(gate, tabInfo, this._progressTaskAnchorText(tabId)));
       this._persist(tabId);
       return {
         proceed: false,
@@ -8872,15 +8933,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       || 'No plan was produced.';
   }
 
-  _plannerTerminalAssistantMessage(gate = {}, tabInfo = null) {
+  _plannerTerminalAssistantMessage(gate = {}, tabInfo = null, activeTaskText = '') {
     const message = {
       role: 'assistant',
       content: gate.message || 'More information is required.',
     };
-    if (gate.requestKind === 'clarify' && gate.requiresSubmission === true) {
+    if (gate.requestKind === 'clarify') {
       message.webbrainPlannerClarification = {
-        requiresSubmission: true,
+        requiresSubmission: gate.requiresSubmission === true,
         pageUrl: String(tabInfo?.tabUrl || ''),
+        taskText: this._progressTaskTextKey(activeTaskText).slice(0, 1600),
       };
     }
     return message;
@@ -12481,10 +12543,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   // one anchor across pauses and confirmations.
   _progressTaskAnchorText(tabId) {
     const messages = this.conversations.get(tabId) || [];
-    const index = this._findActiveTaskIndex(messages);
-    return index >= 0
-      ? this._plannerUserAuthoredText(messages[index])
-      : '';
+    return this._activeTaskBinding(messages).text;
   }
 
   _progressTaskKeyHash(tabId) {
@@ -14764,11 +14823,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   _truncateOversizedMessages(tabId, messages) {
     const originalTaskIdx = this._findOriginalTaskIndex(messages);
-    const activeTaskIdx = this._findActiveTaskIndex(messages);
+    const activeTaskBinding = this._activeTaskBinding(messages);
+    const protectedTaskIndices = new Set([originalTaskIdx, ...activeTaskBinding.pinnedIndices]);
     const scheduledResumeIdx = this._findLatestScheduledResumeIndex(messages);
     let trimmed = false;
     for (let i = 1; i < messages.length; i++) {
-      if (i === originalTaskIdx || i === activeTaskIdx) continue; // preserve task authority verbatim
+      if (protectedTaskIndices.has(i)) continue; // preserve the full task/clarification authority chain verbatim
       if (i === scheduledResumeIdx) continue; // preserve scheduled resume instructions
       const m = messages[i];
       if (this._isPinnedAgentStateMessage(m)) continue;
@@ -14846,7 +14906,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Shared with _truncateOversizedMessages.
     const originalTaskIdx = this._findOriginalTaskIndex(messages);
     const originalTask = originalTaskIdx >= 0 ? messages[originalTaskIdx] : null;
-    const activeTaskIdx = this._findActiveTaskIndex(messages);
+    const activeTaskBinding = this._activeTaskBinding(messages);
+    const activeTaskIdx = activeTaskBinding.index;
     const activeTask = activeTaskIdx >= 0 && activeTaskIdx !== originalTaskIdx
       ? messages[activeTaskIdx]
       : null;
@@ -14856,6 +14917,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       && scheduledResumeIdx !== activeTaskIdx
       ? messages[scheduledResumeIdx]
       : null;
+    const activeTaskPinnedMessages = activeTaskBinding.pinnedIndices
+      .filter(index => index !== originalTaskIdx && index !== scheduledResumeIdx)
+      .map(index => messages[index])
+      .filter(Boolean);
+    const activeTaskPinnedSet = new Set(activeTaskPinnedMessages);
     // Pin the scratchpad alongside system so the model's self-written notes
     // survive summarization. Stripped from old/recent slices below to avoid
     // duplicating it during rebuild.
@@ -14880,14 +14946,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ? new Set(messages.slice(activeTaskIdx + 1))
       : new Set();
     const oldMessages = oldMessagesRaw.filter(m => (
-      m !== activeTask
+      !activeTaskPinnedSet.has(m)
       && m !== scheduledResumeMsg
       && !this._isScheduledResumeTurn(m.content)
       && !this._isPinnedAgentStateMessage(m)
       && !this._isLocalConversationStatusMessage(m)
     ));
     const recentMessages = recentMessagesRaw.filter(m => (
-      m !== activeTask
+      !activeTaskPinnedSet.has(m)
       && m !== scheduledResumeMsg
       && !this._isScheduledResumeTurn(m.content)
       && !this._isPinnedAgentStateMessage(m)
@@ -14928,7 +14994,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return true;
       };
       while (oldMessages.length < 4 && moveOldestRecentToSummary()) {}
-      const pinnedChars = this._estimateContextChars([systemMsg, originalTask, activeTask, scheduledResumeMsg, scratchpadMsg, memoryMsg, progressMsg].filter(Boolean));
+      const pinnedChars = this._estimateContextChars([systemMsg, originalTask, ...activeTaskPinnedMessages, scheduledResumeMsg, scratchpadMsg, memoryMsg, progressMsg].filter(Boolean));
       const compactOverheadChars = 3000; // summary wrapper + ack + manual summary fallback
       const fixedPromptOverheadChars = fixedPromptOverheadTokens * 4;
       const maxRecentChars = Math.max(0, (tokenBudget * 4) - fixedPromptOverheadChars - pinnedChars - compactOverheadChars);
@@ -15029,10 +15095,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
     }
 
-    // Rebuild with both task anchors. The original task remains useful history,
-    // but only the latest genuine task-bearing user turn is authoritative.
+    // Rebuild with the active authority chain. A clarification request and its
+    // answer stay adjacent to the task they refine, so compaction cannot turn a
+    // short answer fragment into an independent task.
     const taskAuthorityNotice = activeTask
-      ? 'The latest genuine user task pinned above is the CURRENT ACTIVE TASK. Earlier user tasks, including the original task, are context only and do not regain authority.'
+      ? (activeTaskBinding.clarificationIndex >= 0
+        ? 'The planner clarification context and genuine user answer pinned above together are the CURRENT ACTIVE TASK. Earlier user tasks outside that clarified chain are context only and do not regain authority.'
+        : 'The latest genuine user task pinned above is the CURRENT ACTIVE TASK. Earlier user tasks, including the original task, are context only and do not regain authority.')
       : 'The original user task pinned above remains the CURRENT ACTIVE TASK.';
     const summaryMsg = { role: 'user', content: `[Context window was trimmed to stay within budget. ${taskAuthorityNotice} Continue the current active task. ${summaryText}]` };
     const summaryAck = { role: 'assistant', content: activeTask
@@ -15042,7 +15111,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     messages.length = 0;
     messages.push(systemMsg);
     if (originalTask) messages.push(originalTask);
-    if (activeTask) messages.push(activeTask);
+    messages.push(...activeTaskPinnedMessages);
     if (scheduledResumeMsg) messages.push(scheduledResumeMsg);
     if (scratchpadMsg) messages.push(scratchpadMsg);
     if (memoryMsg) messages.push(memoryMsg);
