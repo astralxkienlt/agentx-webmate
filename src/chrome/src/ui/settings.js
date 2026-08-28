@@ -3271,6 +3271,7 @@ function renderProviders() {
       if (!input) return;
       const selectedModel = option.dataset.model || '';
       input.value = selectedModel;
+      syncInferredOpenRouterRoutingVariant(providerId, selectedModel);
       void saveProvider(providerId, { showFlash: false })
         .then(() => detectProviderContextWindowForModel(providerId, selectedModel))
         .catch(() => {});
