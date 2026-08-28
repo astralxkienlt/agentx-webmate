@@ -40,6 +40,8 @@ export interface CloudSnapshot {
   runId: string;
   status: "running" | "needs_user_input" | "aborting" | "completed" | "failed" | "aborted";
   mode?: "ask" | "act";
+  /** The permission mode the run executed at. '' when it used the browser's standing one. */
+  permissionMode?: string;
   tabId?: number;
   task?: string;
   structured?: boolean;

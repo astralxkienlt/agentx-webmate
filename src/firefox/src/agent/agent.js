@@ -79,7 +79,7 @@ import {
   normalizeCloudflareManagedChallengeState,
 } from './cloudflare-managed-challenge.js';
 import { Capability, CAPABILITY_LABEL, capabilitiesFor, requiredHosts, frameHostMatches, isNetworkMutation, normalizeHost, PermissionManager, UNTRUSTED_CONTENT_TOOLS } from './permission-gate.js';
-import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeAutoAuthorizesClarifyTimeout, permissionModeSkipsAllGates } from './permission-mode.js';
+import { DEFAULT_PERMISSION_MODE, PERMISSION_MODE_STORAGE_KEY, loadPermissionMode, normalizePermissionMode, permissionModeAutoAcceptsSubmit, permissionModeAutoAllows, permissionModeAutoApprovesPlanReview, permissionModeAutoAuthorizesClarifyTimeout, permissionModeSkipsAllGates, resolveRunPermissionMode } from './permission-mode.js';
 import {
   buildPlannerMessages,
   buildPlannerIntentMessages,
@@ -617,10 +617,11 @@ export class Agent extends LoopDetector {
       save: async (grants) => {
         try { await browser.storage.local.set({ wb_permissions: grants }); } catch { /* best-effort */ }
       },
-      // Standing permission-mode policy for a (capability, host) pair the user
-      // has not answered yet. Consulted only after the grant lookup misses, so
-      // an explicit "don't allow" still wins.
-      autoAllow: (capability) => permissionModeAutoAllows(this._permissionMode, capability),
+      // The permission-mode policy for a (capability, host) pair the user has not
+      // answered yet — the run's own mode when it named one, else the standing
+      // choice. Consulted only after the grant lookup misses, so an explicit
+      // "don't allow" still wins in every mode.
+      autoAllow: (capability, tabId) => permissionModeAutoAllows(this._permissionModeFor(tabId), capability),
       // `bypass` ("accepts all permissions") is applied by the tool loop, not
       // here: the one boundary that outranks it — a WebMCP page callback's
       // mandatory gate — is only knowable per call, so a blanket skip inside
@@ -636,6 +637,12 @@ export class Agent extends LoopDetector {
     // injected page content.
     this._permissionMode = DEFAULT_PERMISSION_MODE;
     this._permissionModeLoaded = false;
+    // Run-scoped overrides of that standing choice, keyed by the tab the run
+    // occupies: tabId -> permission mode for THIS run only. Written and
+    // restored by processMessage around the run it belongs to (same shape as
+    // cloudRunContexts), so nothing survives the run that set it and a mode
+    // arriving over the cloud bridge can never reach the user's own browsing.
+    this._runPermissionModes = new Map();
     // Keep in-memory state in sync when storage changes out-of-band — a grant
     // revoked in Settings, or the permission mode changed.
     try {
@@ -1535,6 +1542,35 @@ export class Agent extends LoopDetector {
       this._permissionMode = await loadPermissionMode(browser.storage.local);
     } catch { /* storage unavailable in this context → keep asking every time */ }
     return this._permissionMode;
+  }
+
+  /**
+   * The mode the run on `tabId` is executing at: its own if it asked for one,
+   * otherwise the standing choice.
+   *
+   * Every gate reads through here rather than `this._permissionMode` directly,
+   * because one Agent instance serves the side panel and every bridge run at
+   * once — reading the field would apply one run's authority to all of them.
+   * Synchronous, so it is safe in the PermissionManager's autoAllow hook; the
+   * standing field it falls back to is kept warm by `_ensurePermissionMode`
+   * and the storage.onChanged listener.
+   */
+  _permissionModeFor(tabId) {
+    const requested = this._runPermissionModes.get(tabId);
+    return requested === undefined ? this._permissionMode : requested;
+  }
+
+  /**
+   * `_ensurePermissionMode` for one tab: honours a run-scoped mode, and only
+   * touches storage when there is none. A run that named its own mode is not
+   * asking about the machine's, so `force` must not re-read over it — that is
+   * what keeps a mid-run widening in the side panel from leaking into a
+   * delegated run, and vice versa.
+   */
+  async _ensurePermissionModeFor(tabId, options = {}) {
+    const requested = this._runPermissionModes.get(tabId);
+    if (requested !== undefined) return requested;
+    return this._ensurePermissionMode(options);
   }
 
   _isLocalIpv4Host(host) {
@@ -4616,6 +4652,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // Loaded before the clarify-timeout guard below, not just before the
       // capability gate: that guard releases under `bypass`, so it has to read
       // the mode the user chose rather than the default a cold worker starts on.
+      // Deliberately the STANDING mode and not `_ensurePermissionModeFor` — this
+      // warms the field every synchronous `_permissionModeFor` reader falls back
+      // to, and a run carrying its own mode would otherwise leave it cold.
       await this._ensurePermissionMode();
       const clarificationAuthorizationBlock = this._clarificationAuthorizationBlock(
         tabId,
@@ -4756,9 +4795,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // capability gate still asks before downloads, uploads, API writes and
       // scheduled work, so the submit card and the capability gate can no
       // longer share a single "skip everything" flag.
-      const bypassesSubmitConfirmation = permissionModeAutoAcceptsSubmit(this._permissionMode)
+      const bypassesSubmitConfirmation = permissionModeAutoAcceptsSubmit(this._permissionModeFor(tabId))
         || scheduledBypassesGate;
-      const bypassesCapabilityGate = permissionModeSkipsAllGates(this._permissionMode)
+      const bypassesCapabilityGate = permissionModeSkipsAllGates(this._permissionModeFor(tabId))
         || scheduledBypassesGate;
       if (!bypassesSubmitConfirmation) {
         const submitConfirmation = detectedSubmitAction || await this._detectLikelySubmitAction(tabId, fnName, fnArgs);
@@ -4821,7 +4860,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         let failClosed = false;
         let gateDisabled = false;
         for (const capability of capabilities) {
-          if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
+          if (permissionModeSkipsAllGates(this._permissionModeFor(tabId))) { gateDisabled = true; break; }
           // /allow-api waives ONLY write-method network egress.
           if (capability === Capability.NETWORK && isNetworkMutation(fnName, fnArgs) && this.isApiMutationsAllowed(tabId)) continue;
           // Every distinct host the call touches must be granted. Usually one,
@@ -4830,7 +4869,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const hosts = requiredHosts(capability, gateArgs, curUrl, fnName);
           if (hosts.length === 0) { failClosed = true; break; }
           for (const host of hosts) {
-            if (permissionModeSkipsAllGates(this._permissionMode)) { gateDisabled = true; break; }
+            if (permissionModeSkipsAllGates(this._permissionModeFor(tabId))) { gateDisabled = true; break; }
             const verdict = this.permissions.check(host, capability, tabId, {
               requireExplicitGrant: fnName === 'execute_webmcp_tool',
             });
@@ -4849,7 +4888,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             // so this very action rides the new mode instead of recording a
             // grant for a question the mode now answers — those auto-resolved
             // cards answer 'once', so no explicit "always" choice is lost.
-            const freshMode = await this._ensurePermissionMode({ force: true });
+            const freshMode = await this._ensurePermissionModeFor(tabId, { force: true });
             if (permissionModeSkipsAllGates(freshMode)) { gateDisabled = true; break; }
             if (permissionModeAutoAllows(freshMode, capability)) continue;
             await this.permissions.record(host, capability, 'allow', choice, tabId); // 'once' | 'always'
@@ -7599,6 +7638,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // resume on a cold worker that has hydrated the guard but not yet read the
     // mode. Load it here so every later check — including a plain final answer
     // that never reaches the tool loop — sees the mode the user actually chose.
+    // The STANDING mode, for the same reason as in `_executeToolBatch`: this is
+    // the fallback warm-up, not the per-run lookup.
     await this._ensurePermissionMode();
     const guard = this._clarificationAuthorizationGuards.get(tabId);
     if (!guard) return;
@@ -7622,7 +7663,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // mode restores the block for the next action. Every caller loads the mode
     // first (`_prepareClarificationAuthorizationForRun` at run start,
     // `_executeToolBatch` before this check), so the cached field is warm.
-    if (permissionModeAutoAuthorizesClarifyTimeout(this._permissionMode)) return null;
+    if (permissionModeAutoAuthorizesClarifyTimeout(this._permissionModeFor(tabId))) return null;
     const conversationId = this.conversationIds.get(tabId) || null;
     if (guard.conversationId && conversationId && guard.conversationId !== conversationId) {
       this._clarificationAuthorizationGuards.delete(tabId);
@@ -9503,7 +9544,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // call, which is the opposite of what the user picked. The mode is read
       // here rather than taken from the cached field: the planner runs BEFORE
       // the tool loop, so on a cold service worker nothing has loaded it yet.
-      const permissionMode = await this._ensurePermissionMode();
+      const permissionMode = await this._ensurePermissionModeFor(tabId);
       const modeAutoApprove = permissionModeAutoApprovesPlanReview(permissionMode);
       if (scheduledAutoApprove || modeAutoApprove || !this._shouldReviewPlan(plan)) {
         // Confidence- and mode-gated skips leave a visible trace in the
@@ -16737,7 +16778,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // The guard is still armed either way: a stricter mode restores the block
       // for the actions that follow.
       const timeoutAuthorizedByMode = source === 'timeout'
-        && permissionModeAutoAuthorizesClarifyTimeout(await this._ensurePermissionMode());
+        && permissionModeAutoAuthorizesClarifyTimeout(await this._ensurePermissionModeFor(tabId));
       const authorized = recordedAuthorization || timeoutAuthorizedByMode;
       let note;
       if (timeoutAuthorizedByMode) {
@@ -19647,6 +19688,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (runOptions.cloudRun) {
       this.cloudRunContexts.set(tabId, { outputSchema: runOptions.outputSchema ?? null, schemaRepairUsed: false });
     }
+    const hadRunPermissionMode = this._runPermissionModes.has(tabId);
+    const previousRunPermissionMode = this._runPermissionModes.get(tabId);
+    if (runOptions.permissionMode) {
+      this._runPermissionModes.set(tabId, resolveRunPermissionMode(runOptions.permissionMode, this._permissionMode));
+    } else {
+      this._runPermissionModes.delete(tabId);
+    }
     try {
       return await this._processMessageInner(tabId, userMessage, onUpdate, mode, attachments, runOptions);
     } finally {
@@ -19671,6 +19719,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (previousCloudContext) this.cloudRunContexts.set(tabId, previousCloudContext);
         else this.cloudRunContexts.delete(tabId);
       }
+      // Restore rather than delete: a nested run must not strip the outer
+      // run's mode when it finishes. `has` and not truthiness, because the
+      // absence of an override is itself the state being restored.
+      if (hadRunPermissionMode) this._runPermissionModes.set(tabId, previousRunPermissionMode);
+      else this._runPermissionModes.delete(tabId);
       this._userAttachmentHandles.delete(tabId);
       this._runUpdateCallbacks.delete(tabId);
       this._runningTabs.delete(tabId);
@@ -21031,6 +21084,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (runOptions.cloudRun) {
       this.cloudRunContexts.set(tabId, { outputSchema: runOptions.outputSchema ?? null, schemaRepairUsed: false });
     }
+    const hadRunPermissionMode = this._runPermissionModes.has(tabId);
+    const previousRunPermissionMode = this._runPermissionModes.get(tabId);
+    if (runOptions.permissionMode) {
+      this._runPermissionModes.set(tabId, resolveRunPermissionMode(runOptions.permissionMode, this._permissionMode));
+    } else {
+      this._runPermissionModes.delete(tabId);
+    }
     try {
       return await this._processMessageStreamInner(tabId, userMessage, onUpdate, mode, runOptions);
     } finally {
@@ -21055,6 +21115,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (previousCloudContext) this.cloudRunContexts.set(tabId, previousCloudContext);
         else this.cloudRunContexts.delete(tabId);
       }
+      // Restore rather than delete: a nested run must not strip the outer
+      // run's mode when it finishes. `has` and not truthiness, because the
+      // absence of an override is itself the state being restored.
+      if (hadRunPermissionMode) this._runPermissionModes.set(tabId, previousRunPermissionMode);
+      else this._runPermissionModes.delete(tabId);
       this._userAttachmentHandles.delete(tabId);
       this._runUpdateCallbacks.delete(tabId);
       this._runningTabs.delete(tabId);

@@ -36,7 +36,15 @@ import {
   type CloudSnapshot,
 } from "./bridge.js";
 import { bridgeUrl, config } from "./config.js";
-import { abort, awaitSettled, describeSnapshot, getStatus, respond, startRun } from "./runs.js";
+import {
+  PERMISSION_MODES,
+  abort,
+  awaitSettled,
+  describeSnapshot,
+  getStatus,
+  respond,
+  startRun,
+} from "./runs.js";
 
 export const SERVER_NAME = BRAND.serverName;
 export const SERVER_VERSION = "1.0.0";
@@ -65,12 +73,49 @@ const server = new McpServer(
       `admin panels, internal tools). Prefer mode='ask' (read-only) and ${T.extract} for ` +
       "structured data; use mode='act' whenever the task opens a site, navigates, clicks, types " +
       `or submits. If a tool reports that no extension is connected, call ${T.connection} and ` +
-      "relay its instructions to the user instead of retrying. When a run stops at " +
-      `'needs_user_input', ask the user and answer with ${T.respond} — never guess. Permission ` +
-      "requests list their accepted answers (once | always | deny); send one of those exactly, " +
-      "translating the user's words — the browser treats anything else as deny.",
+      "relay its instructions to the user instead of retrying. Runs default to " +
+      "permission_mode='bypass' and do not stop for permission cards; pass a narrower " +
+      "permission_mode when the user wants to approve actions in the browser themselves. " +
+      `When a run stops at 'needs_user_input', ask the user and answer with ${T.respond} — ` +
+      "never guess. That pause is the task's own question in every mode. Under a narrower " +
+      "permission_mode it can also be a permission request, which lists its accepted answers " +
+      "(once | always | deny); send one of those exactly, translating the user's words — the " +
+      "browser treats anything else as deny.",
   },
 );
+
+/**
+ * How much authority ONE delegated run carries, as a tool parameter.
+ *
+ * Defaults to `bypass` — the rung that runs a whole task without stopping —
+ * because of who sits on the other end of this socket. A permission card raised
+ * by a run started here is answered through the respond tool, which is to say
+ * by the caller: the same agent that requested the action decides whether to
+ * allow it. A narrower default does not put a human in that loop. It spends a
+ * round trip per action to reach the same answer, and it pushes callers toward
+ * replying `always`, which writes a PERSISTENT grant for that host into the
+ * user's browser for a decision they never made.
+ *
+ * What the default costs is real and belongs in writing: under `bypass` a run
+ * may download, upload, issue write requests and schedule work on any host, in
+ * a browser where the user is already signed in everywhere, with nothing shown
+ * before it happens. A task assembled from page content therefore reaches
+ * further than it does in any other mode. Pass a narrower mode whenever a human
+ * is actually watching the side panel and wants to approve actions themselves.
+ *
+ * Two things no mode changes: the run stays visible and abortable in the panel,
+ * and a page's own WebMCP callback keeps its mandatory confirmation.
+ */
+const permissionModeParam = z
+  .enum(PERMISSION_MODES)
+  .default("bypass")
+  .describe(
+    "Authority for this run. 'bypass' (default) runs the task through without permission " +
+      "cards. 'page_actions' still asks before downloads, uploads, network writes and " +
+      "scheduled work; 'auto' also asks before running JavaScript and before form submits; " +
+      "'manual' asks before every consequential action. Narrow it when a human is watching " +
+      "the browser and wants to approve actions themselves.",
+  );
 
 type TextResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -98,11 +143,15 @@ server.registerTool(
       "mode='ask' is read-only: it reads, extracts and summarises the page that is already " +
       "open, and cannot navigate, click, type or submit. Use mode='act' whenever the task " +
       "involves going somewhere or doing something — opening a site, searching on it, " +
-      "playing, clicking, typing, submitting; each consequential action is gated by a " +
-      "per-host permission request. Use 'ask' only when nothing but reading is needed.\n\n" +
+      "playing, clicking, typing, submitting. Use 'ask' only when nothing but reading is " +
+      "needed.\n\n" +
+      "How far the run may go is permission_mode, which is separate from 'ask'/'act' and " +
+      "defaults to 'bypass': the task runs through without permission cards. Narrow it when " +
+      "the user wants to approve actions in the browser themselves.\n\n" +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
-      `answer with ${T.respond} — never guess on their behalf. Permission requests list ` +
-      "their accepted answers (once | always | deny); send one of those exactly.",
+      `answer with ${T.respond} — never guess on their behalf. Under a narrower ` +
+      "permission_mode the pause can be a permission request, which lists its accepted " +
+      "answers (once | always | deny); send one of those exactly.",
     inputSchema: {
       task: z
         .string()
@@ -116,8 +165,9 @@ server.registerTool(
         .default("ask")
         .describe(
           "'ask' is read-only: it reads the page that is already open and cannot navigate, " +
-            "click, type or submit. 'act' permits navigation, clicking and typing, each gated by " +
-            "a per-host permission request. Default 'ask'.",
+            "click, type or submit. 'act' permits navigation, clicking and typing. Default " +
+            "'ask'. This chooses what the run MAY do; permission_mode chooses whether it has " +
+            "to ask first.",
         ),
       tab_id: z
         .number()
@@ -145,6 +195,7 @@ server.registerTool(
           "How long to wait before returning control. The run keeps going in the browser " +
             `past this point; poll ${T.status} to pick it back up.`,
         ),
+      permission_mode: permissionModeParam,
       wait: z
         .boolean()
         .default(true)
@@ -154,7 +205,15 @@ server.registerTool(
         ),
     },
   },
-  async ({ task, mode, tab_id, allow_api_mutations, timeout_seconds, wait }): Promise<TextResult> => {
+  async ({
+    task,
+    mode,
+    tab_id,
+    allow_api_mutations,
+    permission_mode,
+    timeout_seconds,
+    wait,
+  }): Promise<TextResult> => {
     const timeoutMs = timeout_seconds ? timeout_seconds * 1000 : config.defaultRunTimeoutMs;
     const deadline = Date.now() + timeoutMs;
     const runId = `mcp_${randomUUID()}`;
@@ -169,6 +228,7 @@ server.registerTool(
             mode,
             tabId: tab_id,
             apiMutationsAllowed: allow_api_mutations,
+            permissionMode: permission_mode,
           },
           Math.max(1, deadline - Date.now()),
         );
@@ -211,7 +271,10 @@ server.registerTool(
       `than a prose summary. Use ${T.run} instead when the task needs interaction.\n\n` +
       "If the run stops with status 'needs_user_input', relay the question to the user and " +
       `answer with ${T.respond} — never guess on their behalf. If it lists accepted ` +
-      "answers, send one of those exactly.",
+      "answers, send one of those exactly.\n\n" +
+      "permission_mode defaults to 'bypass' here too. Ask mode already cannot navigate, " +
+      "click, type or submit, so it changes little; it is accepted so a read that does trip " +
+      "a gate does not stall waiting for an answer.",
     inputSchema: {
       task: z
         .string()
@@ -241,6 +304,7 @@ server.registerTool(
           "How long to wait before returning control. The extraction keeps running past " +
             `this point; poll ${T.status} with its run_id.`,
         ),
+      permission_mode: permissionModeParam,
       wait: z
         .boolean()
         .default(true)
@@ -250,7 +314,14 @@ server.registerTool(
         ),
     },
   },
-  async ({ task, output_schema, tab_id, timeout_seconds, wait }): Promise<TextResult> => {
+  async ({
+    task,
+    output_schema,
+    tab_id,
+    permission_mode,
+    timeout_seconds,
+    wait,
+  }): Promise<TextResult> => {
     const timeoutMs = timeout_seconds ? timeout_seconds * 1000 : config.defaultRunTimeoutMs;
     const deadline = Date.now() + timeoutMs;
     const runId = `mcp_${randomUUID()}`;
@@ -265,6 +336,7 @@ server.registerTool(
             mode: "ask",
             tabId: tab_id,
             outputSchema: output_schema,
+            permissionMode: permission_mode,
           },
           Math.max(1, deadline - Date.now()),
         );

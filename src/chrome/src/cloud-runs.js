@@ -3,6 +3,7 @@ import {
   normalizeSavedWorkflow,
 } from './agent/workflows.js';
 import { isCredentialField } from './agent/credential-fields.js';
+import { PERMISSION_MODES } from './agent/permission-mode.js';
 import {
   CLOUD_BRIDGE_ENABLED_KEY,
   CLOUD_BRIDGE_URL_KEY,
@@ -68,6 +69,91 @@ export function normalizeCloudRunMode(value, fallback = 'act') {
     throw cloudRunError('Cloud run `mode` must be `ask` or `act`.', 400);
   }
   return mode;
+}
+
+/**
+ * The permission mode one cloud run executes at, or '' when the caller named
+ * none (then the browser's standing mode applies, exactly as before).
+ *
+ * A delegated run needs its own mode because the caller on the other end of the
+ * bridge is the one who answers permission cards; leaving it on the standing
+ * mode meant the only ways to run a task unattended were to strip the gate from
+ * the user's own browsing, or to have the caller auto-answer `always` — which
+ * writes real, persistent grants for hosts the user never approved. Naming the
+ * mode is the honest version of both.
+ *
+ * Junk THROWS rather than normalizing. `resolveRunPermissionMode` fails safe to
+ * `manual`, so a caller that misspelled `bypass` would otherwise get a run that
+ * stops at every card with nothing to explain why; 400 names the typo instead.
+ * Case is folded first because this arrives from another program's config, not
+ * from storage — `BYPASS` is a spelling, not an attack.
+ */
+function normalizeCloudRunPermissionMode(value) {
+  const mode = String(value ?? '').trim().toLowerCase();
+  if (!mode) return '';
+  if (!PERMISSION_MODES.includes(mode)) {
+    throw cloudRunError(
+      `Cloud run \`permission_mode\` must be one of: ${PERMISSION_MODES.join(', ')}.`,
+      400,
+    );
+  }
+  return mode;
+}
+
+/**
+ * The mode for THIS run: what the caller asked for, else what the run it
+ * continues was granted, else '' for the browser's standing mode.
+ *
+ * A continuation inherits for the same reason it inherits `mode`: resuming a
+ * delegated run is the same run, and having it start raising cards halfway
+ * through would strand it on a caller that had already been told it would not
+ * be asked.
+ */
+function cloudRunPermissionMode(msg, parentRun) {
+  const requested = normalizeCloudRunPermissionMode(msg.permissionMode ?? msg.permission_mode);
+  return requested || parentRun?.permissionMode || '';
+}
+
+/**
+ * Why the browser cannot answer a model right now, or '' when it can.
+ *
+ * A cloud run used to sail past this and die at its first completion with
+ * whatever the provider said — a 401, or a complaint about an empty model —
+ * which reads as a broken bridge rather than as "nobody has signed in yet".
+ * The managed cloud provider ships with no key and no model until a sign-in
+ * installs them, so on a browser whose side panel has never been opened this is
+ * the state EVERY delegated run starts in.
+ *
+ * Deliberately asked of the provider's own declared requirements rather than of
+ * any particular provider id: an install driven by a hand-configured provider
+ * gets the same answer for the same reason, and upstream builds whose managed
+ * provider ships a working default are unaffected.
+ */
+function describeUnusableProvider(agent) {
+  const providerManager = agent?.providerManager;
+  // Only POSITIVE evidence refuses a run. With nothing to ask, an undiagnosable
+  // browser has to fail the way it always did — at the first completion — rather
+  // than gain a refusal invented by a check that could not actually check.
+  if (typeof providerManager?.getActive !== 'function') return '';
+  let provider;
+  try {
+    provider = providerManager.getActive();
+  } catch {
+    // getActive throws for exactly one reason: the selected provider is gone.
+    return 'WebBrain has no active model provider. Open its side panel and sign in, then start the run again.';
+  }
+  if (!provider) return '';
+  const config = provider.config || {};
+  const label = config.label || provider.name || 'The active provider';
+  const missing = config.requiresApiKey && !String(config.apiKey || '').trim()
+    ? 'API key'
+    : config.requiresModel && !String(config.model || '').trim()
+      ? 'model'
+      : '';
+  if (!missing) return '';
+  return `WebBrain cannot run this task: ${label} has no ${missing} yet. `
+    + 'Open the WebBrain side panel and sign in — or choose a provider in its Settings — '
+    + 'then start the run again.';
 }
 
 function normalizedCloudKey(key) {
@@ -588,6 +674,7 @@ function compactCloudRunForPersistence(run) {
     traceRunId: run?.traceRunId || null,
     parentRunId: run?.parentRunId || null,
     mode: run?.mode || 'act',
+    permissionMode: run?.permissionMode || '',
     captchaDiagnostics: run?.captchaDiagnostics || null,
     tabId: run?.tabId,
     task: run?.task,
@@ -657,6 +744,7 @@ function cloudSnapshot(run, { includeUpdates = true } = {}) {
     workflowId: run.workflowId || null,
     parentRunId: run.parentRunId || null,
     mode: run.mode || 'act',
+    permissionMode: run.permissionMode || '',
     tabId: run.tabId,
     task: run.task,
     structured: run.structured ?? hasCloudOutputSchema(run.outputSchema),
@@ -1022,6 +1110,11 @@ export function createCloudRunController({
         throw cloudRunError('Parent cloud run is no longer available and has no saved tab.', 409);
       }
     }
+    // Both refusals come before resolveTabId: a run that cannot start must not
+    // first activate — and possibly open — a tab in front of the user.
+    const unusableProvider = describeUnusableProvider(agent);
+    if (unusableProvider) throw cloudRunError(unusableProvider, 428);
+    const permissionMode = cloudRunPermissionMode(msg, parentRun);
     const tabId = await resolveTabId(requestedTabId);
     const workflow = msg._workflow || null;
     const mode = workflow ? 'act' : normalizeCloudRunMode(msg.mode, parentRun?.mode || 'act');
@@ -1071,6 +1164,7 @@ export function createCloudRunController({
       traceRunId: null,
       parentRunId,
       mode,
+      permissionMode,
       tabId,
       task,
       structured,
@@ -1168,6 +1262,7 @@ export function createCloudRunController({
                 cloudRun: true,
                 independentRun: true,
                 preserveRichTextToolbarAudit: true,
+                permissionMode,
               },
             ));
           } else if (replay.status === 'stopped') {
@@ -1181,6 +1276,7 @@ export function createCloudRunController({
             cloudRun: true,
             independentRun: true,
             apiMutationsDenied: mode === 'ask',
+            permissionMode,
             outputSchema,
             onTraceStarted(traceRunId) {
               run.traceRunId = traceRunId;

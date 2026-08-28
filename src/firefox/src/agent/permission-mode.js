@@ -124,6 +124,34 @@ export function normalizePermissionMode(value) {
   return Object.hasOwn(RANK, value) ? value : DEFAULT_PERMISSION_MODE;
 }
 
+/**
+ * The mode ONE run executes at, from what that run asked for and the standing
+ * choice in storage.
+ *
+ * A delegated run carries its own mode. The standing mode is a statement about
+ * the browsing the USER drives in the side panel, and reusing it for a task
+ * handed to an agent over the cloud bridge forced a choice nobody should have
+ * to make: leave every delegated run stopping at cards its caller has to
+ * answer, or strip the gate from the user's own browsing to unblock it. This
+ * is the seam that lets those two be different.
+ *
+ * A requested mode REPLACES the standing one, in both directions. Widening is
+ * the case that motivated it; narrowing has to work too, because a caller
+ * asking for less authority than the machine's default is asking for more
+ * caution on its own run, and refusing that would be the surprising reading.
+ *
+ * Absent (`undefined`/`null`/`''`) means "no opinion" → the standing mode, which
+ * is what every side-panel run passes. Anything else normalizes, so junk lands
+ * on the strictest mode rather than inheriting a permissive standing one — a
+ * corrupted value can only ever narrow.
+ */
+export function resolveRunPermissionMode(requested, standing) {
+  if (requested === undefined || requested === null || requested === '') {
+    return normalizePermissionMode(standing);
+  }
+  return normalizePermissionMode(requested);
+}
+
 export function permissionModeRank(mode) {
   return RANK[normalizePermissionMode(mode)];
 }

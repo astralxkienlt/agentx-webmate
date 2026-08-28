@@ -361,7 +361,10 @@ export function requiredHosts(capability, args, currentUrlOrHost, toolName) {
 /**
  * Stores and evaluates (capability, host) grants. Pure logic — storage is
  * injected via async load/save hooks so this stays Node-testable. `autoAllow`
- * is the per-capability standing policy of the active permission mode.
+ * is the per-capability standing policy of the active permission mode; it is
+ * handed the `tabId` as well as the capability because the mode in force can
+ * be a run-scoped one (see resolveRunPermissionMode), and a run only ever
+ * occupies one tab.
  *
  * There is deliberately no "skip everything" hook: the `bypass` mode is
  * applied by the tool loop instead, because the one boundary that outranks it
@@ -448,7 +451,7 @@ export class PermissionManager {
     // gates are mandatory by contract (a WebMCP page callback runs arbitrary
     // page logic behind a documented two-gate boundary) and must reach a human
     // even in a mode that pre-approves the same capability elsewhere.
-    if (!options.requireExplicitGrant && this._autoAllow(capability)) {
+    if (!options.requireExplicitGrant && this._autoAllow(capability, tabId)) {
       return { allowed: true, needsPrompt: false, autoAllowed: true };
     }
     return { allowed: false, needsPrompt: true };

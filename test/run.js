@@ -626,6 +626,7 @@ const {
   permissionModeLabelKey,
   permissionModeRank,
   permissionModeSkipsAllGates,
+  resolveRunPermissionMode,
   resolvePermissionMode,
   savePermissionMode,
 } = permissionModeCh;
@@ -17898,6 +17899,161 @@ test('cloud run controller forwards Ask mode and inherits it for continuations',
     () => controller.startRun({ task: 'Invalid mode', mode: 'dev' }),
     /must be `ask` or `act`/,
   );
+});
+
+// A stub browser for the permission-mode wire tests below. Deliberately small:
+// each test asserts one thing about how the mode travels, not about run bodies.
+function permissionModeCloudHarness({ providerManager } = {}) {
+  const session = {};
+  const tab = { id: 91, url: 'https://example.com/report', active: true, windowId: 9 };
+  const seen = [];
+  const activatedTabs = [];
+  let nextRun = 0;
+  const controller = createCloudRunController({
+    chromeApi: {
+      tabs: {
+        query: async () => [tab],
+        get: async () => tab,
+        update: async (...args) => { activatedTabs.push(args); return tab; },
+      },
+      windows: { update: async () => ({}) },
+      storage: {
+        local: { get: async () => ({ webbrainCloudBridgeEnabled: false }) },
+        session: {
+          get: async key => ({ [key]: session[key] || [] }),
+          set: async value => Object.assign(session, value),
+        },
+      },
+      runtime: { sendMessage: async () => ({}) },
+    },
+    agent: {
+      isRunning: () => false,
+      abort: () => {},
+      ...(providerManager === undefined ? {} : { providerManager }),
+      processMessage: async (_tabId, task, _onUpdate, _mode, _attachments, runOptions) => {
+        seen.push(runOptions.permissionMode);
+        return `Finished: ${task}`;
+      },
+    },
+    ensureOffscreen: async () => {},
+    makeRunId: () => `run_pm_${++nextRun}`,
+  });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  return { controller, seen, activatedTabs, settle };
+}
+
+test('cloud run controller hands the caller-chosen permission mode to the agent', async () => {
+  // Both spellings, because the bridge spreads the payload straight onto the
+  // background message and MCP clients write snake_case.
+  for (const key of ['permissionMode', 'permission_mode']) {
+    const { controller, seen, settle } = permissionModeCloudHarness();
+    const started = await controller.startRun({ task: 'Open the report', [key]: 'bypass' });
+    await settle();
+    assert.deepEqual(seen, ['bypass'], `${key} did not reach the agent`);
+    assert.equal(started.permissionMode, 'bypass', `${key} is not reported on the snapshot`);
+  }
+});
+
+test('a cloud run that names no permission mode leaves the browser\'s standing one alone', async () => {
+  const { controller, seen, settle } = permissionModeCloudHarness();
+  const started = await controller.startRun({ task: 'Read the page' });
+  await settle();
+  assert.deepEqual(seen, [''],
+    'an unset mode must reach the agent as "no opinion", not as a mode');
+  assert.equal(started.permissionMode, '',
+    'and the snapshot must not claim a mode the run never asked for');
+});
+
+test('a misspelled permission mode is refused, not silently narrowed', async () => {
+  // resolveRunPermissionMode fails safe to `manual`, so accepting junk here
+  // would hand back a run that stops at every card with nothing to explain it.
+  const { controller, seen, settle } = permissionModeCloudHarness();
+  for (const junk of ['bypas', 'BYPASS!', 'yolo', 'skip', true]) {
+    await assert.rejects(
+      () => controller.startRun({ task: 'Open the report', permission_mode: junk }),
+      /`permission_mode` must be one of: manual, auto, page_actions, bypass/,
+      `${JSON.stringify(junk)} was not refused`,
+    );
+  }
+  // Case is folded, though: this arrives from another program's config file.
+  await controller.startRun({ task: 'Open the report', permission_mode: '  BYPASS ' });
+  await settle();
+  assert.deepEqual(seen, ['bypass']);
+});
+
+test('continuing a cloud run keeps the authority the first leg was given', async () => {
+  // Same run, resumed. Starting to raise cards halfway through would strand it
+  // on a caller that had already been told it would not be asked.
+  const { controller, seen, settle } = permissionModeCloudHarness();
+  const parent = await controller.startRun({ task: 'Open the report', permission_mode: 'bypass' });
+  await settle();
+  const child = await controller.startRun({ task: 'Now export it', parentRunId: parent.runId });
+  await settle();
+  assert.deepEqual(seen, ['bypass', 'bypass'], 'the continuation lost its parent\'s mode');
+  assert.equal(child.permissionMode, 'bypass');
+
+  // An explicit mode on the continuation still wins over what it inherited.
+  const narrowed = await controller.startRun({
+    task: 'And delete it', parentRunId: child.runId, permission_mode: 'manual',
+  });
+  await settle();
+  assert.deepEqual(seen, ['bypass', 'bypass', 'manual']);
+  assert.equal(narrowed.permissionMode, 'manual');
+});
+
+test('a browser with no model access refuses the run instead of failing at the first completion', async () => {
+  // The state EVERY delegated run starts in on a browser whose side panel has
+  // never been opened: the managed provider ships with no key and no model until
+  // a sign-in installs them. Without this the run died at its first completion
+  // with a 401 or an empty-model complaint, which reads as a broken bridge.
+  for (const [what, config] of [
+    ['a missing key', { label: 'AgentX Cloud', requiresApiKey: true, apiKey: '  ', model: 'gpt-x' }],
+    ['a missing model', { label: 'AgentX Cloud', requiresModel: true, model: '', apiKey: 'sk-x' }],
+  ]) {
+    const { controller, seen, activatedTabs, settle } = permissionModeCloudHarness({
+      providerManager: { getActive: () => ({ config }) },
+    });
+    await assert.rejects(
+      () => controller.startRun({ task: 'Open the report' }),
+      /AgentX Cloud has no (API key|model) yet[\s\S]*side panel and sign in/,
+      `${what} did not produce a sign-in message`,
+    );
+    await settle();
+    assert.deepEqual(seen, [], `${what}: the agent must never be dispatched`);
+    assert.deepEqual(activatedTabs, [],
+      `${what}: a run that cannot start must not first bring a tab to the front`);
+    const listed = await controller.status({});
+    assert.deepEqual(listed.runs, [], `${what}: a refused run must leave no record`);
+  }
+
+  // No active provider at all — the other shape of the same answer.
+  const gone = permissionModeCloudHarness({
+    providerManager: { getActive: () => { throw new Error('No active provider: webbrain_cloud'); } },
+  });
+  await assert.rejects(
+    () => gone.controller.startRun({ task: 'Open the report' }),
+    /has no active model provider/,
+  );
+});
+
+test('a browser the controller cannot interrogate is not refused on a guess', async () => {
+  // Only POSITIVE evidence refuses a run. An agent with no provider manager is
+  // undiagnosable, not broken — it has to fail the way it always did rather than
+  // gain a refusal invented by a check that could not actually check.
+  for (const providerManager of [undefined, null, {}, { getActive: null }]) {
+    const { controller, seen, settle } = permissionModeCloudHarness({ providerManager });
+    await controller.startRun({ task: 'Open the report' });
+    await settle();
+    assert.deepEqual(seen, [''],
+      `providerManager=${JSON.stringify(providerManager)} must not block the run`);
+  }
+  // And a provider that declares no requirements is usable, not suspect.
+  const { controller, seen, settle } = permissionModeCloudHarness({
+    providerManager: { getActive: () => ({ config: { label: 'Ollama', model: 'llama3' } }) },
+  });
+  await controller.startRun({ task: 'Open the report' });
+  await settle();
+  assert.deepEqual(seen, ['']);
 });
 
 test('cloud run controller fails clarification-required terminals without schema fallback', async () => {
@@ -68060,6 +68216,42 @@ test('permission-mode label keys are derived, so the two UIs cannot drift', () =
   assert.equal(permissionModeLabelKey('nonsense'), `sp.permmode.${DEFAULT_PERMISSION_MODE}`);
 });
 
+test('a run-scoped mode replaces the standing one in BOTH directions', () => {
+  // Widening is the case that motivated the seam — a delegated run that must not
+  // stop at cards its caller would only answer itself. Narrowing has to work
+  // too: a caller asking for less authority than the machine's default is asking
+  // for more caution, and quietly giving it the wider standing mode would be the
+  // one reading nobody could defend.
+  for (const requested of PERMISSION_MODES) {
+    for (const standing of PERMISSION_MODES) {
+      assert.equal(resolveRunPermissionMode(requested, standing), requested,
+        `a run asking for ${requested} on a ${standing} machine must run at ${requested}`);
+    }
+  }
+});
+
+test('a run that names no mode inherits the standing one', () => {
+  for (const standing of PERMISSION_MODES) {
+    for (const absent of [undefined, null, '']) {
+      assert.equal(resolveRunPermissionMode(absent, standing), standing,
+        `${JSON.stringify(absent)} must mean "no opinion", not a mode`);
+    }
+  }
+  // A standing value that is itself junk still normalizes — the side panel's
+  // stored mode and a run's requested mode go through the same fail-safe.
+  assert.equal(resolveRunPermissionMode(undefined, 'yolo'), DEFAULT_PERMISSION_MODE);
+});
+
+test('a junk run mode narrows to the default, never to a permissive standing mode', () => {
+  // The fail-safe direction that matters: a corrupted or hostile value must not
+  // be able to INHERIT bypass from the machine, and must not be able to widen.
+  for (const junk of ['BYPASS ', 'yolo', 0, 1, {}, [], 'toString', 'bypas']) {
+    assert.equal(resolveRunPermissionMode(junk, PermissionMode.BYPASS), DEFAULT_PERMISSION_MODE,
+      `${JSON.stringify(junk)} must fall to the strictest mode, not inherit bypass`);
+    assert.equal(resolveRunPermissionMode(junk, PermissionMode.MANUAL), DEFAULT_PERMISSION_MODE);
+  }
+});
+
 test('permission-mode stays byte-identical across browser trees', () => {
   const chrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/permission-mode.js'), 'utf8');
   const firefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/agent/permission-mode.js'), 'utf8');
@@ -68073,6 +68265,52 @@ test('permission-mode stays byte-identical across browser trees', () => {
       permissionModeCh.permissionModeAutoApprovesPlanReview(mode));
     assert.equal(permissionModeFx.permissionModeAutoAuthorizesClarifyTimeout(mode),
       permissionModeCh.permissionModeAutoAuthorizesClarifyTimeout(mode));
+    for (const standing of PERMISSION_MODES) {
+      assert.equal(permissionModeFx.resolveRunPermissionMode(mode, standing),
+        permissionModeCh.resolveRunPermissionMode(mode, standing));
+    }
+  }
+});
+
+test('the permission gate can answer two tabs differently at the same time', async () => {
+  // The property the whole seam exists for: ONE Agent serves the side panel and
+  // every bridge run, so a mode is only ever safe to widen if it can be widened
+  // for one tab alone. Driven through PermissionManager rather than the Agent so
+  // it holds for both trees' gates.
+  for (const [label, Manager] of [['chrome', PermissionManagerCh], ['firefox', PermissionManager]]) {
+    const runModes = new Map([[/* delegated tab */ 7, PermissionMode.BYPASS]]);
+    const standing = PermissionMode.MANUAL;
+    const manager = new Manager({
+      autoAllow: (capability, tabId) =>
+        permissionModeAutoAllows(runModes.get(tabId) ?? standing, capability),
+    });
+
+    const delegated = manager.check('example.com', 'click', 7);
+    const sidePanel = manager.check('example.com', 'click', 9);
+    assert.equal(delegated.allowed, true, `${label}: the delegated run must not be asked`);
+    assert.equal(delegated.autoAllowed, true, `${label}: and it must be the mode that allowed it`);
+    assert.equal(sidePanel.allowed, false, `${label}: the user's own tab must still be asked`);
+    assert.equal(sidePanel.needsPrompt, true, `${label}: and it must raise a card`);
+
+    // The run ends; its authority ends with it.
+    runModes.delete(7);
+    assert.equal(manager.check('example.com', 'click', 7).needsPrompt, true,
+      `${label}: authority must not outlive the run that carried it`);
+  }
+});
+
+test('a standing DENY still outranks a run-scoped bypass at the gate', async () => {
+  // permission-mode.js promises that a mode only ever answers a question the
+  // user has NOT already answered. A run carrying its own mode must not turn
+  // that into a way to overrule an explicit refusal at this layer — `bypass`
+  // reaches past a standing deny only in the tool loop, where the mandatory
+  // WebMCP gate can still be excluded from it.
+  for (const [label, Manager] of [['chrome', PermissionManagerCh], ['firefox', PermissionManager]]) {
+    const manager = new Manager({ autoAllow: () => true });
+    await manager.record('example.com', 'download', 'deny', 'always');
+    const verdict = manager.check('example.com', 'download', 7);
+    assert.equal(verdict.allowed, false, `${label}: a recorded deny must survive an auto-allowing mode`);
+    assert.equal(verdict.needsPrompt, false, `${label}: and it must not re-ask`);
   }
 });
 
@@ -68901,7 +69139,25 @@ test('the agent reads the mode from one place and keeps the gate layered', () =>
   for (const [label, prefix, api] of [['chrome', 'src/chrome', 'chrome'], ['firefox', 'src/firefox', 'browser']]) {
     const agent = fs.readFileSync(path.join(ROOT, prefix, 'src/agent/agent.js'), 'utf8');
     assert.match(agent, new RegExp(`this\\._permissionMode = await loadPermissionMode\\(${api}\\.storage\\.local\\)`), `${label}: one loader, including the legacy migration`);
-    assert.match(agent, /autoAllow: \(capability\) => permissionModeAutoAllows\(this\._permissionMode, capability\)/, `${label}: the gate must consult the ladder`);
+    assert.match(agent, /autoAllow: \(capability, tabId\) => permissionModeAutoAllows\(this\._permissionModeFor\(tabId\), capability\)/, `${label}: the gate must consult the ladder through the per-tab resolver`);
+    // Every DECISION reads the resolved mode, so a run carrying its own mode
+    // cannot be judged by the machine's — and the user's side panel cannot be
+    // judged by a delegated run's. The two remaining bare reads are the
+    // standing field's own lifecycle (loader, storage.onChanged) plus the
+    // resolver's fallback and the baseline handed to resolveRunPermissionMode;
+    // anything else means a gate went back to reading the raw field.
+    for (const decision of [
+      'permissionModeSkipsAllGates',
+      'permissionModeAutoAcceptsSubmit',
+      'permissionModeAutoApprovesPlanReview',
+      'permissionModeAutoAuthorizesClarifyTimeout',
+      'permissionModeAutoAllows',
+    ]) {
+      assert.doesNotMatch(agent, new RegExp(`${decision}\\(this\\._permissionMode[,)]`),
+        `${label}: ${decision} must read _permissionModeFor(tabId), not the standing field`);
+    }
+    assert.doesNotMatch(agent, /permissionMode[A-Za-z]*\(await this\._ensurePermissionMode\(\)/,
+      `${label}: an awaited mode decision must go through _ensurePermissionModeFor(tabId)`);
     assert.doesNotMatch(agent, /skipAll:/, `${label}: bypass must stay a loop decision so the mandatory WebMCP gate survives it`);
     assert.match(agent, /requireExplicitGrant: (?:requiresMandatoryWebMCPGates|fnName === 'execute_webmcp_tool')/, `${label}: mandatory gates must opt out of the mode policy`);
     assert.match(agent, /if \(changes\[PERMISSION_MODE_STORAGE_KEY\]\) \{[\s\S]*?normalizePermissionMode\(changes\[PERMISSION_MODE_STORAGE_KEY\]\.newValue\)/, `${label}: an out-of-band mode change must apply without a restart`);
@@ -68911,6 +69167,113 @@ test('the agent reads the mode from one place and keeps the gate layered', () =>
     assert.match(agent, /const bypassesCapabilityGate = /, `${label}: capability threshold`);
     assert.doesNotMatch(agent, /_skipPermissionGate/, `${label}: the retired boolean must be gone`);
     assert.doesNotMatch(agent, /askBeforeConsequentialActions/, `${label}: and so must its storage key`);
+  }
+});
+
+test('a bypass bridge run leaves the gate standing for the user\'s own tab', async () => {
+  // End-to-end through the real tool loop, on ONE agent, because that is the
+  // shape that made this necessary: the side panel and every cloud run share an
+  // Agent instance, so before the run-scoped seam the only ways to stop a
+  // delegated run raising cards were to strip the gate from the user's browsing
+  // or to have the caller answer 'always' — which writes persistent grants for
+  // hosts nobody approved.
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({ getVisionProvider: async () => null });
+    const delegatedTab = 41;
+    const panelTab = 42;
+    const prompted = [];
+    agent._permissionMode = PermissionMode.MANUAL;
+    agent._permissionModeLoaded = true;
+    agent._ensurePermissionMode = async () => agent._permissionMode;
+    agent._currentUrl = async () => 'https://example.com/dashboard';
+    agent._rememberMastodonObservation = async () => null;
+    agent._recordProgressObservation = async () => null;
+    agent._autoRecordProgressAction = () => null;
+    agent._persist = () => {};
+    agent._promptPermission = async (tabId, capability, host) => {
+      prompted.push({ tabId, capability, host });
+      return 'deny';
+    };
+    const executed = [];
+    agent.executeTool = async (tabId) => {
+      executed.push(tabId);
+      return { success: true, content: 'clicked' };
+    };
+    const call = () => [{
+      id: `${label}_click`,
+      function: { name: 'click', arguments: JSON.stringify({ selector: '#go' }) },
+    }];
+    const run = (tabId) => agent._executeToolBatch(
+      tabId, call(), [], () => {}, { supportsVision: false }, null,
+      new Set(['click', 'done']), 1,
+    );
+
+    // The delegated run carries its own mode, exactly as processMessage sets it.
+    agent._runPermissionModes.set(delegatedTab, PermissionMode.BYPASS);
+    await run(delegatedTab);
+    assert.deepEqual(prompted, [], `${label}: a bypass run must not raise a permission card`);
+    assert.deepEqual(executed, [delegatedTab], `${label}: and it must actually run the tool`);
+
+    // Same agent, same host, same capability — the user's tab is still gated.
+    await run(panelTab);
+    assert.equal(prompted.length, 1, `${label}: the user's own tab must still be asked`);
+    assert.equal(prompted[0].tabId, panelTab, `${label}: and asked for its own tab`);
+    assert.equal(prompted[0].capability, 'click', `${label}: about the capability it needs`);
+    assert.deepEqual(executed, [delegatedTab], `${label}: a denied card must stop the tool`);
+
+    // Nothing the delegated run granted may be left behind as a grant.
+    assert.deepEqual(
+      agent.permissions.permissions.filter(grant => grant.action === 'allow'), [],
+      `${label}: a mode decision must never be recorded as a grant`);
+  }
+});
+
+test('a run\'s authority is cleaned up when the run ends, including when it throws', async () => {
+  // The leak that would matter: a bypass mode left behind after a bridge run
+  // silently ungates the side panel on that tab. Drives the REAL processMessage
+  // with only its inner loop stubbed, so the set/restore code under test is the
+  // shipped one and not a re-implementation.
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({ getVisionProvider: async () => null });
+    const tabId = 55;
+    agent._permissionMode = PermissionMode.MANUAL;
+    agent._permissionModeLoaded = true;
+    agent._hydrate = async () => {};
+    agent._persist = () => {};
+    agent._persistNow = async () => {};
+
+    let observed = null;
+    agent._processMessageInner = async () => {
+      observed = agent._permissionModeFor(tabId);
+      return 'done';
+    };
+    await agent.processMessage(tabId, 'Open the report', () => {}, 'act', [], {
+      cloudRun: true, permissionMode: PermissionMode.BYPASS,
+    });
+    assert.equal(observed, PermissionMode.BYPASS, `${label}: the run did not execute at its own mode`);
+    assert.equal(agent._permissionModeFor(tabId), PermissionMode.MANUAL,
+      `${label}: authority outlived the run that carried it`);
+    assert.equal(agent._runPermissionModes.has(tabId), false, `${label}: and left an entry behind`);
+
+    // A run that throws must not be the one that leaks.
+    agent._processMessageInner = async () => { throw new Error('model exploded'); };
+    await assert.rejects(() => agent.processMessage(tabId, 'Boom', () => {}, 'act', [], {
+      cloudRun: true, permissionMode: PermissionMode.BYPASS,
+    }), /model exploded/);
+    assert.equal(agent._permissionModeFor(tabId), PermissionMode.MANUAL,
+      `${label}: a failed run leaked its authority`);
+
+    // A junk mode reaching the agent narrows rather than inheriting the machine's.
+    agent._permissionMode = PermissionMode.BYPASS;
+    agent._processMessageInner = async () => {
+      observed = agent._permissionModeFor(tabId);
+      return 'done';
+    };
+    await agent.processMessage(tabId, 'Open the report', () => {}, 'act', [], {
+      cloudRun: true, permissionMode: 'yolo',
+    });
+    assert.equal(observed, DEFAULT_PERMISSION_MODE,
+      `${label}: a junk run mode must narrow, never inherit a permissive standing mode`);
   }
 });
 

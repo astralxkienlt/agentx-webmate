@@ -26,6 +26,10 @@ import { BRAND, tool } from "./brand.generated.js";
 import { BridgeError, TERMINAL_STATUSES, WebMateBridge, type CloudSnapshot } from "./bridge.js";
 import { config } from "./config.js";
 
+/** The browser's permission ladder, narrowest first. Mirrors agent/permission-mode.js. */
+export const PERMISSION_MODES = ["manual", "auto", "page_actions", "bypass"] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
+
 export interface StartRunOptions {
   runId?: string;
   task: string;
@@ -33,6 +37,12 @@ export interface StartRunOptions {
   tabId?: number;
   apiMutationsAllowed?: boolean;
   outputSchema?: unknown;
+  /**
+   * How much authority this ONE run carries. Omitted leaves the browser's
+   * standing choice in force — which is what a caller that wants a human in the
+   * loop should do, since that human is the one looking at the side panel.
+   */
+  permissionMode?: PermissionMode;
 }
 
 export interface AwaitOptions {
@@ -139,6 +149,7 @@ export async function startRun(
   if (options.tabId != null) payload.tabId = options.tabId;
   if (options.apiMutationsAllowed) payload.apiMutationsAllowed = true;
   if (options.outputSchema != null) payload.outputSchema = options.outputSchema;
+  if (options.permissionMode) payload.permissionMode = options.permissionMode;
 
   return await bridge.request<CloudSnapshot>("cloud_run", payload, timeoutMs);
 }
@@ -243,6 +254,7 @@ export function describeSnapshot(snapshot: CloudSnapshot, timedOut = false): str
   lines.push(`run_id: ${snapshot.runId}`);
   lines.push(`status: ${snapshot.status}${timedOut ? ` (still running — poll ${tool("status")})` : ""}`);
   if (snapshot.mode) lines.push(`mode: ${snapshot.mode}`);
+  if (snapshot.permissionMode) lines.push(`permission_mode: ${snapshot.permissionMode}`);
   if (snapshot.finalUrl) lines.push(`final_url: ${snapshot.finalUrl}`);
 
   if (snapshot.status === "needs_user_input" && snapshot.pendingInput) {

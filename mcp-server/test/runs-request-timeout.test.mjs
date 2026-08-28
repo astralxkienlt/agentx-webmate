@@ -3,8 +3,23 @@ import test from "node:test";
 
 process.env.WEBMATE_POLL_INTERVAL_MS = "5";
 
-const { awaitSettled, startRun } = await import("../dist/runs.js");
+const { PERMISSION_MODES, awaitSettled, describeSnapshot, startRun } = await import(
+  "../dist/runs.js"
+);
 const { BridgeError } = await import("../dist/bridge.js");
+
+/** A bridge that records the one payload it is handed. */
+function recordingBridge() {
+  const seen = {};
+  return {
+    seen,
+    async request(action, payload) {
+      seen.action = action;
+      seen.payload = payload;
+      return { runId: payload.runId, status: "running" };
+    },
+  };
+}
 
 test("startRun forwards its caller-supplied run ID and command budget", async () => {
   let observed;
@@ -131,4 +146,35 @@ test("a disconnected status request preserves recovery access to the run", async
   assert.equal(result.timedOut, true);
   assert.equal(result.snapshot.runId, "interrupted-run");
   assert.equal(result.snapshot.status, "running");
+});
+
+test("startRun forwards the run's permission mode, and omits it when unset", async () => {
+  for (const permissionMode of PERMISSION_MODES) {
+    const bridge = recordingBridge();
+    await startRun(bridge, { runId: "scoped", task: "Open the report", mode: "act", permissionMode });
+    assert.equal(bridge.seen.payload.permissionMode, permissionMode);
+  }
+
+  // Omitted must stay OMITTED rather than become an explicit narrow mode: the
+  // browser reads an absent key as "no opinion" and applies its standing mode,
+  // and sending one would overrule a choice the caller never made.
+  const bare = recordingBridge();
+  await startRun(bare, { runId: "bare", task: "Open the report", mode: "act" });
+  assert.equal("permissionMode" in bare.seen.payload, false);
+});
+
+test("a run reports back the permission mode it actually executed at", async () => {
+  // The caller asked for one; the browser is the authority on what it granted.
+  const described = describeSnapshot({
+    runId: "scoped",
+    status: "completed",
+    mode: "act",
+    permissionMode: "bypass",
+  });
+  assert.match(described, /^permission_mode: bypass$/m);
+
+  // A run on the browser's standing mode has nothing to report, and must not
+  // invent a mode it was never given.
+  const standing = describeSnapshot({ runId: "plain", status: "completed", mode: "act" });
+  assert.doesNotMatch(standing, /permission_mode/);
 });
