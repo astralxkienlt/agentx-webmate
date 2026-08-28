@@ -58,10 +58,12 @@ import {
   normalizeCapsolverApiKey,
 } from '../agent/capsolver-config.js';
 import {
+  OPENROUTER_ROUTING_VARIANTS,
   detectedCompatibilityPreset,
   isNewOpenAIContractConfig,
   normalizeOpenAICompatibleBaseUrl,
   normalizeProviderCompatibility,
+  openRouterRoutingVariant,
   parseProviderExtraBodyJson,
   shouldUseOpenAIResponsesApi,
 } from '../providers/provider-compatibility.js';
@@ -2395,6 +2397,21 @@ function prettyCompatibilityValue(value) {
   return translated === key ? (value || '') : translated;
 }
 
+function prettyOpenRouterRoutingVariant(value) {
+  if (value === 'standard') return prettyCompatibilityValue(value);
+  return value === 'nitro' ? 'Nitro' : 'Exacto';
+}
+
+function shouldPersistProviderInput(input) {
+  return input.dataset.key !== 'routingVariant' || input.dataset.routingExplicit === 'true';
+}
+
+function syncInferredOpenRouterRoutingVariant(id, model) {
+  const select = document.querySelector(`select[data-provider="${id}"][data-key="routingVariant"]`);
+  if (!select || select.dataset.routingExplicit === 'true') return;
+  select.value = openRouterRoutingVariant({ model });
+}
+
 function automaticTokenField(config) {
   if (shouldUseOpenAIResponsesApi(config)) return 'max_output_tokens';
   return isNewOpenAIContractConfig(config) ? 'max_completion_tokens' : 'max_tokens';
@@ -2424,13 +2441,17 @@ function compatibilitySummary(config) {
   const extra = extraCount
     ? t(extraCount === 1 ? 'st.providers.compat.summary_extra' : 'st.providers.compat.summary_extra_plural', { count: extraCount })
     : '';
-  return t('st.providers.compat.summary', { preset, reasoning, role, tokens, extra });
+  const routing = String(config.providerName || '').toLowerCase() === 'openrouter'
+    ? ` · ${prettyOpenRouterRoutingVariant(openRouterRoutingVariant(config))}`
+    : '';
+  return `${t('st.providers.compat.summary', { preset, reasoning, role, tokens, extra })}${routing}`;
 }
 
 function currentProviderCompatibilityConfig(id) {
   const source = providersData[id] || {};
   const config = { ...source, compat: { ...(source.compat || {}) } };
   document.querySelectorAll(`.provider-compatibility [data-provider="${id}"]`).forEach((input) => {
+    if (!shouldPersistProviderInput(input)) return;
     if (input.dataset.type === 'json') {
       try { config.extraBody = parseProviderExtraBodyJson(input.value); } catch { config.extraBody = {}; }
       return;
@@ -2462,6 +2483,7 @@ function refreshProviderCompatibilitySummary(id) {
 function renderProviderCompatibilitySettings(id, config) {
   if (!supportsProviderCompatibilitySettings(id, config)) return '';
   const showCompatibilityControls = supportsProviderCompatibilityControls(id, config);
+  const showOpenRouterRouting = String(config.providerName || '').toLowerCase() === 'openrouter';
   const compat = normalizeProviderCompatibility(config);
   const extraBody = providerCompatibilityJsonDrafts.has(id)
     ? providerCompatibilityJsonDrafts.get(id)
@@ -2486,6 +2508,15 @@ function renderProviderCompatibilitySettings(id, config) {
               ${options([['auto', valueLabel('auto')], ['openai', valueLabel('openai')], ['qwen', valueLabel('qwen')], ['deepseek', valueLabel('deepseek')], ['openrouter', valueLabel('openrouter')], ['custom', valueLabel('custom')]], compat.preset)}
             </select>
           </div>
+          ${showOpenRouterRouting ? `
+          <div class="field">
+            <label>${escapeHtml(valueLabel('openrouter'))}</label>
+            <select data-provider="${id}" data-key="routingVariant" data-type="select"
+                    data-routing-explicit="${Object.hasOwn(config, 'routingVariant') ? 'true' : 'false'}">
+              ${options(OPENROUTER_ROUTING_VARIANTS.map((value) => [value, prettyOpenRouterRoutingVariant(value)]), openRouterRoutingVariant(config))}
+            </select>
+          </div>
+          ` : ''}
           <div class="field">
             <label>${escapeHtml(t('st.providers.compat.reasoning'))}</label>
             <select data-provider="${id}" data-key="compat.reasoningEffort" data-type="select">
@@ -2552,7 +2583,7 @@ function providerSearchTextForEntry(id, config, fieldDefs) {
     config.baseUrl,
     fieldText,
     supportsProviderCompatibilitySettings(id, config)
-      ? 'advanced model compatibility reasoning thinking system developer max tokens custom request body json'
+      ? `advanced model compatibility reasoning thinking system developer max tokens custom request body json${String(config.providerName || '').toLowerCase() === 'openrouter' ? ' openrouter routing standard nitro exacto speed throughput tool quality' : ''}`
       : '',
   ].filter(Boolean).join(' '));
 }
@@ -3175,6 +3206,7 @@ function renderProviders() {
         input.style.display = 'none';
         input.value = sel.value;
       }
+      syncInferredOpenRouterRoutingVariant(providerId, input.value);
       markProviderDirty(providerId);
       refreshProviderCompatibilitySummary(providerId);
       refreshVisionStatus(providerId);
@@ -3187,6 +3219,7 @@ function renderProviders() {
   document.querySelectorAll('.provider-compatibility select[data-provider], .provider-compatibility textarea[data-provider]').forEach((input) => {
     const eventName = input.tagName === 'TEXTAREA' ? 'input' : 'change';
     input.addEventListener(eventName, () => {
+      if (input.dataset.key === 'routingVariant') input.dataset.routingExplicit = 'true';
       if (input.tagName === 'TEXTAREA') {
         providerCompatibilityJsonDrafts.set(input.dataset.provider, input.value);
       }
@@ -3195,6 +3228,7 @@ function renderProviders() {
   });
   document.querySelectorAll('input[data-key="model"], input[data-key="baseUrl"]').forEach((input) => {
     input.addEventListener('input', () => {
+      if (input.dataset.key === 'model') syncInferredOpenRouterRoutingVariant(input.dataset.provider, input.value);
       refreshProviderCompatibilitySummary(input.dataset.provider);
       refreshVisionStatus(input.dataset.provider);
       if (providerDefinitionId(input.dataset.provider) === 'ollama') refreshVisionStatus(input.dataset.provider);
@@ -3204,7 +3238,14 @@ function renderProviders() {
     button.addEventListener('click', () => {
       const id = button.dataset.provider;
       const details = button.closest('.provider-compatibility');
-      details?.querySelectorAll('select[data-provider]').forEach((select) => { select.value = 'auto'; });
+      details?.querySelectorAll('select[data-provider]').forEach((select) => {
+        if (select.dataset.key === 'routingVariant') {
+          select.value = 'standard';
+          select.dataset.routingExplicit = 'true';
+        } else {
+          select.value = 'auto';
+        }
+      });
       const textarea = details?.querySelector('textarea[data-type="json"]');
       if (textarea) {
         textarea.value = '';
@@ -3560,6 +3601,7 @@ async function saveProvider(id, { showFlash = true, markConfigured = true } = {}
 
   try {
     inputs.forEach(input => {
+      if (!shouldPersistProviderInput(input)) return;
       const value = input.dataset.type === 'json'
         ? parseProviderExtraBodyJson(input.value)
         : providerInputValue(input);
@@ -3659,6 +3701,7 @@ function syncInputsIntoProvidersData() {
     const id = input.dataset.provider;
     const key = input.dataset.key;
     if (!id || !key || !providersData[id]) return;
+    if (!shouldPersistProviderInput(input)) return;
     // Keep extraBody as a parsed object in memory (matches saveProvider and
     // mergeProviderRequestBody). Invalid draft JSON is left unchanged so a
     // partial edit does not corrupt the last-known-good object.
