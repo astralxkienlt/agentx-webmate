@@ -231,6 +231,7 @@ const DUPLICATE_BLANK_CONFIG_KEYS = [
   'baseUrl',
   'model',
   'contextWindow',
+  'maxOutputTokens',
   'apiVersion',
   'region',
   'accountId',
@@ -633,6 +634,10 @@ export class ProviderManager {
         providerName: 'openai',
         baseUrl: 'https://api.openai.com/v1',
         model: OPENAI_DEFAULT_MODEL,
+        // Keep the default at the standard-price input threshold; users can
+        // opt into the model's larger window when long-context pricing is acceptable.
+        contextWindow: 272000,
+        maxOutputTokens: 128000,
         inputCostPerMillionUsd: 2.5,
         cacheReadCostPerMillionUsd: 0.25,
         // GPT-5.6 family bills included cache writes at 1.25× input.
@@ -649,6 +654,8 @@ export class ProviderManager {
         label: 'Anthropic Claude',
         baseUrl: 'https://api.anthropic.com',
         model: 'claude-sonnet-5',
+        contextWindow: 1000000,
+        maxOutputTokens: 128000,
         inputCostPerMillionUsd: 2,
         cacheReadCostPerMillionUsd: 0.2,
         cacheWriteCostPerMillionUsd: 2.5,
@@ -712,6 +719,7 @@ export class ProviderManager {
         baseUrl: 'https://api.deepseek.com/v1',
         model: 'deepseek-v4-flash',
         contextWindow: 1000000,
+        maxOutputTokens: 384000,
         inputCostPerMillionUsd: 0.27,
         outputCostPerMillionUsd: 1.1,
         supportsStreamUsageOptions: true,
