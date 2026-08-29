@@ -180,6 +180,11 @@ function savedWorkflowProtectedMessagingStepIndex(workflow, startUrl = '') {
 // Planner prompt still tells the LLM to reserve 0.90+ for straightforward plans;
 // that intentional gap keeps model scoring conservative without over-pausing.
 const PLAN_REVIEW_CONFIDENCE_DEFAULT = 0.75;
+// Bounds for the planner-clarification task composite: enough of each answer
+// to keep the clarified task identifiable, capped so a long clarification
+// chain cannot grow the anchor without limit.
+const CLARIFICATION_ANSWER_CHARS = 400;
+const CLARIFICATION_ANSWER_LIMIT = 8;
 const DONE_OUTCOMES = new Set(['success', 'partial', 'failed']);
 // How many consecutive times a runtime block may reject the same plain final
 // answer before the run fails closed. See _plainFinalBlockDecision. Set
@@ -8149,23 +8154,36 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       (storedTaskKey && storedTaskKey === priorTaskKey)
       || (!storedTaskKey && (!taskText || storedTextMatches))
     );
-    let taskIndex = carriesPriorBinding ? priorBinding.taskIndex : -1;
-    let carriedPinnedIndices = carriesPriorBinding ? priorBinding.pinnedIndices : [];
-    if (carriesPriorBinding) taskText = priorBinding.text;
+    const taskIndex = carriesPriorBinding ? priorBinding.taskIndex : -1;
+    const carriedPinnedIndices = carriesPriorBinding ? priorBinding.pinnedIndices : [];
+    const carriedAnswers = carriesPriorBinding && Array.isArray(priorBinding.answers)
+      ? priorBinding.answers
+      : [];
+    // Carry the ROOT request, never the prior composite. A composite is itself
+    // JSON, so re-embedding one re-escapes its quotes at every clarification
+    // round: the string grows exponentially and the original request — buried
+    // innermost — is the first thing any length cap discards.
+    if (carriesPriorBinding) taskText = priorBinding.requestText || priorBinding.text;
     if (!taskText) return null;
 
-    // Both values came from genuine user turns. JSON quoting keeps their
-    // boundary unambiguous when this composite is later embedded in the
-    // trusted recovery anchor or hashed as execution evidence authority.
+    // Every value came from a genuine user turn. JSON quoting keeps their
+    // boundaries unambiguous when this composite is later embedded in the
+    // trusted recovery anchor or hashed as execution evidence authority, and
+    // the flat shape keeps it bounded across an arbitrarily long chain.
+    const requestText = this._progressTaskTextKey(taskText).slice(0, 1600);
+    const answers = [...carriedAnswers, answerText]
+      .map(answer => this._progressTaskTextKey(answer).slice(0, CLARIFICATION_ANSWER_CHARS))
+      .filter(Boolean)
+      .slice(-CLARIFICATION_ANSWER_LIMIT);
     const text = `User task clarified by the latest answer: ${JSON.stringify({
-      request: taskText,
-      answer: answerText.slice(0, 1600),
+      request: requestText,
+      answers,
     })}`;
     const pinnedIndices = [...carriedPinnedIndices, taskIndex, clarificationIndex, answerIndex]
       .filter(index => index >= 0)
       .filter((index, position, all) => all.indexOf(index) === position)
       .sort((a, b) => a - b);
-    return { index: answerIndex, taskIndex, clarificationIndex, text, pinnedIndices };
+    return { index: answerIndex, taskIndex, clarificationIndex, text, requestText, answers, pinnedIndices };
   }
 
   // Return the latest genuine task-bearing user turn, not a synthetic runtime
@@ -8186,12 +8204,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const normalized = text.toLowerCase();
       if (this._isProgressContinuationText(normalized)) continue;
       if (this._isProgressAckText(normalized)) continue;
-      return { index: i, taskIndex: i, clarificationIndex: -1, text, pinnedIndices: [i] };
+      return { index: i, taskIndex: i, clarificationIndex: -1, text, requestText: text, answers: [], pinnedIndices: [i] };
     }
     const index = this._findOriginalTaskIndex(messages);
-    return index >= 0
-      ? { index, taskIndex: index, clarificationIndex: -1, text: this._plannerUserAuthoredText(messages[index]), pinnedIndices: [index] }
-      : { index: -1, taskIndex: -1, clarificationIndex: -1, text: '', pinnedIndices: [] };
+    if (index < 0) {
+      return { index: -1, taskIndex: -1, clarificationIndex: -1, text: '', requestText: '', answers: [], pinnedIndices: [] };
+    }
+    const originalText = this._plannerUserAuthoredText(messages[index]);
+    return { index, taskIndex: index, clarificationIndex: -1, text: originalText, requestText: originalText, answers: [], pinnedIndices: [index] };
   }
 
   _findActiveTaskIndex(messages) {
@@ -21396,7 +21416,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const plainFinalDecision = this._plainFinalBlockDecision(tabId);
       if (plainFinalDecision?.retry) {
         messages.push(this._withResponseItems({ role: 'assistant', content: result.content }, result.responseItems, result.reasoningContent, provider));
-        messages.push({ role: 'user', content: plainFinalDecision.nudge });
+        messages.push(this._appOwnedUserMessage(plainFinalDecision.nudge, 'plain_final_block'));
         onUpdate('warning', { message: plainFinalDecision.warning });
         this._persist(tabId);
         continue;
@@ -21419,7 +21439,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           planOnlyDecision.retryAssistantContent ? '' : result.reasoningContent,
           provider,
         ));
-        messages.push({ role: 'user', content: planOnlyDecision.nudge });
+        messages.push(this._appOwnedUserMessage(planOnlyDecision.nudge, 'plan_execution_block'));
         // Clear any already-rendered plan/promise so recovery does not leave
         // rejected terminal text in the assistant bubble (and so run-complete
         // can write the real summary into an empty bubble).
@@ -22025,7 +22045,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const plainFinalDecision = this._plainFinalBlockDecision(tabId);
         if (plainFinalDecision?.retry) {
           messages.push(this._withResponseItems({ role: 'assistant', content: fullText }, responseItems, reasoningContent, provider));
-          messages.push({ role: 'user', content: plainFinalDecision.nudge });
+          messages.push(this._appOwnedUserMessage(plainFinalDecision.nudge, 'plain_final_block'));
           if (plainFinalDecision.clearRenderedText) onUpdate('text', { content: '', replace: true });
           onUpdate('warning', { message: plainFinalDecision.warning });
           this._persist(tabId);
@@ -22051,7 +22071,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             planOnlyDecision.retryAssistantContent ? '' : reasoningContent,
             provider,
           ));
-          messages.push({ role: 'user', content: planOnlyDecision.nudge });
+          messages.push(this._appOwnedUserMessage(planOnlyDecision.nudge, 'plan_execution_block'));
           // Streamed plan text already landed via text_delta. Replace it before
           // the recovery turn so later deltas do not append onto the plan and
           // the final done summary is not blocked by a non-empty bubble.
