@@ -56,6 +56,7 @@ const OPENROUTER_DEFAULT_MODEL = 'openrouter/free';
 const OPENROUTER_LEGACY_DEFAULT_MODEL = 'stepfun/step-3.7-flash';
 const OPENAI_DEFAULT_MODEL = 'gpt-5.6-terra';
 const OPENAI_LEGACY_DEFAULT_MODEL = 'gpt-5.5';
+const OPENCODE_LEGACY_DEFAULT_MODEL = 'ring-2.6-1t-free';
 const SUPPORTED_PROVIDER_TYPES = new Set(['llamacpp', 'openai', 'azure_openai', 'aws_bedrock', 'anthropic', 'anthropic_oauth', 'vertex_anthropic']);
 const SAFE_PROVIDER_ID_RE = /^[A-Za-z0-9_-]+$/;
 const ROUTER_PROVIDER_IDS = ['openrouter', 'cloudflare', 'nvidia', 'groq', 'huggingface', 'fireworks', 'together'];
@@ -898,17 +899,17 @@ export class ProviderManager {
       };
     }
     this._migrateUntouchedShippedDefaults(migrated);
-    // Legacy OpenCode Zen free tier removed from Zen catalog — migrate any
-    // stored model that is not in the current Zen allowlist without
-    // embedding the removed literal. Covers configured:true orphans that
-    // _migrateUntouchedShippedDefaults would skip.
+    // The OpenCode entry is editable, so only replace the retired shipped
+    // model while it still points at the official Zen endpoint. In particular,
+    // preserve model ids selected for custom endpoints even when configured.
     {
       const cur = migrated.opencode;
       if (cur && typeof cur.model === 'string') {
-        const raw = String(cur.model).trim().toLowerCase().replace(/^opencode\//, '');
-        const allowed = /^(muse-spark|gpt-5|claude|gemini|grok|mimo|ling|nemotron|big-pickle|qwen|deepseek|minimax|glm|kimi)(?:$|[-_.\/])/;
-        if (raw && !allowed.test(raw)) {
-          migrated.opencode = { ...cur, model: this._defaultConfigs().opencode.model };
+        const defaults = this._defaultConfigs().opencode;
+        const baseUrl = String(cur.baseUrl || defaults.baseUrl).replace(/\/+$/, '');
+        const model = String(cur.model).trim().toLowerCase().replace(/^opencode\//, '');
+        if (baseUrl === defaults.baseUrl && model === OPENCODE_LEGACY_DEFAULT_MODEL) {
+          migrated.opencode = { ...cur, model: defaults.model };
         }
       }
     }

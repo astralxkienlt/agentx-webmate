@@ -3,6 +3,7 @@ import { fetchWithTimeout } from './fetch-timeout.js';
 import {
   isNewOpenAIContractModel,
   isOfficialOpenAIConfig,
+  isOpenCodeZenConfig,
   shouldUseOpenAIResponsesApi,
   supportsOpenAIAskStreaming,
   applyOpenRouterRoutingVariant,
@@ -87,7 +88,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   }
 
   get model() {
-    if (this.config.model) return String(this.config.model).replace(/^opencode\//i, '');
+    if (this.config.model) {
+      const model = String(this.config.model);
+      return isOpenCodeZenConfig(this.config) ? model.replace(/^opencode\//i, '') : model;
+    }
     if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
     // Some local servers apply their own default when no model is configured.
     // Others carry `requiresModel: true` and throw above. Treat the category as
