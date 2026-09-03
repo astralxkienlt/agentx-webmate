@@ -35283,7 +35283,7 @@ test('selection scope lifecycle keeps transcript and model views aligned across 
       const compacted = await restarted.compactConversation(tabId);
       assert.equal(compacted.reason, 'selection_scoped', `${label}: compaction should report the active scope instead of mutating its boundary`);
       assert.equal(restarted.selectionGroundingScopes.has(tabId), true, `${label}: compaction dropped the active scope`);
-      assert.equal(restarted.restoreSelectionGroundingScope(tabId), true, `${label}: explicit scope restore was not accepted`);
+      assert.equal(await restarted.restoreSelectionGroundingScope(tabId), true, `${label}: explicit scope restore was not accepted`);
       assert.equal(restarted.selectionGroundingScopes.has(tabId), false, `${label}: explicit restore left the scope active`);
 
       restarted.clearConversation(tabId);

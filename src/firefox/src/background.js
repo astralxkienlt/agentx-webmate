@@ -2707,7 +2707,7 @@ async function handleMessage(msg, sender) {
       if (detachedRunStarts.has(tabId) || agent.activeRunState(tabId)?.running) {
         return { ok: false, error: 'Wait for the current response to finish before restoring the full conversation.' };
       }
-      const restored = agent.restoreSelectionGroundingScope(tabId);
+      const restored = await agent.restoreSelectionGroundingScope(tabId);
       return { ok: true, restored, ...(await agent.getConversationState(tabId)) };
     }
 
