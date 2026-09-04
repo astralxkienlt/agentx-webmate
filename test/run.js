@@ -65984,6 +65984,106 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
   }
 });
 
+test('net-idle counter watches page requests without owning their promises', async () => {
+  const install = (relPath, { fetchImpl }) => {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    const dataset = {};
+    class FakeXHR {
+      constructor() { this._listeners = new Map(); this.throwOnSend = false; }
+      addEventListener(type, fn) {
+        if (!this._listeners.has(type)) this._listeners.set(type, []);
+        this._listeners.get(type).push(fn);
+      }
+      emit(type) { for (const fn of this._listeners.get(type) || []) fn(); }
+      send() { if (this.throwOnSend) throw new Error('InvalidStateError'); return 'sent'; }
+    }
+    const window = { fetch: fetchImpl, XMLHttpRequest: FakeXHR };
+    const document = { documentElement: { dataset } };
+    vm.runInNewContext(source, { window, document });
+    return { window, dataset, FakeXHR, inflight: () => dataset.__wbInflight };
+  };
+
+  for (const relPath of [
+    'src/chrome/src/content/net-idle-main-world.js',
+    'src/firefox/src/content/net-idle-page.js',
+  ]) {
+    // The page must get back the very promise its own fetch produced. A
+    // derived promise (the old `.finally(...)`) puts this file on top of the
+    // stack of every unhandled page rejection, which files the page's network
+    // failures against the extension in chrome://extensions.
+    {
+      const original = Promise.resolve('response');
+      const { window, inflight } = install(relPath, { fetchImpl: () => original });
+      assert.equal(inflight(), '0', `${relPath}: counter should publish before any request`);
+      const returned = window.fetch('https://example.test/');
+      assert.equal(returned, original, `${relPath}: fetch must hand back the page's own promise`);
+      assert.equal(inflight(), '1', `${relPath}: an in-flight fetch should be counted`);
+      await returned;
+      await null;
+      assert.equal(inflight(), '0', `${relPath}: a settled fetch should be uncounted`);
+    }
+
+    // A page request nobody catches must not be reported against us.
+    {
+      let rejectRequest;
+      const original = new Promise((_, reject) => { rejectRequest = reject; });
+      const { window, inflight } = install(relPath, { fetchImpl: () => original });
+      const returned = window.fetch('https://example.test/');
+      const unhandled = [];
+      const capture = (reason) => unhandled.push(reason);
+      process.on('unhandledRejection', capture);
+      try {
+        rejectRequest(new TypeError('Failed to fetch'));
+        for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(unhandled, [], `${relPath}: watching a page fetch must not raise an unhandled rejection`);
+      } finally {
+        process.off('unhandledRejection', capture);
+        returned.catch(() => {});
+      }
+      assert.equal(inflight(), '0', `${relPath}: a failed fetch should be uncounted`);
+    }
+
+    // A synchronous throw never produces a promise to settle on.
+    {
+      const boom = new Error('bad init');
+      const { window, inflight } = install(relPath, { fetchImpl: () => { throw boom; } });
+      assert.throws(() => window.fetch('https://example.test/'), /bad init/, `${relPath}: fetch errors should propagate`);
+      assert.equal(inflight(), '0', `${relPath}: a fetch that threw should not stay counted`);
+    }
+
+    // XHR: 'loadend' covers success, failure and abort; a throwing send() does not.
+    {
+      const { FakeXHR, inflight } = install(relPath, { fetchImpl: () => Promise.resolve() });
+      const xhr = new FakeXHR();
+      xhr.send();
+      assert.equal(inflight(), '1', `${relPath}: an in-flight XHR should be counted`);
+      xhr.emit('loadend');
+      assert.equal(inflight(), '0', `${relPath}: a finished XHR should be uncounted`);
+      xhr.emit('loadend');
+      assert.equal(inflight(), '0', `${relPath}: a second loadend must not double-decrement`);
+
+      const throwing = new FakeXHR();
+      throwing.throwOnSend = true;
+      assert.throws(() => throwing.send(), /InvalidStateError/, `${relPath}: XHR errors should propagate`);
+      assert.equal(inflight(), '0', `${relPath}: an XHR that threw should not stay counted`);
+    }
+  }
+
+  for (const relPath of [
+    'src/chrome/src/content/net-idle-main-world.js',
+    'src/firefox/src/content/net-idle-page.js',
+  ]) {
+    const code = fs.readFileSync(path.join(ROOT, relPath), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+    assert.doesNotMatch(
+      code,
+      /origFetch\.apply\([^)]*\)\s*\.\s*(finally|then|catch)\b/,
+      `${relPath}: the counter must return the page's own promise, not one derived from it`,
+    );
+  }
+});
+
 test('synthetic clicks cancel placeholder javascript: URLs instead of tripping the page CSP', async () => {
   const makeEventTarget = () => {
     const listeners = [];
