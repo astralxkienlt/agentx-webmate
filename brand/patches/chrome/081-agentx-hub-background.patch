@@ -28,7 +28,7 @@ diff --git a/src/background.js b/src/background.js
  // A valid key plus explicit consent enables CapSolver. Requiring the existing
  // boolean preserves legacy profiles that saved a key while the old switch was
  // off; pressing Save Key in the new UI sets consent to true.
-@@ -3303,6 +3316,16 @@
+@@ -3303,6 +3316,18 @@
      }
  
      // --- Provider Management ---
@@ -41,6 +41,8 @@ diff --git a/src/background.js b/src/background.js
 +      return await agentxHubSync.installFromHub({ slug: msg.slug, version: msg.version || null, allDevices: msg.allDevices === true });
 +    case 'agentx_hub_uninstall':
 +      return await agentxHubSync.uninstallFromHub({ slug: msg.slug });
++    case 'agentx_hub_fork':
++      return await agentxHubSync.forkHubSkill({ slug: msg.slug, name: msg.name || '' });
 +
      case 'get_providers': {
        return { providers: providerManager.getAll(), active: providerManager.activeProviderId };

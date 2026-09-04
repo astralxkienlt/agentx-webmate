@@ -176,10 +176,10 @@ Cài skill trình duyệt từ [AgentX Skill Hub](https://skills.dev-server.clou
 
 | Chỗ | Nội dung |
 |---|---|
-| `additions/common/src/agentx/hub-client.js` | Client hub: bearer = ID token của phiên AgentX, header thiết bị, timeout, mã lỗi. |
-| `additions/common/src/agentx/hub-sync.js` | Engine desired-state: alarm 5 phút + khi mở panel/Settings; `reconcileHubSkills()`; kênh `onMessageExternal` chỉ nhận `agentx-hub/ping` và `agentx-hub/install` từ đúng origin hub. |
-| `additions/common/src/ui/agentx-hub-settings.js`, `agentx-hub.css` | Thẻ "AgentX Skill Hub" trong Settings → Skills. |
-| `patches/<target>/080…082-agentx-hub-*.patch` | `skills.js` (record `sourceType:'hub'`, demote khi sửa), `background.js` (khởi tạo engine + action `agentx_hub_*`), `settings.html/js` (thẻ + nhãn "Từ AgentX Hub"). |
+| `additions/common/src/agentx/hub-client.js` | Client hub: bearer = ID token của phiên AgentX, header thiết bị, timeout, mã lỗi; `getRender` tự tính SHA-256 byte nhận được và so với `X-AgentX-Render-Hash` của hub. |
+| `additions/common/src/agentx/hub-sync.js` | Engine desired-state: alarm 5 phút + khi mở panel/Settings; `reconcileHubSkills()` (record hub chỉ đọc: giữ `renderHash`, bị sửa ngoài extension thì tải lại bản hub); `forkHubSkill()` ("Tách bản sao để sửa"); kênh `onMessageExternal` chỉ nhận `agentx-hub/ping` và `agentx-hub/install` từ đúng origin hub. |
+| `additions/common/src/ui/agentx-hub-settings.js`, `agentx-hub.css` | Thẻ "AgentX Skill Hub" trong Settings → Skills; hàng hành động Xem · Tách bản sao · Gỡ cho record hub trong danh sách skill đã bật. |
+| `patches/<target>/080…082-agentx-hub-*.patch` | `skills.js` (record `sourceType:'hub'` chỉ đọc — `applySkillEdit` trả `locked`; `renderHash`, `forkedFrom`), `background.js` (khởi tạo engine + action `agentx_hub_*`, kể cả `fork`), `settings.html/js` (thẻ + nhãn "Từ AgentX Hub" + hàng hành động riêng cho record hub). |
 | `brand.config.json` `services.skillHubBaseUrl` | Địa chỉ hub — cũng là origin duy nhất trong `externally_connectable` (Chrome). Rule `MAX_CUSTOM_SKILLS = 40`. |
 
 Build cho hub cục bộ: `AGENTX_HUB_EXTRA_ORIGINS=http://127.0.0.1:5173 npm run brand:build`, rồi trong Settings → Skills → Nâng cao đặt "Địa chỉ hub" = `http://127.0.0.1:5173` (chỉ HTTPS hoặc HTTP loopback). Test: `npm run test:agentx-hub` (chạy trên `brand-dist/` cả chrome lẫn firefox; `npm test` đã gồm).

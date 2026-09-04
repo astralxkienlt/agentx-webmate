@@ -15,10 +15,12 @@ export const AGENTX_HUB_PRODUCT = 'webmate';
 export const AGENTX_HUB_KIND = 'browser';
 export const AGENTX_HUB_RENDER_TARGET = 'webmate';
 export const AGENTX_HUB_DEFAULT_TIMEOUT_MS = 15_000;
+export const AGENTX_HUB_RENDER_HASH_HEADER = 'X-AgentX-Render-Hash';
 
 // `name` (Workmate ∩ WebMate rule) or `owner/name` when a slug was taken.
 const HUB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
 const HUB_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const HUB_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 export class AgentXHubError extends Error {
@@ -50,6 +52,20 @@ export function isValidHubSlug(value) {
 export function isValidHubVersion(value) {
   const text = String(value || '');
   return text === 'latest' || HUB_VERSION_RE.test(text);
+}
+
+export function isValidHubHash(value) {
+  return HUB_HASH_RE.test(String(value || ''));
+}
+
+/**
+ * `sha256:<hex>` of the UTF-8 bytes of `text` — the address the hub gives a
+ * render in `X-AgentX-Render-Hash`, and what hub-sync keeps per record to
+ * tell a copy changed outside the extension from the render it installed.
+ */
+export async function sha256Address(text) {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text ?? '')));
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /**
@@ -254,7 +270,13 @@ export function createAgentXHubClient({
       return (await request(`/v1/skills/${encodeSlug(slug)}`, { auth: 'optional' })).json;
     },
 
-    /** The WebMate render of one version, with the hub's provenance headers. */
+    /**
+     * The WebMate render of one version, with the hub's provenance headers.
+     * `contentHash` and the signature cover the package the render was made
+     * from, so they cannot be checked against these bytes; `renderHash` can:
+     * it is computed here over what was received and, when the hub states
+     * one, must agree with it — a disagreement installs nothing.
+     */
     async getRender(slug, version = 'latest', target = AGENTX_HUB_RENDER_TARGET) {
       if (!isValidHubSlug(slug)) throw new AgentXHubError('invalid_request', `Slug không hợp lệ: ${slug}`);
       const ref = version || 'latest';
@@ -263,10 +285,16 @@ export function createAgentXHubClient({
         auth: 'optional',
         accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1',
       });
+      const renderHash = await sha256Address(result.text);
+      const stated = result.headers.get(AGENTX_HUB_RENDER_HASH_HEADER) || '';
+      if (stated && stated !== renderHash) {
+        throw new AgentXHubError('render_hash_mismatch', `Nội dung nhận được của ${slug} không khớp hash hub công bố.`, { detail: { stated, actual: renderHash } });
+      }
       return {
         slug: result.headers.get('X-AgentX-Slug') || slug,
         version: result.headers.get('X-AgentX-Version') || (ref === 'latest' ? '' : ref),
         contentHash: result.headers.get('X-AgentX-Content-Hash') || '',
+        renderHash,
         signature: result.headers.get('X-AgentX-Signature') || '',
         kid: result.headers.get('X-AgentX-Kid') || '',
         content: result.text,

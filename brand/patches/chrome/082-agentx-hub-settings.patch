@@ -21,15 +21,21 @@ diff --git a/src/ui/settings.html b/src/ui/settings.html
 diff --git a/src/ui/settings.js b/src/ui/settings.js
 --- a/src/ui/settings.js
 +++ b/src/ui/settings.js
-@@ -85,6 +85,7 @@
+@@ -85,6 +85,13 @@
    getSharedAttachmentStore,
  } from '../media/attachment-store.js';
  import { createAgentXCloudSettingsController } from './agentx-cloud-settings.js';
-+import { agentxHubSourceLabel, createAgentXHubSettingsController } from './agentx-hub-settings.js';
++import {
++  agentxHubEditLockedMessage,
++  agentxHubSkillRowActions,
++  agentxHubSourceLabel,
++  bindAgentXHubSkillRowActions,
++  createAgentXHubSettingsController,
++} from './agentx-hub-settings.js';
  
  const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
  
-@@ -323,6 +324,7 @@
+@@ -323,6 +330,7 @@
      filterGeneralSettings();
      if (providersContainer) renderProviders();
      renderSkills();
@@ -37,21 +43,21 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
      renderPermissions();
      renderPermissionModeOptions();
    });
-@@ -353,6 +355,13 @@
-     if (providersContainer) renderProviders();
+@@ -354,6 +362,13 @@
      renderAgentXCloudMultimodalSettings();
    },
-+});
+ });
 +// AgentX Skill Hub card under Settings → Skills (plan Phase 4 item 5).
 +const agentxHubController = createAgentXHubSettingsController({
 +  api: globalThis.chrome,
 +  root: document.getElementById('agentx-hub-card'),
 +  locale: getLocale,
 +  sendToBackground,
- });
++});
  
  if (globalThis.chrome?.storage?.onChanged) {
-@@ -755,6 +764,7 @@
+   chrome.storage.onChanged.addListener((changes, area) => {
+@@ -755,6 +770,7 @@
    if (captchaApiKeyInput) captchaApiKeyInput.value = captchaStored.capsolverApiKey || '';
  
    await loadCustomSkills();
@@ -59,7 +65,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
  
    // Load the permission mode + the per-site (capability × origin) grants
    await initPermissionModeSelect();
-@@ -1016,7 +1026,8 @@
+@@ -1016,7 +1032,8 @@
    skillPreviewRequestId += 1;
    const source = skill.sourceType === 'built-in'
      ? t('st.skills.source.built_in')
@@ -69,7 +75,7 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
    openSkillPreview(skill.name, source, skill.content);
  }
  
-@@ -1091,7 +1102,8 @@
+@@ -1091,7 +1108,8 @@
    skillsList.innerHTML = customSkills.map((skill) => {
      const source = skill.sourceType === 'built-in'
        ? t('st.skills.source.built_in')
@@ -79,3 +85,49 @@ diff --git a/src/ui/settings.js b/src/ui/settings.js
      const toolNames = (skill.tools || []).map((tool) => tool.name).filter(Boolean);
      const toolSummary = toolNames.length
        ? ` · ${t('st.skills.item.tools', { tools: toolNames.join(', ') })}`
+@@ -1103,9 +1121,9 @@
+                   data-skill-preview-id="${escapeHtml(skill.id)}">${escapeHtml(skill.name)}</button>
+           <div class="setting-desc skill-source">${escapeHtml(source)} · ${escapeHtml(t('st.skills.item.chars', { count: skill.content.length }))}${escapeHtml(toolSummary)}</div>
+         </div>
+-        <div class="skill-row-actions">
++        <div class="skill-row-actions">${agentxHubSkillRowActions(skill, getLocale(), { edit: t('st.skills.edit'), remove: t('st.skills.remove') }) || `
+           <button class="btn-secondary" data-skill-edit-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.edit'))}</button>
+-          <button class="btn-secondary" data-skill-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.remove'))}</button>
++          <button class="btn-secondary" data-skill-id="${escapeHtml(skill.id)}">${escapeHtml(t('st.skills.remove'))}</button>`}
+         </div>
+       </div>`;
+   }).join('');
+@@ -1116,6 +1134,10 @@
+   skillsList.querySelectorAll('button[data-skill-edit-id]').forEach((btn) => {
+     btn.addEventListener('click', () => enterSkillEdit(btn.dataset.skillEditId));
+   });
++  // Records from the AgentX Skill Hub are read-only: their rows carry
++  // View · Fork to edit · Remove instead (plan §8 decision 9), and those go
++  // through the background like the hub card's own actions.
++  bindAgentXHubSkillRowActions(skillsList, { locale: getLocale, sendToBackground, preview: previewEnabledSkill, edit: enterSkillEdit, notify: flashSkillsResult });
+   skillsList.querySelectorAll('button[data-skill-id]').forEach((btn) => {
+     btn.addEventListener('click', async () => {
+       const removedSkill = customSkills.find((skill) => skill.id === btn.dataset.skillId);
+@@ -1215,6 +1237,10 @@
+ function enterSkillEdit(skillId) {
+   const skill = customSkills.find((item) => item.id === skillId);
+   if (!skill) return;
++  if (skill.sourceType === 'hub') {
++    flashSkillsResult('fail', agentxHubEditLockedMessage(getLocale()));
++    return;
++  }
+   editingSkillId = skill.id;
+   if (skillNameInput) skillNameInput.value = skill.name;
+   if (skillTextArea) skillTextArea.value = skill.content;
+@@ -1240,6 +1266,11 @@
+   if (!result) {
+     const missing = !customSkills.some((skill) => skill.id === editingSkillId);
+     flashSkillsResult('fail', missing ? t('st.skills.error.update_missing') : t('st.skills.error.empty_content'));
++    return;
++  }
++  if (result.locked) {
++    flashSkillsResult('fail', agentxHubEditLockedMessage(getLocale()));
++    exitSkillEdit();
+     return;
+   }
+   if (result.changed) await saveCustomSkills(result.skills);
