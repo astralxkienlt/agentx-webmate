@@ -28,10 +28,18 @@
       "http://127.0.0.1:47822/callback",
       "http://127.0.0.1:47823/callback"
     ],
-    "sessionIdleTimeoutMs": 691200000
+    "sessionIdleTimeoutMs": 691200000,
+    "_skillHubBaseUrl_why": "AgentX Skill Hub (plan §8 decision 2). Also the only origin allowed to message the extension (externally_connectable, Chrome/Edge) — scripts/brand-build.mjs derives both from this value.",
+    "skillHubBaseUrl": "https://skills.dev-server.cloud/"
   },
 
   "replacements": [
+    {
+      "_why": "Plan §8 decision 6: WebMate keeps 40 custom skills so hub installs have room beside the packaged defaults (skills from the hub count within the same limit).",
+      "from": "export const MAX_CUSTOM_SKILLS = 20;",
+      "to": "export const MAX_CUSTOM_SKILLS = 40;",
+      "only": ["src/agent/skills.js"]
+    },
     {
       "_why": "Temporarily shield upstream API header names from display-name replacement.",
       "from": "X-WebBrain-",

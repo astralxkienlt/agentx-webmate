@@ -169,3 +169,17 @@ Clone theo kiểu **partial + sparse** vì repo gốc nặng ~1GB:
   git sparse-checkout add test && npm ci
   ```
 - Remote `upstream` đã khoá push (`DISABLED_read_only`) để không lỡ tay đẩy code thương hiệu lên repo gốc.
+
+## Lớp AgentX Skill Hub (Phase 4)
+
+Cài skill trình duyệt từ [AgentX Skill Hub](https://skills.dev-server.cloud) — chi tiết ở `docs/integration-webmate.md` của repo hub. Trong `brand/`:
+
+| Chỗ | Nội dung |
+|---|---|
+| `additions/common/src/agentx/hub-client.js` | Client hub: bearer = ID token của phiên AgentX, header thiết bị, timeout, mã lỗi. |
+| `additions/common/src/agentx/hub-sync.js` | Engine desired-state: alarm 5 phút + khi mở panel/Settings; `reconcileHubSkills()`; kênh `onMessageExternal` chỉ nhận `agentx-hub/ping` và `agentx-hub/install` từ đúng origin hub. |
+| `additions/common/src/ui/agentx-hub-settings.js`, `agentx-hub.css` | Thẻ "AgentX Skill Hub" trong Settings → Skills. |
+| `patches/<target>/080…082-agentx-hub-*.patch` | `skills.js` (record `sourceType:'hub'`, demote khi sửa), `background.js` (khởi tạo engine + action `agentx_hub_*`), `settings.html/js` (thẻ + nhãn "Từ AgentX Hub"). |
+| `brand.config.json` `services.skillHubBaseUrl` | Địa chỉ hub — cũng là origin duy nhất trong `externally_connectable` (Chrome). Rule `MAX_CUSTOM_SKILLS = 40`. |
+
+Build cho hub cục bộ: `AGENTX_HUB_EXTRA_ORIGINS=http://127.0.0.1:5173 npm run brand:build`, rồi trong Settings → Skills → Nâng cao đặt "Địa chỉ hub" = `http://127.0.0.1:5173` (chỉ HTTPS hoặc HTTP loopback). Test: `npm run test:agentx-hub` (chạy trên `brand-dist/` cả chrome lẫn firefox; `npm test` đã gồm).

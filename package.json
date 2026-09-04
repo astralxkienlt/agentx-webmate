@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security && npm run test:agentx-auth",
+    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security && npm run test:agentx-auth && node test/agentx-hub.test.mjs",
     "test:security": "node test/security/injection-corpus.mjs",
     "test:toolbar-guard": "node test/rich-text-toolbar-guard.mjs",
     "test:injection-bench": "node test/llm/run-scenarios.mjs --category prompt-injection",
@@ -31,7 +31,8 @@
     "brand:build": "node scripts/brand-build.mjs",
     "brand:watch": "node scripts/brand-build.mjs --watch",
     "brand:audit": "node scripts/brand-build.mjs --audit",
-    "brand:clean": "node scripts/brand-build.mjs --clean"
+    "brand:clean": "node scripts/brand-build.mjs --clean",
+    "test:agentx-hub": "npm run brand:build && node test/agentx-hub.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.48.0",
