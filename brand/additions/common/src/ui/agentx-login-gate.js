@@ -283,6 +283,11 @@ export function createAgentXLoginGate({
     render();
     startWatching();
     resolveUnlocked();
+    // Phase 4: a freshly unlocked panel is the moment to pull what the hub
+    // recorded while it was closed (plan §2.6: poll when the side panel opens).
+    Promise.resolve()
+      .then(() => sendToBackground('agentx_hub_sync', { reason: 'panel' }))
+      .catch(() => {});
   }
 
   async function restore({ reasonKey = '' } = {}) {

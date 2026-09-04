@@ -1,0 +1,47 @@
+diff --git a/src/background.js b/src/background.js
+--- a/src/background.js
++++ b/src/background.js
+@@ -12,6 +12,7 @@
+   removeRetiredPackagedSkills,
+   refreshBuiltInSkillRecord,
+ } from './agent/skills.js';
++import { createAgentXHubSyncRunner } from './agentx/hub-sync.js';
+ import { ScheduledJobManager } from './agent/scheduler.js';
+ import {
+   compileWorkflowFromDemonstration,
+@@ -937,6 +938,18 @@
+   console.warn('[WebBrain] Custom skills hydration failed', e);
+ });
+ 
++// AgentX Skill Hub (plan Phase 4): desired-state sync for browser skills.
++// Polls /v1/me/changes every five minutes (and on demand from the panel and
++// Settings), installs/updates/parks/removes hub skills in customSkills —
++// the storage listener above hot-reloads them — and answers the hub
++// website's ping/install messages (Chrome/Edge only).
++const agentxHubSync = createAgentXHubSyncRunner({
++  api: chrome,
++  extensionVersion: chrome.runtime.getManifest?.()?.version || '',
++  ready: () => customSkillsReady,
++});
++agentxHubSync.install();
++
+ // A valid key plus explicit consent enables CapSolver. Requiring the existing
+ // boolean preserves legacy profiles that saved a key while the old switch was
+ // off; pressing Save Key in the new UI sets consent to true.
+@@ -3303,6 +3316,16 @@
+     }
+ 
+     // --- Provider Management ---
++    // --- AgentX Skill Hub (plan Phase 4) ---
++    case 'agentx_hub_status':
++      return await agentxHubSync.status();
++    case 'agentx_hub_sync':
++      return await agentxHubSync.syncNow({ reason: msg.reason || 'message' });
++    case 'agentx_hub_install':
++      return await agentxHubSync.installFromHub({ slug: msg.slug, version: msg.version || null, allDevices: msg.allDevices === true });
++    case 'agentx_hub_uninstall':
++      return await agentxHubSync.uninstallFromHub({ slug: msg.slug });
++
+     case 'get_providers': {
+       return { providers: providerManager.getAll(), active: providerManager.activeProviderId };
+     }

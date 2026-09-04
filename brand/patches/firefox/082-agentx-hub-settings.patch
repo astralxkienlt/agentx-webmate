@@ -1,0 +1,81 @@
+diff --git a/src/ui/settings.html b/src/ui/settings.html
+--- a/src/ui/settings.html
++++ b/src/ui/settings.html
+@@ -1138,6 +1138,7 @@
+     :root[data-theme="light"] .info-box code       { background: rgba(89,55,25,0.08); }
+   </style>
+   <link rel="stylesheet" href="agentx-cloud.css">
++  <link rel="stylesheet" href="agentx-hub.css">
+ </head>
+ <body>
+   <header class="page-header">
+@@ -1745,6 +1746,8 @@
+       <div class="test-result" id="skills-result"></div>
+     </div>
+ 
++    <div class="provider-card" id="agentx-hub-card" data-agentx-hub-card></div>
++
+     <div class="provider-card" id="packaged-skills-card">
+       <div class="setting-label" style="margin-bottom:10px;" data-i18n="st.skills.available.heading"></div>
+       <div id="packaged-skills-list"></div>
+diff --git a/src/ui/settings.js b/src/ui/settings.js
+--- a/src/ui/settings.js
++++ b/src/ui/settings.js
+@@ -78,6 +78,7 @@
+   getSharedAttachmentStore,
+ } from '../media/attachment-store.js';
+ import { createAgentXCloudSettingsController } from './agentx-cloud-settings.js';
++import { agentxHubSourceLabel, createAgentXHubSettingsController } from './agentx-hub-settings.js';
+ 
+ const VISION_UI_PROVIDER_IDS = new Set(['ollama', ...AUTO_VISION_PROVIDER_IDS]);
+ 
+@@ -311,6 +312,7 @@
+     filterGeneralSettings();
+     if (providersContainer) renderProviders();
+     renderSkills();
++    agentxHubController.render();
+     renderPermissions();
+     renderPermissionModeOptions();
+   });
+@@ -337,6 +339,13 @@
+     if (providersContainer) renderProviders();
+     renderAgentXCloudMultimodalSettings();
+   },
++});
++// AgentX Skill Hub card under Settings → Skills (plan Phase 4 item 5).
++const agentxHubController = createAgentXHubSettingsController({
++  api: globalThis.browser,
++  root: document.getElementById('agentx-hub-card'),
++  locale: getLocale,
++  sendToBackground,
+ });
+ 
+ if (globalThis.browser?.storage?.onChanged) {
+@@ -525,6 +534,7 @@
+   if (captchaApiKeyInput) captchaApiKeyInput.value = captchaStored.capsolverApiKey || '';
+ 
+   await loadCustomSkills();
++  await agentxHubController.initialize().catch((error) => console.warn('[AgentX] hub card failed to initialise', error));
+ 
+   // Load the permission mode + the per-site (capability × origin) grants
+   await initPermissionModeSelect();
+@@ -786,7 +796,8 @@
+   skillPreviewRequestId += 1;
+   const source = skill.sourceType === 'built-in'
+     ? t('st.skills.source.built_in')
+-    : skill.sourceType === 'url' && skill.sourceUrl ? skill.sourceUrl : t('st.skills.source.raw');
++    : agentxHubSourceLabel(skill, getLocale())
++      || (skill.sourceType === 'url' && skill.sourceUrl ? skill.sourceUrl : t('st.skills.source.raw'));
+   openSkillPreview(skill.name, source, skill.content);
+ }
+ 
+@@ -861,7 +872,8 @@
+   skillsList.innerHTML = customSkills.map((skill) => {
+     const source = skill.sourceType === 'built-in'
+       ? t('st.skills.source.built_in')
+-      : skill.sourceType === 'url' && skill.sourceUrl ? skill.sourceUrl : t('st.skills.source.raw');
++      : agentxHubSourceLabel(skill, getLocale())
++        || (skill.sourceType === 'url' && skill.sourceUrl ? skill.sourceUrl : t('st.skills.source.raw'));
+     const toolNames = (skill.tools || []).map((tool) => tool.name).filter(Boolean);
+     const toolSummary = toolNames.length
+       ? ` · ${t('st.skills.item.tools', { tools: toolNames.join(', ') })}`

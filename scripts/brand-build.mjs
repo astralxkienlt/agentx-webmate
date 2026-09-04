@@ -213,6 +213,17 @@ async function rewriteManifest(outDir, config, target) {
   const overrides = { ...config.manifestOverrides?.all, ...config.manifestOverrides?.[target] };
   Object.assign(manifest, overrides);
 
+  // AgentX Skill Hub one-click install (plan Phase 4 item 4): only the hub's
+  // own origin may message the extension. Firefox has no externally_connectable
+  // (it falls back to polling + "Import from URL"), so this is Chrome-only.
+  // AGENTX_HUB_EXTRA_ORIGINS=http://127.0.0.1:4173,… adds dev/e2e origins to a
+  // local build; it is never set for a release build.
+  if (target === 'chrome') {
+    manifest.externally_connectable = { matches: hubMessageOrigins(config).map((origin) => `${origin}/*`) };
+  } else {
+    delete manifest.externally_connectable;
+  }
+
   await fs.writeFile(file, JSON.stringify(manifest, null, 2) + '\n');
   return manifest;
 }
@@ -295,6 +306,26 @@ function normalizedServiceUrl(value, label, { openAiCompatible = false } = {}) {
   return url.toString().replace(/\/+$/, '');
 }
 
+function hubMessageOrigins(config) {
+  const hub = new URL(normalizedServiceUrl(config.services?.skillHubBaseUrl, 'skillHubBaseUrl'));
+  const origins = [hub.origin];
+  for (const raw of String(process.env.AGENTX_HUB_EXTRA_ORIGINS || '').split(',')) {
+    const text = raw.trim();
+    if (!text) continue;
+    let url;
+    try {
+      url = new URL(text);
+    } catch {
+      throw new Error(`AGENTX_HUB_EXTRA_ORIGINS entry is not a URL: ${text}`);
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error(`AGENTX_HUB_EXTRA_ORIGINS entry must be a plain http(s) origin: ${text}`);
+    }
+    if (!origins.includes(url.origin)) origins.push(url.origin);
+  }
+  return origins;
+}
+
 async function writeRuntimeConfig(outDir, config, written) {
   const services = config.services || {};
   const secondBrainBaseUrl = normalizedServiceUrl(
@@ -307,6 +338,7 @@ async function writeRuntimeConfig(outDir, config, written) {
     { openAiCompatible: true },
   );
   const oidcIssuer = normalizedServiceUrl(services.oidcIssuer, 'oidcIssuer');
+  const skillHubBaseUrl = normalizedServiceUrl(services.skillHubBaseUrl, 'skillHubBaseUrl');
   const oidcClientId = String(services.oidcClientId || '').trim();
   if (!oidcClientId || /[\u0000-\u0020]/.test(oidcClientId)) {
     throw new Error('brand.config.json services.oidcClientId must be a non-empty client ID without whitespace');
@@ -364,6 +396,7 @@ async function writeRuntimeConfig(outDir, config, written) {
       + `export const AGENTX_RUNTIME_CONFIG = Object.freeze(${JSON.stringify({
         secondBrainBaseUrl,
         litellmBaseUrl,
+        skillHubBaseUrl,
         oidcIssuer,
         oidcClientId,
         oidcScopes: oidcScopes.join(' '),
