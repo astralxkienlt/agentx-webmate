@@ -143,6 +143,7 @@ export class BaseLLMProvider {
         !Object.hasOwn(message, 'webbrainPlannerClarification')
         && !Object.hasOwn(message, 'webbrainAppOwned')
         && !Object.hasOwn(message, 'webbrainAppOwnedKind')
+        && !Object.hasOwn(message, 'webbrainSelectionScopeRestored')
       )) {
         return message;
       }
@@ -150,6 +151,7 @@ export class BaseLLMProvider {
         webbrainPlannerClarification: _plannerClarification,
         webbrainAppOwned: _appOwned,
         webbrainAppOwnedKind: _appOwnedKind,
+        webbrainSelectionScopeRestored: _selectionScopeRestored,
         ...providerMessage
       } = message;
       return providerMessage;
