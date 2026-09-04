@@ -1,6 +1,7 @@
-// AgentX Skill Hub integration (plan Phase 4) — runs against brand-dist/, the
-// way test/agentx-auth.test.mjs does, because the hub record shape and the
-// demotion rule live in a brand patch on src/agent/skills.js.
+// AgentX Skill Hub integration (plan Phase 4; read-only hub records, plan §8
+// decision 9) — runs against brand-dist/, the way test/agentx-auth.test.mjs
+// does, because the hub record shape and the edit lock live in a brand patch
+// on src/agent/skills.js.
 //
 //   npm run brand:build && node test/agentx-hub.test.mjs
 import { strict as assert } from 'node:assert';
@@ -114,7 +115,7 @@ function installRow(overrides = {}) {
 }
 
 /** A hub the runner talks to without HTTP. */
-function fakeHub({ signedIn = true, installs = [], renders = {}, failChanges = null } = {}) {
+function fakeHub({ signedIn = true, installs = [], renders = {}, failChanges = null, failInstalls = null } = {}) {
   const calls = { changes: 0, renders: [], reports: [], created: [], removed: [] };
   return {
     calls,
@@ -140,10 +141,17 @@ function fakeHub({ signedIn = true, installs = [], renders = {}, failChanges = n
     },
     async reportInstall(id, report) { calls.reports.push({ id, ...report }); return { id, reported_state: report.state }; },
     async createInstall(body) { calls.created.push(body); return { id: `inst-${calls.created.length}`, ...body }; },
-    async listMyInstalls() { return { installs: structuredClone(installs) }; },
-    async removeInstall(id) { calls.removed.push(id); return { ok: true }; },
+    async listMyInstalls() { if (failInstalls) throw failInstalls; return { installs: structuredClone(installs) }; },
+    async removeInstall(id) {
+      calls.removed.push(id);
+      // The real hub answers the next /changes with desired_state=removed for that row.
+      for (const row of installs) if (row.id === id) row.desired_state = 'removed';
+      return { ok: true };
+    },
   };
 }
+
+const SHA_A = `sha256:${'a'.repeat(64)}`;
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -154,15 +162,22 @@ test('normalizeCustomSkills keeps hub provenance and MAX_CUSTOM_SKILLS is 40 in 
   for (const target of ['chrome', 'firefox']) {
     const { normalizeCustomSkills, MAX_CUSTOM_SKILLS } = await load(target, 'src/agent/skills.js');
     assert.equal(MAX_CUSTOM_SKILLS, 40, `${target}: plan §8 decision 6`);
-    const [hub, edited, url, junk] = normalizeCustomSkills([
-      { id: 'hub_vneb-portal', sourceType: 'hub', sourceUrl: `${HUB}/skills/vneb-portal`, hubSlug: 'vneb-portal', hubVersion: '1.0.0', contentHash: 'sha256:aaa', content: VNEB_RENDER, createdAt: 5 },
+    const [hub, edited, url, junk, unsealed, fork, badFork] = normalizeCustomSkills([
+      { id: 'hub_vneb-portal', sourceType: 'hub', sourceUrl: `${HUB}/skills/vneb-portal`, hubSlug: 'vneb-portal', hubVersion: '1.0.0', contentHash: 'sha256:aaa', renderHash: SHA_A, content: VNEB_RENDER, createdAt: 5 },
       { id: 'hub_other', sourceType: 'text', hubSlug: 'owner/other', hubVersion: '2.1.0', contentHash: 'sha256:bbb', content: '# Other\n\nEdited body', createdAt: 6 },
       { id: 'from-url', sourceType: 'url', sourceUrl: 'https://example.com/skill.md', hubSlug: 'ignored?', content: '# URL\n\nBody', createdAt: 7 },
       { id: 'bad-hub', sourceType: 'hub', sourceUrl: `${HUB}/skills/x`, hubSlug: 'Not A Slug', content: '# Bad\n\nBody', createdAt: 8 },
+      { id: 'hub_legacy', sourceType: 'hub', sourceUrl: `${HUB}/skills/legacy`, hubSlug: 'legacy', hubVersion: '1.0.0', contentHash: 'sha256:ccc', renderHash: 'not-a-hash', content: '# Legacy\n\nBody', createdAt: 9 },
+      { id: 'fork_vneb', sourceType: 'text', forkedFrom: { slug: 'vneb-portal', version: '1.0.0' }, content: '# Mine\n\nBody', createdAt: 10 },
+      { id: 'fork_bad', sourceType: 'text', forkedFrom: { slug: 'Not A Slug' }, content: '# Mine 2\n\nBody', createdAt: 11 },
     ]);
     assert.equal(hub.sourceType, 'hub', `${target}: hub records keep their sourceType`);
     assert.equal(hub.sourceUrl, `${HUB}/skills/vneb-portal`, `${target}: the skill page URL is the source`);
-    assert.deepEqual([hub.hubSlug, hub.hubVersion, hub.contentHash], ['vneb-portal', '1.0.0', 'sha256:aaa'], `${target}: provenance fields survive`);
+    assert.deepEqual([hub.hubSlug, hub.hubVersion, hub.contentHash, hub.renderHash], ['vneb-portal', '1.0.0', 'sha256:aaa', SHA_A], `${target}: provenance fields survive, the seal included`);
+    assert.equal(unsealed.renderHash, '', `${target}: a malformed seal is dropped, not trusted`);
+    assert.deepEqual(fork.forkedFrom, { slug: 'vneb-portal', version: '1.0.0' }, `${target}: a fork remembers what it was cut from`);
+    assert.equal(Object.hasOwn(fork, 'hubSlug'), false, `${target}: …and carries no hub slug, so neither lock nor repair applies`);
+    assert.equal(Object.hasOwn(badFork, 'forkedFrom'), false, `${target}: an invalid forkedFrom is dropped`);
     assert.equal(hub.name, 'vneb-portal', `${target}: the frontmatter name names the record`);
     assert.deepEqual([...hub.modes].sort(), ['act', 'ask'], `${target}: fence modes parsed from the render`);
     assert.deepEqual(hub.intents, ['vneb', 'electricity_price_lookup'], `${target}: fence intents parsed from the render`);
@@ -177,22 +192,36 @@ test('normalizeCustomSkills keeps hub provenance and MAX_CUSTOM_SKILLS is 40 in 
   }
 });
 
-test('applySkillEdit keeps hub provenance on a rename and demotes to text on a content edit', async () => {
+test('applySkillEdit refuses to touch a hub record (plan §8 decision 9); edited copies and forks stay editable with their origin', async () => {
   for (const target of ['chrome', 'firefox']) {
     const { normalizeCustomSkills, applySkillEdit } = await load(target, 'src/agent/skills.js');
     const skills = normalizeCustomSkills([
-      { id: 'hub_vneb-portal', sourceType: 'hub', sourceUrl: `${HUB}/skills/vneb-portal`, hubSlug: 'vneb-portal', hubVersion: '1.0.0', contentHash: 'sha256:aaa', content: VNEB_RENDER, createdAt: 5 },
+      { id: 'hub_vneb-portal', sourceType: 'hub', sourceUrl: `${HUB}/skills/vneb-portal`, hubSlug: 'vneb-portal', hubVersion: '1.0.0', contentHash: 'sha256:aaa', renderHash: SHA_A, content: VNEB_RENDER, createdAt: 5 },
+      { id: 'hub_other', sourceType: 'text', hubSlug: 'owner/other', hubVersion: '2.1.0', contentHash: 'sha256:bbb', content: '# Other\n\nEdited body', createdAt: 6 },
+      { id: 'fork_vneb', sourceType: 'text', forkedFrom: { slug: 'vneb-portal', version: '1.0.0' }, content: '# Mine\n\nBody', createdAt: 7 },
+      { id: 'from-url', sourceType: 'url', sourceUrl: 'https://example.com/skill.md', content: '# URL\n\nBody', createdAt: 8 },
     ]);
-    const renamed = applySkillEdit(skills, 'hub_vneb-portal', { name: 'VNEB (của tôi)', content: VNEB_RENDER });
-    assert.equal(renamed.demoted, false, `${target}: a pure rename keeps hub provenance`);
-    assert.equal(renamed.skill.sourceType, 'hub', `${target}: still a hub record`);
-    assert.equal(renamed.skill.hubVersion, '1.0.0', `${target}: version kept`);
-    const edited = applySkillEdit(skills, 'hub_vneb-portal', { name: 'vneb-portal', content: `${VNEB_RENDER}\n\n## Case 2 — Thêm của tôi\n` });
-    assert.equal(edited.demoted, true, `${target}: a content edit demotes (like url)`);
-    assert.equal(edited.skill.sourceType, 'text', `${target}: demoted to text`);
-    assert.equal(edited.skill.sourceUrl, '', `${target}: the hub page is no longer the source`);
-    assert.deepEqual([edited.skill.hubSlug, edited.skill.hubVersion, edited.skill.contentHash], ['vneb-portal', '1.0.0', 'sha256:aaa'], `${target}: origin kept so sync can flag a newer version without overwriting`);
-    assert.equal(edited.skill.id, 'hub_vneb-portal', `${target}: identity kept`);
+    // A hub record: neither a rename nor a content edit lands; the caller is told why.
+    for (const edit of [{ name: 'VNEB (của tôi)', content: VNEB_RENDER }, { name: 'vneb-portal', content: `${VNEB_RENDER}\n\n## Case 2 — Thêm của tôi\n` }]) {
+      const result = applySkillEdit(skills, 'hub_vneb-portal', edit);
+      assert.equal(result.locked, true, `${target}: hub records are read-only`);
+      assert.equal(result.changed, false, `${target}: nothing written`);
+      assert.equal(result.demoted, false, `${target}: nothing demoted`);
+      assert.deepEqual(result.skill, skills[0], `${target}: the record is exactly as it was`);
+      assert.deepEqual(result.skills, skills, `${target}: the list too`);
+    }
+    // A copy edited by hand before the lock: still the person's text, origin kept for "Restore hub version".
+    const edited = applySkillEdit(skills, 'hub_other', { name: 'Other', content: '# Other\n\nEdited again' });
+    assert.equal(edited.changed, true && edited.locked === undefined, `${target}: an edited copy stays editable`);
+    assert.deepEqual([edited.skill.sourceType, edited.skill.hubSlug, edited.skill.hubVersion, edited.skill.contentHash], ['text', 'owner/other', '2.1.0', 'sha256:bbb'], `${target}: origin kept`);
+    // A fork: editable, and it remembers what it was cut from.
+    const forked = applySkillEdit(skills, 'fork_vneb', { name: 'Mine', content: '# Mine\n\nBody v2' });
+    assert.equal(forked.changed, true, `${target}: a fork is the person's own`);
+    assert.deepEqual(forked.skill.forkedFrom, { slug: 'vneb-portal', version: '1.0.0' }, `${target}: fork provenance survives an edit`);
+    assert.equal(Object.hasOwn(forked.skill, 'hubSlug'), false, `${target}: …without gaining a hub slug`);
+    // The upstream rule for URL imports is untouched.
+    const url = applySkillEdit(skills, 'from-url', { name: 'URL', content: '# URL\n\nChanged' });
+    assert.equal(url.demoted, true, `${target}: a URL import still demotes on a content edit`);
   }
 });
 
@@ -236,14 +265,23 @@ test('hub base URL rules: HTTPS, loopback HTTP, no credentials; storage override
   assert.equal(Object.hasOwn(fake.values, AGENTX_HUB_CONFIG_STORAGE_KEY), false);
 });
 
-test('the client sends the ID token and device headers, parses render provenance, and classifies errors', async () => {
-  const { createAgentXHubClient } = await load('chrome', 'src/agentx/hub-client.js');
+test('the client sends the ID token and device headers, parses render provenance, checks the render hash, and classifies errors', async () => {
+  const { createAgentXHubClient, sha256Address, isValidHubHash } = await load('chrome', 'src/agentx/hub-client.js');
+  const vnebHash = await sha256Address(VNEB_RENDER);
+  assert.ok(isValidHubHash(vnebHash) && !isValidHubHash('sha256:aaa'), 'a wire hash is sha256: plus 64 hex digits');
+  assert.equal(await sha256Address(''), 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'SHA-256 of nothing');
   const requests = [];
   const fetchImpl = async (url, init) => {
     requests.push({ url: String(url), init });
     const u = new URL(url);
     if (u.pathname === '/v1/skills/vneb-portal/versions/latest/render/webmate') {
-      return textResponse(VNEB_RENDER, 200, { 'X-AgentX-Slug': 'vneb-portal', 'X-AgentX-Version': '1.0.0', 'X-AgentX-Content-Hash': 'sha256:aaa', 'X-AgentX-Signature': 'sig', 'X-AgentX-Kid': 'k1' });
+      return textResponse(VNEB_RENDER, 200, { 'X-AgentX-Slug': 'vneb-portal', 'X-AgentX-Version': '1.0.0', 'X-AgentX-Content-Hash': 'sha256:aaa', 'X-AgentX-Render-Hash': vnebHash, 'X-AgentX-Signature': 'sig', 'X-AgentX-Kid': 'k1' });
+    }
+    if (u.pathname === '/v1/skills/tampered/versions/latest/render/webmate') {
+      return textResponse(`${VNEB_RENDER}\n<!-- injected in transit -->`, 200, { 'X-AgentX-Slug': 'tampered', 'X-AgentX-Version': '1.0.0', 'X-AgentX-Render-Hash': vnebHash });
+    }
+    if (u.pathname === '/v1/skills/older-hub/versions/latest/render/webmate') {
+      return textResponse(VNEB_RENDER, 200, { 'X-AgentX-Slug': 'older-hub', 'X-AgentX-Version': '1.0.0' });
     }
     if (u.pathname === '/v1/skills') return jsonResponse({ skills: [{ slug: 'vneb-portal', name: 'vneb-portal' }], next_cursor: null });
     if (u.pathname === '/v1/me/changes') return jsonResponse({ cursor: 7, installs: [], updates: [], org: null, events: [] });
@@ -266,6 +304,7 @@ test('the client sends the ID token and device headers, parses render provenance
   assert.equal(requests[0].init.cache, 'no-store', 'latest moves under one URL: the browser cache must not answer');
   assert.deepEqual({ slug: rendered.slug, version: rendered.version, contentHash: rendered.contentHash, kid: rendered.kid }, { slug: 'vneb-portal', version: '1.0.0', contentHash: 'sha256:aaa', kid: 'k1' });
   assert.equal(rendered.content, VNEB_RENDER);
+  assert.equal(rendered.renderHash, vnebHash, 'the hash of the bytes received agrees with the one the hub states');
 
   await client.listBrowserSkills('vneb');
   assert.equal(new URL(requests[1].url).searchParams.get('kind'), 'browser');
@@ -278,6 +317,8 @@ test('the client sends the ID token and device headers, parses render provenance
   assert.deepEqual(JSON.parse(requests[4].init.body), { slug: 'vneb-portal', product: 'webmate', desired_state: 'installed', version: '1.0.0' }, 'a device-pinned install omits device_id so the header decides');
   await client.reportInstall('inst-9', { state: 'installed', version: '1.0.0' });
   assert.deepEqual(JSON.parse(requests[5].init.body), { state: 'installed', version: '1.0.0' });
+  await assert.rejects(client.getRender('tampered'), (error) => error.code === 'render_hash_mismatch' && error.detail.stated === vnebHash && error.detail.actual !== vnebHash, 'bytes that fail the stated hash install nothing');
+  assert.equal((await client.getRender('older-hub')).renderHash, vnebHash, 'a hub that states no hash still gets one computed for the record');
 
   await assert.rejects(client.getRender('private-one'), (error) => error.code === 'skill_not_found' && error.status === 404 && !error.transient);
   await assert.rejects(client.me(), (error) => error.code === 'invalid_token' && error.status === 401);
@@ -315,6 +356,8 @@ test('reconcileHubSkills installs, is idempotent, updates, and never overwrites 
   assert.deepEqual(first.reports, [{ install_id: 'inst-1', slug: 'vneb-portal', state: 'installed', version: '1.0.0', error: '' }]);
   assert.deepEqual(first.counts.installed, 1);
   const skills = normalizeCustomSkills(first.skills);
+  const { sha256Address } = await load('chrome', 'src/agentx/hub-client.js');
+  assert.equal(skills[0].renderHash, await sha256Address(skills[0].content), 'the record is sealed with the hash of its stored (normalised) content');
 
   // 2. The same snapshot once the hub knows → nothing to fetch, nothing to report.
   const again = await reconcileHubSkills({ installs: [installRow({ reported_state: 'installed', reported_version: '1.0.0' })], skills, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
@@ -406,6 +449,86 @@ test('reconcileHubSkills removes, parks on disable, restores without a download,
   const orphan = await reconcileHubSkills({ installs: [], skills, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
   assert.equal(orphan.changed, false);
   assert.equal(orphan.skills.length, 1);
+});
+
+test('reconcileHubSkills repairs a hub record changed outside the extension, seals older records once, and quarantines when the hub is away', async () => {
+  const { reconcileHubSkills, hubRecordIntegrity, sealHubRecord, hubRecordFrom } = await load('chrome', 'src/agentx/hub-sync.js');
+  const { normalizeCustomSkills } = await load('chrome', 'src/agent/skills.js');
+  const render = { slug: 'vneb-portal', version: '1.0.0', contentHash: 'sha256:aaa', content: VNEB_RENDER };
+  let fetches = 0;
+  let hubAway = false;
+  const fetchRender = async () => { fetches += 1; if (hubAway) throw Object.assign(new Error('The hub took too long'), { code: 'request_timeout', transient: true }); return render; };
+  const row = () => installRow({ reported_state: 'installed', reported_version: '1.0.0' });
+  const sealed = normalizeCustomSkills([await sealHubRecord(hubRecordFrom({ ...render, baseUrl: HUB, createdAt: NOW }))]);
+  assert.equal(await hubRecordIntegrity(sealed[0]), 'ok');
+
+  // 1. Changed outside WebMate (the seal no longer matches) → the hub's copy replaces it; the person is told.
+  const tampered = normalizeCustomSkills([{ ...sealed[0], content: `${sealed[0].content}\n\n## Case 9 — Injected outside the extension\n` }]);
+  assert.equal(await hubRecordIntegrity(tampered[0]), 'mismatch');
+  const repaired = await reconcileHubSkills({ installs: [row()], skills: tampered, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.equal(fetches, 1);
+  assert.equal(repaired.changed, true);
+  assert.equal(normalizeCustomSkills(repaired.skills)[0].content, VNEB_RENDER.trim(), 'the injected text is gone');
+  assert.equal(repaired.skills[0].createdAt, NOW, 'the record keeps its creation time');
+  assert.deepEqual(repaired.counts.repaired, 1);
+  assert.deepEqual(repaired.notices['vneb-portal'], { kind: 'repaired', version: '1.0.0', at: NOW });
+  assert.deepEqual(repaired.reports, [], 'the hub already knew 1.0.0 was installed; nothing new to say');
+  assert.equal(await hubRecordIntegrity(normalizeCustomSkills(repaired.skills)[0]), 'ok', 'the replacement is sealed again');
+
+  // 2. The notice outlives the sync that made it — a week at most — and a clean sync fetches nothing.
+  const carried = await reconcileHubSkills({ installs: [row()], skills: normalizeCustomSkills(repaired.skills), parked: {}, notices: repaired.notices, fetchRender, baseUrl: HUB, now: NOW + 3 * 24 * 3_600_000 });
+  assert.equal(fetches, 1, 'a sealed, matching record is not refetched');
+  assert.deepEqual(carried.notices['vneb-portal'], { kind: 'repaired', version: '1.0.0', at: NOW });
+  const expired = await reconcileHubSkills({ installs: [row()], skills: normalizeCustomSkills(repaired.skills), parked: {}, notices: repaired.notices, fetchRender, baseUrl: HUB, now: NOW + 8 * 24 * 3_600_000 });
+  assert.deepEqual(expired.notices, {});
+
+  // 3. A record from before the seal existed → fetched once to seal it (not a repair), then left alone.
+  const legacy = normalizeCustomSkills([{ ...sealed[0], renderHash: '' }]);
+  assert.equal(await hubRecordIntegrity(legacy[0]), 'missing');
+  const sealedNow = await reconcileHubSkills({ installs: [row()], skills: legacy, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.equal(fetches, 2);
+  assert.deepEqual([sealedNow.counts.sealed, sealedNow.counts.repaired, sealedNow.counts.updated], [1, 0, 0]);
+  assert.deepEqual(sealedNow.notices, {}, 'sealing is silent');
+  assert.equal(await hubRecordIntegrity(normalizeCustomSkills(sealedNow.skills)[0]), 'ok');
+  await reconcileHubSkills({ installs: [row()], skills: normalizeCustomSkills(sealedNow.skills), parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.equal(fetches, 2, 'sealed once, not again');
+
+  // 4. The hub is away: an unsealed record of the right version is kept (it is installed, after all) …
+  hubAway = true;
+  const keptLegacy = await reconcileHubSkills({ installs: [row()], skills: legacy, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.equal(keptLegacy.skills.length, 1);
+  assert.equal(keptLegacy.counts.failed, 0);
+  assert.deepEqual(keptLegacy.reports, [], 'still installed at 1.0.0, nothing to correct');
+  // … but content that fails its own seal is never loaded: quarantined until the hub answers, and the hub is told why.
+  const quarantined = await reconcileHubSkills({ installs: [row()], skills: tampered, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.deepEqual(quarantined.skills, []);
+  assert.equal(quarantined.changed, true);
+  assert.equal(quarantined.counts.failed, 1);
+  assert.deepEqual(quarantined.notices['vneb-portal'], { kind: 'repaired', pending: true, code: 'request_timeout', message: 'The hub took too long', at: NOW });
+  assert.equal(quarantined.reports.length, 1);
+  assert.equal(quarantined.reports[0].state, 'failed');
+  assert.match(quarantined.reports[0].error, /^render_hash_mismatch: .*request_timeout/);
+  // The hub is back (it heard `failed` meanwhile): installed afresh, reported, and the pending notice becomes a repair.
+  hubAway = false;
+  const back = await reconcileHubSkills({ installs: [installRow({ reported_state: 'failed', reported_version: '1.0.0' })], skills: [], parked: {}, notices: quarantined.notices, fetchRender, baseUrl: HUB, now: NOW + 60_000 });
+  assert.equal(back.skills.length, 1);
+  assert.deepEqual(back.notices['vneb-portal'], { kind: 'repaired', version: '1.0.0', at: NOW + 60_000 });
+  assert.deepEqual(back.reports.map((r) => r.state), ['installed']);
+
+  // 5. A parked copy that was changed while switched off is not restored; it is fetched afresh.
+  const parkedTampered = { 'vneb-portal': { ...tampered[0] } };
+  const before = fetches;
+  const restored = await reconcileHubSkills({ installs: [row()], skills: [], parked: parkedTampered, fetchRender, baseUrl: HUB, now: NOW });
+  assert.equal(fetches, before + 1, 'no restore without a valid seal');
+  assert.equal(restored.counts.restored, 0);
+  assert.equal(normalizeCustomSkills(restored.skills)[0].content, VNEB_RENDER.trim());
+  assert.deepEqual(restored.parked, {});
+
+  // 6. A fork lives alongside: it has no hub slug, so it neither blocks an install nor gets touched.
+  const fork = normalizeCustomSkills([{ id: 'fork_vneb-portal_x', sourceType: 'text', forkedFrom: { slug: 'vneb-portal', version: '1.0.0' }, content: '# Mine\n\nMy own text', createdAt: 1 }]);
+  const alongside = await reconcileHubSkills({ installs: [installRow()], skills: fork, parked: {}, fetchRender, baseUrl: HUB, now: NOW });
+  assert.deepEqual(alongside.skills.map((s) => [s.id, s.sourceType]), [['fork_vneb-portal_x', 'text'], ['hub_vneb-portal', 'hub']]);
+  assert.equal(alongside.skills[0].content, '# Mine\n\nMy own text');
 });
 
 // ---------------------------------------------------------------- runner (alarms, storage, messages)
@@ -591,14 +714,81 @@ test('Settings installs go through the background: install records a device row,
   assert.deepEqual(fake.values[CUSTOM_SKILLS_STORAGE_KEY], []);
 });
 
+test('Fork to edit makes a plain-text copy, withdraws this device\'s hub rows first, and refuses without the hub', async () => {
+  const { createAgentXHubSyncRunner, hubRecordFrom, sealHubRecord } = await load('chrome', 'src/agentx/hub-sync.js');
+  const { CUSTOM_SKILLS_STORAGE_KEY, normalizeCustomSkills, applySkillEdit } = await load('chrome', 'src/agent/skills.js');
+  const record = await sealHubRecord(hubRecordFrom({ slug: 'vneb-portal', version: '1.0.0', contentHash: 'sha256:aaa', content: VNEB_RENDER, baseUrl: HUB, createdAt: 1 }));
+  const seed = { [CUSTOM_SKILLS_STORAGE_KEY]: [{ id: 'humanizer', name: 'Humanizer', sourceType: 'built-in', sourceUrl: 'skills/humanizer.md', content: '# Humanizer\n\nBody', createdAt: 0 }, record] };
+  const fake = createApi(seed);
+  const hub = fakeHub({
+    installs: [installRow({ id: 'inst-a', device_id: DEVICE.id, reported_state: 'installed', reported_version: '1.0.0' }), installRow({ id: 'inst-b', device_id: null }), installRow({ id: 'inst-c', slug: 'other' })],
+    renders: { 'vneb-portal@latest': { slug: 'vneb-portal', version: '1.0.0', contentHash: 'sha256:aaa', content: VNEB_RENDER } },
+  });
+  const runner = createAgentXHubSyncRunner({ api: fake.api, client: hub, config: CONFIG, now: () => NOW });
+
+  const forked = await runner.forkHubSkill({ slug: 'vneb-portal', name: 'VNEB (bản sao)' });
+  assert.equal(forked.ok, true);
+  assert.equal(forked.rows, 2, 'this device\'s row and the all-devices row');
+  assert.deepEqual(hub.calls.removed, ['inst-a', 'inst-b'], 'withdrawn on the hub, so the next sync does not put the original back');
+  assert.match(forked.skill.id, /^fork_vneb-portal_/);
+  assert.deepEqual([forked.skill.name, forked.skill.forkedFrom], ['VNEB (bản sao)', { slug: 'vneb-portal', version: '1.0.0' }]);
+  let stored = normalizeCustomSkills(fake.values[CUSTOM_SKILLS_STORAGE_KEY]);
+  assert.deepEqual(stored.map((s) => [s.id, s.sourceType]), [['humanizer', 'built-in'], [forked.skill.id, 'text']], 'the copy takes the original\'s place');
+  assert.equal(stored[1].content, VNEB_RENDER.trim(), 'same content');
+  assert.equal(Object.hasOwn(stored[1], 'hubSlug'), false, 'no hub slug: neither the lock nor the repair applies');
+  assert.equal(stored[1].createdAt, NOW);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  // The sync the fork kicked off saw the withdrawn rows and left the copy alone.
+  stored = normalizeCustomSkills(fake.values[CUSTOM_SKILLS_STORAGE_KEY]);
+  assert.deepEqual(stored.map((s) => s.id), ['humanizer', forked.skill.id]);
+  assert.ok(hub.calls.reports.some((r) => r.id === 'inst-a' && r.state === 'removed'));
+  // The copy is the person's own: editable, and its origin survives the edit.
+  const edited = applySkillEdit(stored, forked.skill.id, { name: 'VNEB (bản sao)', content: `${VNEB_RENDER}\n\n## Case 2 — Của tôi\n` });
+  assert.equal(edited.changed, true);
+  assert.deepEqual(edited.skill.forkedFrom, { slug: 'vneb-portal', version: '1.0.0' });
+  // Installing from the hub again puts the hub record alongside the copy.
+  const again = await runner.installFromHub({ slug: 'vneb-portal' });
+  assert.equal(again.replacedEdited, false);
+  stored = normalizeCustomSkills(fake.values[CUSTOM_SKILLS_STORAGE_KEY]);
+  assert.deepEqual(stored.map((s) => [s.id, s.sourceType]), [['humanizer', 'built-in'], [forked.skill.id, 'text'], ['hub_vneb-portal', 'hub']]);
+  assert.ok(stored[2].renderHash.startsWith('sha256:'), 'installed sealed');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // Not a hub record here → nothing to fork.
+  await assert.rejects(runner.forkHubSkill({ slug: 'other' }), (error) => error.code === 'skill_not_found');
+  await assert.rejects(runner.forkHubSkill({ slug: 'bad slug' }), (error) => error.code === 'invalid_request');
+  // Hub unreachable → refused before anything local changes (a row left behind would undo the fork at the next sync).
+  const awayFake = createApi(seed);
+  const awayHub = fakeHub({ failInstalls: Object.assign(new Error('Failed to fetch'), { code: 'network_unavailable', transient: true }) });
+  const away = createAgentXHubSyncRunner({ api: awayFake.api, client: awayHub, config: CONFIG, now: () => NOW });
+  await assert.rejects(away.forkHubSkill({ slug: 'vneb-portal' }), (error) => error.code === 'network_unavailable');
+  assert.equal(normalizeCustomSkills(awayFake.values[CUSTOM_SKILLS_STORAGE_KEY])[1].sourceType, 'hub', 'still the hub record');
+});
+
 // ---------------------------------------------------------------- Settings card
 
 test('the Settings card labels hub records, renders search results and installed rows, and translates errors', async () => {
   for (const target of ['chrome', 'firefox']) {
-    const { agentxHubSourceLabel, describeHubError, createAgentXHubSettingsController } = await load(target, 'src/ui/agentx-hub-settings.js');
+    const { agentxHubSourceLabel, agentxHubEditLockedMessage, agentxHubSkillRowActions, describeHubError, createAgentXHubSettingsController } = await load(target, 'src/ui/agentx-hub-settings.js');
     assert.equal(agentxHubSourceLabel({ sourceType: 'hub', hubSlug: 'vneb-portal', hubVersion: '1.0.0' }, 'vi'), 'Từ AgentX Hub · vneb-portal@1.0.0');
     assert.equal(agentxHubSourceLabel({ sourceType: 'text', hubSlug: 'vneb-portal', hubVersion: '1.0.0' }, 'en'), 'Edited from AgentX Hub (vneb-portal@1.0.0)');
+    assert.equal(agentxHubSourceLabel({ sourceType: 'text', forkedFrom: { slug: 'vneb-portal', version: '1.0.0' } }, 'vi'), 'Bản sao từ AgentX Hub (vneb-portal@1.0.0)');
     assert.equal(agentxHubSourceLabel({ sourceType: 'url', sourceUrl: 'https://x' }, 'vi'), '', 'non-hub records fall through to the upstream label');
+    assert.match(agentxHubEditLockedMessage('vi'), /chỉ đọc/);
+    assert.match(agentxHubEditLockedMessage('en'), /read-only/);
+    // The enabled-skills list: a hub row is View · Fork · Remove, never Edit; an edited copy keeps Edit and gains Restore.
+    const hubRow = agentxHubSkillRowActions({ id: 'hub_vneb-portal', name: 'VNEB <b>', sourceType: 'hub', hubSlug: 'vneb-portal' }, 'vi', { edit: 'Sửa', remove: 'Xóa' });
+    assert.match(hubRow, /data-agentx-hub-row-action="view"[^>]*>Xem</);
+    assert.match(hubRow, /data-agentx-hub-row-action="fork"[^>]*>Tách bản sao để sửa</);
+    assert.match(hubRow, /data-agentx-hub-row-action="remove"[^>]*>Xóa</);
+    assert.doesNotMatch(hubRow, /data-skill-edit-id|data-skill-id=/, 'the upstream handlers must not fire on these buttons');
+    assert.match(hubRow, /data-skill-name="VNEB &lt;b&gt;"/, 'escaped');
+    const editedRow = agentxHubSkillRowActions({ id: 'hub_mine', name: 'Mine', sourceType: 'text', hubSlug: 'mine' }, 'en', { edit: 'Edit', remove: 'Remove' });
+    assert.match(editedRow, /data-agentx-hub-row-action="edit"[^>]*>Edit</);
+    assert.match(editedRow, /data-agentx-hub-row-action="restore"[^>]*>Restore hub version</);
+    assert.doesNotMatch(editedRow, /"fork"/);
+    assert.equal(agentxHubSkillRowActions({ id: 'fork_x', sourceType: 'text', forkedFrom: { slug: 'mine', version: '1.0.0' } }, 'vi'), '', 'a fork is an ordinary text skill: upstream Edit · Remove');
+    assert.equal(agentxHubSkillRowActions({ id: 'plain', sourceType: 'text' }, 'vi'), '');
     assert.match(describeHubError({ code: 'not_signed_in' }, 'vi'), /đăng nhập AgentX/);
     assert.match(describeHubError({ code: 'skill_limit_reached', detail: { max: 40 } }, 'en'), /40 skills/);
     assert.match(describeHubError({ code: 'weird_code' }, 'en'), /weird_code/);
@@ -616,7 +806,7 @@ test('the Settings card labels hub records, renders search results and installed
           return {
             ok: true, signedIn: true, subject: 'user-123', baseUrl: HUB, baseUrlSource: 'default', externalChannel: target === 'chrome', lastSyncAt: NOW, lastStatus: 'synced', lastError: null,
             installed: [{ id: 'hub_vneb-portal', name: 'vneb-portal', slug: 'vneb-portal', version: '1.0.0', sourceType: 'hub' }, { id: 'hub_mine', name: 'Mine', slug: 'mine', version: '1.0.0', sourceType: 'text' }],
-            parked: ['parked-one'], notices: { mine: { kind: 'edited', updateAvailable: true, localVersion: '1.0.0', latestVersion: '1.1.0' }, 'parked-one': { kind: 'disabled', reason: 'yanked', version: '1.0.0' } }, updates: [], org: { org_id: 'astralx', skills: [{ slug: 'team-portal', name: 'Team portal', version: '1.0.0' }] },
+            parked: ['parked-one'], notices: { mine: { kind: 'edited', updateAvailable: true, localVersion: '1.0.0', latestVersion: '1.1.0' }, 'vneb-portal': { kind: 'repaired', version: '1.0.0', at: NOW }, 'parked-one': { kind: 'disabled', reason: 'yanked', version: '1.0.0' } }, updates: [], org: { org_id: 'astralx', skills: [{ slug: 'team-portal', name: 'Team portal', version: '1.0.0' }] },
           };
         }
         if (action === 'agentx_hub_install') return { ok: true, skill: { name: 'vneb-portal', version: '1.0.0' } };
@@ -631,6 +821,10 @@ test('the Settings card labels hub records, renders search results and installed
     assert.match(root.innerHTML, /Từ AgentX Hub · vneb-portal/);
     assert.match(root.innerHTML, /đã sửa tay/, 'the edited copy is flagged');
     assert.match(root.innerHTML, /có bản v1\.1\.0/, 'and told a newer version exists');
+    assert.match(root.innerHTML, /data-hub-action="reinstall" data-hub-slug="mine"[^>]*>Khôi phục bản hub</, 'and offered the hub version back');
+    assert.doesNotMatch(root.innerHTML, /data-hub-action="reinstall" data-hub-slug="vneb-portal"/, 'a hub record has nothing to restore');
+    assert.match(root.innerHTML, /bị sửa ngoài WebMate — đã khôi phục bản hub/, 'a repair is shown');
+    assert.match(root.innerHTML, /chỉ đọc/, 'the card says hub skills are read-only');
     assert.match(root.innerHTML, /data-hub-parked="parked-one"/);
     assert.match(root.innerHTML, /hub đã tắt — yanked/);
     assert.match(root.innerHTML, /Team portal v1\.0\.0/);
@@ -647,6 +841,54 @@ test('the Settings card labels hub records, renders search results and installed
   }
 });
 
+test('the enabled-skills row actions go through the background: view and edit stay local, fork/restore/remove are messages', async () => {
+  const { bindAgentXHubSkillRowActions } = await load('chrome', 'src/ui/agentx-hub-settings.js');
+  const handlers = {};
+  const container = { dataset: {}, addEventListener(type, fn) { handlers[type] = fn; } };
+  const messages = [];
+  const notes = [];
+  const bound = bindAgentXHubSkillRowActions(container, {
+    locale: () => 'vi',
+    sendToBackground: async (action, data) => {
+      messages.push([action, data]);
+      if (action === 'agentx_hub_fork') return { ok: true, skill: { id: 'fork_vneb-portal_1', name: data.name } };
+      if (action === 'agentx_hub_install') return { ok: true, skill: { name: 'vneb-portal', version: '1.0.0' } };
+      return { ok: false, error: { code: 'network_unavailable', message: 'Failed to fetch' } };
+    },
+    preview: (id) => notes.push(['preview', id]),
+    edit: (id) => notes.push(['edit', id]),
+    notify: (kind, text) => notes.push([kind, text]),
+    confirmImpl: () => true,
+  });
+  assert.equal(bound, true);
+  assert.equal(bindAgentXHubSkillRowActions(container, { sendToBackground: async () => ({}) }), false, 'bound once per container');
+  const button = (action) => ({ dataset: { agentxHubRowAction: action, agentxSkillId: 'hub_vneb-portal', hubSlug: 'vneb-portal', skillName: 'vneb-portal' }, disabled: false });
+  const click = (target) => handlers.click({ target: { closest: () => target }, preventDefault() {} });
+
+  await click(null);
+  assert.deepEqual([messages, notes], [[], []], 'a click elsewhere in the list is not ours');
+  await click(button('view'));
+  assert.deepEqual(notes.at(-1), ['preview', 'hub_vneb-portal']);
+  await click(button('edit'));
+  assert.deepEqual(notes.at(-1), ['edit', 'hub_vneb-portal']);
+  assert.deepEqual(messages, [], 'view and edit never leave the page');
+  const fork = button('fork');
+  await click(fork);
+  assert.deepEqual(messages.at(-1), ['agentx_hub_fork', { slug: 'vneb-portal', name: 'vneb-portal (bản sao)' }]);
+  assert.equal(notes.at(-1)[0], 'ok');
+  assert.match(notes.at(-1)[1], /Đã tạo bản sao "vneb-portal \(bản sao\)"/);
+  assert.equal(fork.disabled, true, 'stays disabled: the storage listener re-renders the row');
+  await click(button('restore'));
+  assert.deepEqual(messages.at(-1), ['agentx_hub_install', { slug: 'vneb-portal' }]);
+  assert.match(notes.at(-1)[1], /Đã khôi phục vneb-portal v1\.0\.0/);
+  const remove = button('remove');
+  await click(remove);
+  assert.deepEqual(messages.at(-1), ['agentx_hub_uninstall', { slug: 'vneb-portal' }]);
+  assert.equal(notes.at(-1)[0], 'fail');
+  assert.match(notes.at(-1)[1], /Không kết nối được hub/);
+  assert.equal(remove.disabled, false, 're-enabled after a failure so the person can retry');
+});
+
 // ---------------------------------------------------------------- build output
 
 test('brand build: manifest channel (Chrome only), runtime config, Settings wiring, background wiring', async () => {
@@ -660,9 +902,12 @@ test('brand build: manifest channel (Chrome only), runtime config, Settings wiri
     const skills = await fs.readFile(DIST(target, 'src/agent/skills.js'), 'utf8');
     assert.match(skills, /export const MAX_CUSTOM_SKILLS = 40;/, `${target}: limit raised`);
     assert.match(skills, /normalizeHubProvenance/, `${target}: patch 080 applied`);
+    assert.match(skills, /locked: true/, `${target}: the edit lock is in the build`);
+    assert.match(skills, /normalizeForkProvenance/, `${target}: fork provenance survives normalisation`);
     const background = await fs.readFile(DIST(target, 'src/background.js'), 'utf8');
     assert.match(background, /createAgentXHubSyncRunner\(\{/, `${target}: patch 081 applied`);
     assert.match(background, /case 'agentx_hub_install':/, `${target}: background answers Settings installs`);
+    assert.match(background, /case 'agentx_hub_fork':/, `${target}: …and forks`);
     assert.match(background, new RegExp(`api: ${target === 'chrome' ? 'chrome' : 'browser'},`), `${target}: the right extension API`);
     const html = await fs.readFile(DIST(target, 'src/ui/settings.html'), 'utf8');
     assert.match(html, /<link rel="stylesheet" href="agentx-hub\.css">/, `${target}: card stylesheet`);
@@ -671,6 +916,10 @@ test('brand build: manifest channel (Chrome only), runtime config, Settings wiri
     const settings = await fs.readFile(DIST(target, 'src/ui/settings.js'), 'utf8');
     assert.match(settings, /createAgentXHubSettingsController\(\{/, `${target}: patch 082 applied`);
     assert.match(settings, /agentxHubSourceLabel\(skill, getLocale\(\)\)/, `${target}: hub records are labelled in the enabled list`);
+    assert.match(settings, /agentxHubSkillRowActions\(skill, getLocale\(\)/, `${target}: hub rows get View · Fork · Remove`);
+    assert.match(settings, /bindAgentXHubSkillRowActions\(skillsList/, `${target}: …wired to the background`);
+    assert.match(settings, /if \(skill\.sourceType === 'hub'\) \{\n    flashSkillsResult\('fail', agentxHubEditLockedMessage\(getLocale\(\)\)\);/, `${target}: the editor refuses a hub record`);
+    assert.match(settings, /if \(result\.locked\) \{/, `${target}: …and so does Save`);
     assert.match(settings, /await agentxHubController\.initialize\(\)/, `${target}: the card initialises with the page`);
     const gate = await fs.readFile(DIST(target, 'src/ui/agentx-login-gate.js'), 'utf8');
     assert.match(gate, /sendToBackground\('agentx_hub_sync', \{ reason: 'panel' \}\)/, `${target}: the panel nudges a sync when it opens`);

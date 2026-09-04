@@ -8,11 +8,17 @@
 // it into the agent; `removed` deletes the hub-managed record; `disabled`
 // (a yank, a demotion, or "switch off" on the web) parks the record here so
 // switching it back on needs no download; a newer version replaces the
-// content unless the person edited the copy by hand, in which case the copy
-// is left alone and only flagged. Then each row is told what happened.
+// content. Hub records are read-only (plan §8 decision 9): each carries the
+// hash of its stored content, and a record that no longer hashes to it was
+// changed outside the extension — the hub's copy replaces it and the person
+// is told. A copy edited by hand before that rule existed (`sourceType:
+// 'text'` with a hub slug) is left alone and only flagged; "Fork to edit"
+// makes such a copy on purpose, without the hub slug. Then each row is told
+// what happened.
 //
 // Losing the hub is never a revocation: every failure short of an explicit
-// `removed` leaves the installed skills exactly as they are.
+// `removed` leaves the installed skills exactly as they are — the one
+// exception being content that fails its own hash, which is never loaded.
 //
 // `reconcileHubSkills` is pure apart from the injected `fetchRender`, so the
 // unit tests drive it with fakes; `createAgentXHubSyncRunner` wires it to the
@@ -28,10 +34,12 @@ import {
   createAgentXHubClient,
   hubOriginOf,
   hubSkillPageUrl,
+  isValidHubHash,
   isValidHubSlug,
   isValidHubVersion,
   publicHubError,
   readHubConfig,
+  sha256Address,
 } from './hub-client.js';
 
 export const AGENTX_HUB_SYNC_STATE_KEY = 'agentxHubSyncStateV1';
@@ -42,13 +50,20 @@ export const AGENTX_HUB_MESSAGE_INSTALL = 'agentx-hub/install';
 export const AGENTX_HUB_MESSAGE_TYPES = Object.freeze([AGENTX_HUB_MESSAGE_PING, AGENTX_HUB_MESSAGE_INSTALL]);
 // After a 401 the bearer is stale; polling harder would only repeat it.
 const REAUTH_BACKOFF_MS = 5 * 60_000;
+// A repair notice outlives the sync that made it (Settings may well be closed
+// at the time) until the person acts on that skill, or for a week.
+const REPAIR_NOTICE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 export function hubSkillId(slug) {
   return `hub_${String(slug).replace(/\//g, '__')}`;
 }
 
+export function forkSkillId(slug, at = Date.now()) {
+  return `fork_${String(slug).replace(/\//g, '__').slice(0, 60)}_${Number(at).toString(36)}`;
+}
+
 /** The raw record hub-sync writes; normalizeCustomSkills fills in the rest. */
-export function hubRecordFrom({ slug, version, contentHash, content, baseUrl, createdAt, name = '' }) {
+export function hubRecordFrom({ slug, version, contentHash, renderHash = '', content, baseUrl, createdAt, name = '' }) {
   return {
     id: hubSkillId(slug),
     name,
@@ -57,9 +72,31 @@ export function hubRecordFrom({ slug, version, contentHash, content, baseUrl, cr
     hubSlug: slug,
     hubVersion: String(version || ''),
     contentHash: String(contentHash || ''),
+    renderHash: String(renderHash || ''),
     content,
     createdAt: Number.isFinite(Number(createdAt)) ? Number(createdAt) : Date.now(),
   };
+}
+
+/**
+ * Seal a hub record with the hash of its content *as stored*. normalizeCustomSkills
+ * trims and unifies newlines, so this can differ from the wire hash the client
+ * checked on receipt; what matters is that every later sync recomputes it over
+ * the same stored text (plan §8 decision 9).
+ */
+export async function sealHubRecord(record) {
+  const [stored] = normalizeCustomSkills([record]);
+  return { ...record, renderHash: await sha256Address(stored ? stored.content : '') };
+}
+
+/**
+ * 'ok', 'missing' (a record from before the seal existed — fetched once to seal
+ * it, never treated as tampering), or 'mismatch' (changed outside the extension).
+ */
+export async function hubRecordIntegrity(record) {
+  if (!record || record.sourceType !== 'hub') return 'ok';
+  if (!isValidHubHash(record.renderHash)) return 'missing';
+  return (await sha256Address(record.content)) === record.renderHash ? 'ok' : 'mismatch';
 }
 
 export function emptySyncState() {
@@ -120,14 +157,17 @@ function recordMatches(record, row) {
  * Returns the next skills list, the next parked map, the reports to send,
  * notices for the UI, and whether storage needs writing. `fetchRender(slug,
  * version)` is awaited for every install that needs bytes; a failure there
- * is reported as `failed` for that row and the rest carries on.
+ * is reported as `failed` for that row and the rest carries on. `notices`
+ * are the previous sync's: a repair notice is carried until the skill is
+ * acted on or a week passes, and a quarantine is resolved into a repair once
+ * the hub answers.
  */
-export async function reconcileHubSkills({ installs, skills, parked, fetchRender, baseUrl, now = Date.now(), maxSkills = MAX_CUSTOM_SKILLS }) {
+export async function reconcileHubSkills({ installs, skills, parked, fetchRender, baseUrl, now = Date.now(), maxSkills = MAX_CUSTOM_SKILLS, notices: previousNotices = {} }) {
   const next = [...(Array.isArray(skills) ? skills : [])];
   const nextParked = { ...(parked || {}) };
   const reports = [];
   const notices = {};
-  const counts = { installed: 0, updated: 0, removed: 0, disabled: 0, restored: 0, failed: 0, edited: 0 };
+  const counts = { installed: 0, updated: 0, removed: 0, disabled: 0, restored: 0, failed: 0, edited: 0, repaired: 0, sealed: 0 };
   let changed = false;
 
   const findHub = (slug) => next.findIndex((skill) => skill.sourceType === 'hub' && skill.hubSlug === slug);
@@ -183,14 +223,19 @@ export async function reconcileHubSkills({ installs, skills, parked, fetchRender
       const candidate = nextParked[slug];
       delete nextParked[slug];
       changed = true;
-      if (recordMatches(candidate, effective)) {
+      if (recordMatches(candidate, effective) && (await hubRecordIntegrity(candidate)) === 'ok') {
         record = candidate;
         next.push(candidate);
         counts.restored += 1;
       }
     }
 
-    const needsFetch = !record || !recordMatches(record, effective);
+    // A record that no longer hashes to what was installed was changed outside
+    // the extension: the hub's copy replaces it (plan §8 decision 9). One
+    // without a hash predates the seal and is fetched once to gain it.
+    const integrity = await hubRecordIntegrity(record);
+    const sameVersion = Boolean(record) && recordMatches(record, effective);
+    const needsFetch = !record || !sameVersion || integrity !== 'ok';
     if (needsFetch) {
       if (!record && next.length >= maxSkills) {
         const error = `skill_limit_reached: WebMate keeps at most ${maxSkills} skills`;
@@ -204,31 +249,61 @@ export async function reconcileHubSkills({ installs, skills, parked, fetchRender
         rendered = await fetchRender(slug, effective.version || 'latest');
       } catch (error) {
         const code = String(error?.code || 'fetch_failed');
+        const message = String(error?.message || '');
+        if (integrity === 'missing' && sameVersion) {
+          // The right version, merely unsealed: keep it, seal it another time.
+          reports.push(...reportsFor(rows, 'installed', record.hubVersion || ''));
+          continue;
+        }
         counts.failed += 1;
-        notices[slug] = { kind: 'failed', code, message: String(error?.message || '') };
-        reports.push(...reportsFor(rows, 'failed', '', `${code}: ${String(error?.message || '').slice(0, 200)}`));
+        if (integrity === 'mismatch') {
+          // Content that fails its hash is never loaded: quarantine it until
+          // the hub answers — the next sync sees no record and installs afresh.
+          next.splice(findHub(slug), 1);
+          changed = true;
+          notices[slug] = { kind: 'repaired', pending: true, code, message, at: now };
+          reports.push(...reportsFor(rows, 'failed', '', `render_hash_mismatch: the local copy was changed outside WebMate and the hub could not be reached (${code}: ${message.slice(0, 160)})`));
+        } else {
+          notices[slug] = { kind: 'failed', code, message };
+          reports.push(...reportsFor(rows, 'failed', '', `${code}: ${message.slice(0, 200)}`));
+        }
         continue;
       }
-      const fresh = hubRecordFrom({
+      const fresh = await sealHubRecord(hubRecordFrom({
         slug,
         version: rendered.version || effective.version || effective.latest_version || '',
         contentHash: rendered.contentHash || (effective.version ? '' : effective.latest_content_hash || ''),
         content: rendered.content,
         baseUrl,
         createdAt: record?.createdAt || now,
-      });
+      }));
       const at = findHub(slug);
       if (at === -1) {
         next.push(fresh);
         counts.installed += 1;
+        if (previousNotices[slug]?.kind === 'repaired' && previousNotices[slug].pending) {
+          notices[slug] = { kind: 'repaired', version: fresh.hubVersion, at: now };
+        }
       } else {
         next[at] = fresh;
-        counts.updated += 1;
+        if (integrity === 'mismatch') {
+          counts.repaired += 1;
+          notices[slug] = { kind: 'repaired', version: fresh.hubVersion, at: now };
+        } else if (integrity === 'missing' && sameVersion) {
+          counts.sealed += 1;
+        } else {
+          counts.updated += 1;
+        }
       }
       record = fresh;
       changed = true;
     }
     reports.push(...reportsFor(rows, 'installed', record.hubVersion || ''));
+  }
+
+  for (const [slug, notice] of Object.entries(previousNotices || {})) {
+    if (notices[slug] || notice?.kind !== 'repaired') continue;
+    if (Number.isFinite(Number(notice.at)) && now - Number(notice.at) <= REPAIR_NOTICE_TTL_MS) notices[slug] = notice;
   }
 
   return { skills: next, parked: nextParked, reports, notices, counts, changed };
@@ -326,6 +401,7 @@ export function createAgentXHubSyncRunner({
       installs: snapshot.installs,
       skills,
       parked: state.parked,
+      notices: state.notices,
       baseUrl,
       now: now(),
       fetchRender: (slug, version) => hub.getRender(slug, version),
@@ -374,14 +450,14 @@ export function createAgentXHubSyncRunner({
     if (!existing && skills.length >= MAX_CUSTOM_SKILLS) {
       throw new AgentXHubError('skill_limit_reached', `WebMate chỉ giữ tối đa ${MAX_CUSTOM_SKILLS} kỹ năng.`, { detail: { max: MAX_CUSTOM_SKILLS } });
     }
-    const record = hubRecordFrom({
+    const record = await sealHubRecord(hubRecordFrom({
       slug,
       version: rendered.version || (ref === 'latest' ? '' : ref),
       contentHash: rendered.contentHash,
       content: rendered.content,
       baseUrl,
       createdAt: existing?.createdAt || now(),
-    });
+    }));
     const next = [...skills];
     if (existing) next[existingIndex] = record;
     else next.push(record);
@@ -413,15 +489,19 @@ export function createAgentXHubSyncRunner({
     };
   }
 
-  /** Remove a hub skill here and on the hub (every row for this device / all devices). */
-  async function uninstallFromHub({ slug } = {}) {
-    await ready();
-    if (!isValidHubSlug(slug)) throw new AgentXHubError('invalid_request', `Slug không hợp lệ: ${slug}`);
+  /**
+   * Withdraw every live install row for `slug` (this device's and the
+   * all-devices ones). Lenient by default — a Remove must succeed locally even
+   * with the hub away; `strict` refuses instead, for an action that would be
+   * undone by the next sync if a row stayed behind.
+   */
+  async function withdrawHubRows(slug, { strict = false } = {}) {
     let rows = [];
     let hubReachable = true;
     try {
       rows = ((await hub.listMyInstalls()).installs || []).filter((row) => row.slug === slug && row.desired_state !== 'removed');
     } catch (error) {
+      if (strict) throw error;
       hubReachable = false;
       log.warn?.('[AgentX] hub installs could not be listed', error?.code || error);
     }
@@ -429,9 +509,18 @@ export function createAgentXHubSyncRunner({
       try {
         await hub.removeInstall(row.id);
       } catch (error) {
+        if (strict) throw error;
         log.warn?.('[AgentX] hub install could not be removed', row.id, error?.code || error);
       }
     }
+    return { rows, hubReachable };
+  }
+
+  /** Remove a hub skill here and on the hub (every row for this device / all devices). */
+  async function uninstallFromHub({ slug } = {}) {
+    await ready();
+    if (!isValidHubSlug(slug)) throw new AgentXHubError('invalid_request', `Slug không hợp lệ: ${slug}`);
+    const { rows, hubReachable } = await withdrawHubRows(slug);
     const { state, skills } = await readState();
     // An explicit "Remove" in Settings takes the record away whatever its
     // state — hub-managed or edited by hand. (The automatic sync path never
@@ -443,6 +532,43 @@ export function createAgentXHubSyncRunner({
     await writeState(state, next);
     if (hubReachable && rows.length) void syncNow({ reason: 'uninstall' });
     return { ok: true, removed: removedLocally, rows: rows.length };
+  }
+
+  /**
+   * "Fork to edit" (plan §8 decision 9): the read-only hub record becomes a
+   * plain-text copy of the person's own — same position, new id, `forkedFrom`
+   * instead of a hub slug, so neither the edit lock nor the integrity repair
+   * applies to it. This device's install rows are withdrawn from the hub
+   * first, so the next sync does not put the original back; a hub that cannot
+   * be reached refuses the fork rather than leave that to chance. Installing
+   * from the hub again is always possible; the copy then lives alongside.
+   */
+  async function forkHubSkill({ slug, name = '' } = {}) {
+    await ready();
+    if (!isValidHubSlug(slug)) throw new AgentXHubError('invalid_request', `Slug không hợp lệ: ${slug}`);
+    const found = (await readState()).skills.find((skill) => skill.sourceType === 'hub' && skill.hubSlug === slug);
+    if (!found) throw new AgentXHubError('skill_not_found', `Không có kỹ năng ${slug} từ hub trên thiết bị này.`, { status: 404 });
+    const { rows } = await withdrawHubRows(slug, { strict: true });
+    const { state, skills } = await readState();
+    const index = skills.findIndex((skill) => skill.sourceType === 'hub' && skill.hubSlug === slug);
+    if (index === -1) throw new AgentXHubError('skill_not_found', `Kỹ năng ${slug} vừa bị gỡ khỏi thiết bị này.`, { status: 404 });
+    const original = skills[index];
+    const copy = {
+      id: forkSkillId(slug, now()),
+      name: String(name || '').trim().slice(0, 80) || original.name,
+      sourceType: 'text',
+      sourceUrl: '',
+      content: original.content,
+      createdAt: now(),
+      forkedFrom: { slug, version: String(original.hubVersion || '') },
+    };
+    const next = skills.map((skill, i) => (i === index ? copy : skill));
+    delete state.parked[slug];
+    delete state.notices[slug];
+    await writeState(state, next);
+    if (rows.length) void syncNow({ reason: 'fork' });
+    const normalized = normalizeCustomSkills(next).find((skill) => skill.id === copy.id) || null;
+    return { ok: true, rows: rows.length, skill: normalized && { id: normalized.id, name: normalized.name, forkedFrom: normalized.forkedFrom || null } };
   }
 
   async function status() {
@@ -531,5 +657,5 @@ export function createAgentXHubSyncRunner({
     void ready().then(() => syncNow({ reason: 'startup' }));
   }
 
-  return { install, syncNow, installFromHub, uninstallFromHub, status, handleExternalMessage, client: hub };
+  return { install, syncNow, installFromHub, uninstallFromHub, forkHubSkill, status, handleExternalMessage, client: hub };
 }

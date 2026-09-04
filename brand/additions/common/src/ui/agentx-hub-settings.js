@@ -2,10 +2,14 @@
 //
 // The card searches the hub's browser-skill catalog, installs and removes
 // skills, shows which enabled skills came from the hub (and which of those
-// the person edited by hand), and the sync status. Installs and removals go
-// through the background (`agentx_hub_install` / `agentx_hub_uninstall`) so
-// the background stays the only writer of hub-managed `customSkills`; search
-// and preview read the hub directly with the shared client.
+// the person edited by hand before hub records became read-only), and the
+// sync status. Installs, removals, forks and restores go through the
+// background (`agentx_hub_install` / `agentx_hub_uninstall` / `agentx_hub_fork`)
+// so the background stays the only writer of hub-managed `customSkills`;
+// search and preview read the hub directly with the shared client. The
+// enabled-skills list upstream draws on this module too: a hub record's row
+// gets View · Fork to edit · Remove instead of Edit · Remove (plan §8
+// decision 9).
 import { AGENTX_RUNTIME_CONFIG } from '../agentx/runtime-config.js';
 import {
   createAgentXHubClient,
@@ -21,7 +25,7 @@ import { escapeHtml } from './utils.js';
 const COPY = {
   en: {
     title: 'AgentX Skill Hub',
-    intro: 'Browser skills scanned and signed by the AgentX Skill Hub. Install here or from the hub website; installs, updates and removals follow your account across devices.',
+    intro: 'Browser skills scanned and signed by the AgentX Skill Hub. Install here or from the hub website; installs, updates and removals follow your account across devices. Skills from the hub are read-only — fork one to edit it.',
     signedInAs: 'Signed in as {who}',
     signedOut: 'Sign in on the Providers tab to install from the hub. The public catalog is still searchable.',
     hub: 'Hub',
@@ -44,8 +48,8 @@ const COPY = {
     installing: 'Installing…',
     installed: 'Installed v{version}',
     update: 'Update to v{version}',
-    reinstall: 'Reinstall (replaces your edits)',
-    reinstallConfirm: 'You edited this skill by hand. Reinstalling replaces your copy with the hub version. Continue?',
+    reinstall: 'Restore hub version (replaces your edits)',
+    reinstallConfirm: 'You edited this skill by hand. Restoring replaces your copy with the hub version. Continue?',
     remove: 'Remove',
     removing: 'Removing…',
     open: 'Open on hub',
@@ -54,6 +58,8 @@ const COPY = {
     fromHub: 'AgentX Hub',
     editedFromHub: 'Edited from AgentX Hub',
     editedNote: 'edited by hand — not updated automatically',
+    repairedNote: 'changed outside WebMate — restored from the hub',
+    repairPendingNote: 'changed outside WebMate — switched off until the hub answers',
     updateAvailable: 'v{version} available',
     disabledNote: 'switched off by the hub{reason}',
     parkedHeading: 'Switched off (kept, not loaded)',
@@ -67,6 +73,15 @@ const COPY = {
     visibility_private: 'private',
     installedMessage: 'Installed {name} v{version}. It is ready for the next run.',
     removedMessage: 'Removed {name}.',
+    restoredMessage: 'Restored {name} v{version} from the hub.',
+    view: 'View',
+    fork: 'Fork to edit',
+    forkSuffix: 'copy',
+    forkedMessage: 'Made an editable copy "{name}". The hub version was withdrawn from this device; install it again from the hub any time.',
+    restore: 'Restore hub version',
+    restoreConfirm: 'Replace your edited copy of {slug} with the version on the hub?',
+    locked: 'Skills from the AgentX Hub are read-only — use "Fork to edit" to make your own copy.',
+    forkedFromHub: 'Copy of AgentX Hub',
     advanced: 'Advanced',
     hubUrlLabel: 'Hub address',
     hubUrlHint: 'HTTPS only (HTTP allowed for 127.0.0.1 / localhost). Leave empty to use the default.',
@@ -86,11 +101,12 @@ const COPY = {
     error_skill_limit_reached: 'WebMate keeps at most {max} skills. Remove one first.',
     error_kind_mismatch: 'That is not a browser skill.',
     error_background_unavailable: 'The extension background did not respond. Try again.',
+    error_render_hash_mismatch: 'The hub sent content that does not match the hash it states. Nothing was installed; try again.',
     error_generic: 'The hub request failed ({code}).',
   },
   vi: {
     title: 'AgentX Skill Hub',
-    intro: 'Kỹ năng trình duyệt đã được AgentX Skill Hub quét và ký. Cài ở đây hoặc từ trang hub; việc cài, cập nhật, gỡ theo tài khoản của bạn trên mọi thiết bị.',
+    intro: 'Kỹ năng trình duyệt đã được AgentX Skill Hub quét và ký. Cài ở đây hoặc từ trang hub; việc cài, cập nhật, gỡ theo tài khoản của bạn trên mọi thiết bị. Kỹ năng từ hub chỉ đọc — muốn sửa thì tách bản sao.',
     signedInAs: 'Đang đăng nhập: {who}',
     signedOut: 'Đăng nhập ở tab Nhà cung cấp để cài từ hub. Danh mục công khai vẫn tìm được.',
     hub: 'Hub',
@@ -113,8 +129,8 @@ const COPY = {
     installing: 'Đang cài…',
     installed: 'Đã cài v{version}',
     update: 'Cập nhật lên v{version}',
-    reinstall: 'Cài lại (ghi đè bản đã sửa)',
-    reinstallConfirm: 'Bạn đã sửa tay kỹ năng này. Cài lại sẽ thay bản của bạn bằng bản trên hub. Tiếp tục?',
+    reinstall: 'Khôi phục bản hub (ghi đè bản đã sửa)',
+    reinstallConfirm: 'Bạn đã sửa tay kỹ năng này. Khôi phục sẽ thay bản của bạn bằng bản trên hub. Tiếp tục?',
     remove: 'Gỡ',
     removing: 'Đang gỡ…',
     open: 'Mở trên hub',
@@ -123,6 +139,8 @@ const COPY = {
     fromHub: 'Từ AgentX Hub',
     editedFromHub: 'Đã sửa từ AgentX Hub',
     editedNote: 'đã sửa tay — không tự cập nhật',
+    repairedNote: 'bị sửa ngoài WebMate — đã khôi phục bản hub',
+    repairPendingNote: 'bị sửa ngoài WebMate — tạm tắt đến khi hub trả lời',
     updateAvailable: 'có bản v{version}',
     disabledNote: 'hub đã tắt{reason}',
     parkedHeading: 'Đã tắt (giữ nội dung, không nạp)',
@@ -136,6 +154,15 @@ const COPY = {
     visibility_private: 'riêng tư',
     installedMessage: 'Đã cài {name} v{version}. Dùng được ngay ở lượt chạy kế tiếp.',
     removedMessage: 'Đã gỡ {name}.',
+    restoredMessage: 'Đã khôi phục {name} v{version} từ hub.',
+    view: 'Xem',
+    fork: 'Tách bản sao để sửa',
+    forkSuffix: 'bản sao',
+    forkedMessage: 'Đã tạo bản sao "{name}" để bạn sửa. Bản của hub đã được gỡ khỏi thiết bị này; có thể cài lại từ hub bất cứ lúc nào.',
+    restore: 'Khôi phục bản hub',
+    restoreConfirm: 'Thay bản đã sửa của {slug} bằng bản trên hub?',
+    locked: 'Kỹ năng từ AgentX Hub chỉ đọc — dùng "Tách bản sao để sửa" nếu muốn có bản của riêng bạn.',
+    forkedFromHub: 'Bản sao từ AgentX Hub',
     advanced: 'Nâng cao',
     hubUrlLabel: 'Địa chỉ hub',
     hubUrlHint: 'Chỉ HTTPS (cho phép HTTP với 127.0.0.1 / localhost). Để trống để dùng mặc định.',
@@ -155,6 +182,7 @@ const COPY = {
     error_skill_limit_reached: 'WebMate chỉ giữ tối đa {max} kỹ năng. Hãy gỡ bớt trước.',
     error_kind_mismatch: 'Đây không phải kỹ năng trình duyệt.',
     error_background_unavailable: 'Nền tiện ích không phản hồi. Hãy thử lại.',
+    error_render_hash_mismatch: 'Nội dung hub gửi không khớp hash hub công bố. Chưa cài gì; hãy thử lại.',
     error_generic: 'Yêu cầu tới hub thất bại ({code}).',
   },
 };
@@ -171,13 +199,98 @@ function pickLang(locale) {
   return COPY[code] ? code : 'en';
 }
 
-/** "AgentX Hub · slug@version" for hub records; "Edited from AgentX Hub (slug@version)" for demoted copies; '' otherwise. */
+/**
+ * "AgentX Hub · slug@version" for hub records; "Edited from AgentX Hub
+ * (slug@version)" for copies edited by hand before the lock; "Copy of AgentX
+ * Hub (slug@version)" for a fork; '' otherwise.
+ */
 export function agentxHubSourceLabel(skill, locale = 'en') {
-  if (!skill || !skill.hubSlug) return '';
+  if (!skill) return '';
   const lang = pickLang(locale);
+  if (!skill.hubSlug) {
+    const from = skill.forkedFrom;
+    return from?.slug ? `${copy(lang, 'forkedFromHub')} (${from.slug}@${from.version || '?'})` : '';
+  }
   const ref = `${skill.hubSlug}@${skill.hubVersion || '?'}`;
   if (skill.sourceType === 'hub') return `${copy(lang, 'fromHub')} · ${ref}`;
   return `${copy(lang, 'editedFromHub')} (${ref})`;
+}
+
+export function agentxHubEditLockedMessage(locale = 'en') {
+  return copy(pickLang(locale), 'locked');
+}
+
+export const AGENTX_HUB_ROW_ACTION_ATTR = 'data-agentx-hub-row-action';
+
+/**
+ * The action buttons for one row of the enabled-skills list when the record
+ * carries a hub slug, or '' so the caller renders the upstream Edit · Remove
+ * pair. A hub record is read-only: View · Fork to edit · Remove — the removal
+ * goes through the hub so the next sync does not put it back. A copy edited
+ * by hand before the lock keeps Edit and gains Restore hub version. The
+ * attributes are deliberately not the upstream `data-skill-id` /
+ * `data-skill-edit-id`, so the upstream handlers never fire on these.
+ */
+export function agentxHubSkillRowActions(skill, locale = 'en', labels = {}) {
+  if (!skill?.hubSlug) return '';
+  const lang = pickLang(locale);
+  const button = (action, text) => `<button class="btn-secondary" ${AGENTX_HUB_ROW_ACTION_ATTR}="${action}" data-agentx-skill-id="${escapeHtml(skill.id)}" data-hub-slug="${escapeHtml(skill.hubSlug)}" data-skill-name="${escapeHtml(skill.name || '')}">${escapeHtml(text)}</button>`;
+  if (skill.sourceType === 'hub') {
+    return button('view', copy(lang, 'view')) + button('fork', copy(lang, 'fork')) + button('remove', labels.remove || copy(lang, 'remove'));
+  }
+  return button('edit', labels.edit || 'Edit') + button('restore', copy(lang, 'restore')) + button('remove', labels.remove || copy(lang, 'remove'));
+}
+
+/**
+ * Wire the buttons above on the enabled-skills list (bound once; the list is
+ * re-rendered on every change but its container is stable). `preview` and
+ * `edit` are the page's own functions; fork, restore and remove go to the
+ * background and the storage listener re-renders the list.
+ */
+export function bindAgentXHubSkillRowActions(container, {
+  locale = () => 'en',
+  sendToBackground,
+  preview = () => {},
+  edit = () => {},
+  notify = () => {},
+  confirmImpl = (message) => globalThis.confirm?.(message) ?? true,
+} = {}) {
+  if (!container || typeof sendToBackground !== 'function') return false;
+  if (container.dataset?.agentxHubRowsBound) return false;
+  if (container.dataset) container.dataset.agentxHubRowsBound = '1';
+  container.addEventListener('click', async (event) => {
+    const button = event.target?.closest?.(`[${AGENTX_HUB_ROW_ACTION_ATTR}]`);
+    if (!button) return;
+    event.preventDefault?.();
+    const action = button.dataset?.agentxHubRowAction || '';
+    const id = button.dataset?.agentxSkillId || '';
+    const slug = button.dataset?.hubSlug || '';
+    const name = button.dataset?.skillName || slug;
+    const lang = pickLang(locale);
+    if (action === 'view') return preview(id);
+    if (action === 'edit') return edit(id);
+    if (action === 'restore' && !confirmImpl(copy(lang, 'restoreConfirm', { slug }))) return undefined;
+    button.disabled = true;
+    try {
+      let result;
+      if (action === 'fork') result = await sendToBackground('agentx_hub_fork', { slug, name: `${name} (${copy(lang, 'forkSuffix')})` });
+      else if (action === 'restore') result = await sendToBackground('agentx_hub_install', { slug });
+      else if (action === 'remove') result = await sendToBackground('agentx_hub_uninstall', { slug });
+      else return undefined;
+      if (result?.error) throw Object.assign(new Error(result.error.message || String(result.error)), { code: result.error.code || 'unknown_error', detail: result.error.detail });
+      const message = action === 'fork'
+        ? copy(lang, 'forkedMessage', { name: result?.skill?.name || name })
+        : action === 'restore'
+          ? copy(lang, 'restoredMessage', { name: result?.skill?.name || name, version: result?.skill?.version || '?' })
+          : copy(lang, 'removedMessage', { name });
+      notify('ok', message);
+    } catch (error) {
+      button.disabled = false;
+      notify('fail', describeHubError(error, lang));
+    }
+    return undefined;
+  });
+  return true;
 }
 
 export function describeHubError(error, locale = 'en', extra = {}) {
@@ -265,7 +378,9 @@ export function createAgentXHubSettingsController({
     }
     const verdict = skill.scan?.verdict ? badge(copy(l, `verdict_${skill.scan.verdict}`), skill.scan.verdict) : '';
     const visibility = skill.visibility ? badge(copy(l, `visibility_${skill.visibility}`)) : '';
-    const noticeText = notice?.kind === 'edited' ? badge(copy(l, 'editedNote'), 'warn') : '';
+    const noticeText = notice?.kind === 'edited'
+      ? badge(copy(l, 'editedNote'), 'warn')
+      : notice?.kind === 'repaired' ? badge(copy(l, notice.pending ? 'repairPendingNote' : 'repairedNote'), 'warn') : '';
     return `
       <div class="ax-hub-row" data-hub-result="${escapeHtml(skill.slug)}">
         <div class="ax-hub-row-info">
@@ -294,7 +409,11 @@ export function createAgentXHubSettingsController({
       if (item.sourceType !== 'hub') flags.push(badge(copy(l, 'editedNote'), 'warn'));
       if ((notice?.kind === 'edited' && notice.updateAvailable) || update) flags.push(badge(copy(l, 'updateAvailable', { version: notice?.latestVersion || update?.version || '' }), 'accent'));
       if (notice?.kind === 'failed') flags.push(badge(copy(l, 'failedNote', { code: notice.code }), 'danger'));
+      if (notice?.kind === 'repaired') flags.push(badge(copy(l, notice.pending ? 'repairPendingNote' : 'repairedNote'), 'warn'));
       const busy = state.busySlug === item.slug;
+      const restore = item.sourceType !== 'hub'
+        ? `<button class="btn-secondary" data-hub-action="reinstall" data-hub-slug="${escapeHtml(item.slug)}"${busy ? ' disabled' : ''}>${escapeHtml(copy(l, 'restore'))}</button>`
+        : '';
       return `
         <div class="ax-hub-row" data-hub-installed="${escapeHtml(item.slug)}">
           <div class="ax-hub-row-info">
@@ -303,6 +422,7 @@ export function createAgentXHubSettingsController({
           </div>
           <div class="ax-hub-row-actions">
             <a class="btn-secondary" href="${escapeHtml(hubSkillPageUrl(state.status?.baseUrl || '', item.slug))}" target="_blank" rel="noopener noreferrer">${escapeHtml(copy(l, 'open'))}</a>
+            ${restore}
             <button class="btn-secondary" data-hub-action="uninstall" data-hub-slug="${escapeHtml(item.slug)}"${busy ? ' disabled' : ''}>${escapeHtml(copy(l, busy ? 'removing' : 'remove'))}</button>
           </div>
         </div>`;
@@ -409,7 +529,7 @@ export function createAgentXHubSettingsController({
       } else {
         const result = await sendToBackground('agentx_hub_install', { slug });
         if (result?.error) throw Object.assign(new Error(result.error.message || result.error), { code: result.error.code || 'unknown_error', detail: result.error.detail });
-        state.message = copy(lang(), 'installedMessage', { name: result?.skill?.name || slug, version: result?.skill?.version || '?' });
+        state.message = copy(lang(), action === 'reinstall' ? 'restoredMessage' : 'installedMessage', { name: result?.skill?.name || slug, version: result?.skill?.version || '?' });
       }
     } catch (error) {
       state.error = publicHubError(error);

@@ -10,29 +10,41 @@ diff --git a/src/agent/skills.js b/src/agent/skills.js
      return skill.sourceUrl;
    }
    return 'raw text';
-@@ -618,6 +618,21 @@
-       },
-     },
+@@ -620,6 +620,33 @@
    ];
-+}
-+
+ }
+ 
 +// AgentX Skill Hub provenance (brand layer, plan Phase 4 item 2). A record
 +// installed from the hub keeps the slug, the version and the content hash it
 +// was rendered from, so hub-sync can tell "same version" from "newer on the
-+// hub"; an edited copy keeps them as its origin while sourceType becomes 'text'.
++// hub", plus the hash of its own stored content (renderHash) so hub-sync can
++// tell a copy changed outside the extension from the render it installed
++// (plan §8 decision 9). A copy edited by hand before hub records became
++// read-only keeps them as its origin while sourceType is 'text'; a copy made
++// with "Fork to edit" carries forkedFrom instead and no hub fields.
 +const HUB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
++const HUB_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 +function normalizeHubProvenance(item) {
 +  const slug = cleanSingleLine(item?.hubSlug).slice(0, 160);
 +  if (!HUB_SLUG_RE.test(slug)) return null;
++  const renderHash = cleanSingleLine(item.renderHash);
 +  return {
 +    hubSlug: slug,
 +    hubVersion: cleanSingleLine(item.hubVersion).slice(0, 64),
 +    contentHash: cleanSingleLine(item.contentHash).slice(0, 128),
++    renderHash: HUB_HASH_RE.test(renderHash) ? renderHash : '',
 +  };
- }
- 
++}
++function normalizeForkProvenance(item) {
++  const slug = cleanSingleLine(item?.forkedFrom?.slug).slice(0, 160);
++  if (!HUB_SLUG_RE.test(slug)) return null;
++  return { forkedFrom: { slug, version: cleanSingleLine(item.forkedFrom.version).slice(0, 64) } };
++}
++
  function normalizeSkills(value, { maxSkills = MAX_CUSTOM_SKILLS } = {}) {
-@@ -631,10 +646,11 @@
+   const raw = Array.isArray(value) ? value : [];
+   const seenIds = new Set();
+@@ -631,10 +658,11 @@
      let id = stableId(item.id, index);
      while (seenIds.has(id)) id = `${id}_${skills.length + 1}`;
      seenIds.add(id);
@@ -46,30 +58,37 @@ diff --git a/src/agent/skills.js b/src/agent/skills.js
        ? cleanSingleLine(item.sourceUrl || item.path).slice(0, 2048)
        : '';
      const agentSkill = parseAgentSkillFrontmatter(content);
-@@ -671,6 +687,7 @@
+@@ -671,6 +699,8 @@
        intents: metadata?.intents || [],
        tools: [...normalizedTools, ...privilegedTools],
        createdAt: Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : 0,
 +      ...(hub || {}),
++      ...(normalizeForkProvenance(item) || {}),
      });
    }
    return skills;
-@@ -1052,7 +1069,7 @@
+@@ -1051,6 +1081,12 @@
+   if (!contentChanged && !nameChanged) {
      return { skills, skill: existing, changed: false, demoted: false };
    }
++  // A record from the AgentX Skill Hub is read-only (plan §8 decision 9): the
++  // hub is its source of truth, and hub-sync would put the hub's copy back on
++  // the next pass anyway. "Fork to edit" makes a plain-text copy instead.
++  if (existing.sourceType === 'hub') {
++    return { skills, skill: existing, changed: false, demoted: false, locked: true };
++  }
    const demoted = existing.sourceType === 'built-in'
--    || (existing.sourceType === 'url' && contentChanged);
-+    || ((existing.sourceType === 'url' || existing.sourceType === 'hub') && contentChanged);
+     || (existing.sourceType === 'url' && contentChanged);
    const raw = {
-     id: existing.id,
-     name: nextName,
-@@ -1060,6 +1077,9 @@
+@@ -1060,6 +1096,11 @@
      sourceUrl: demoted ? '' : existing.sourceUrl,
      content: nextContent,
      createdAt: existing.createdAt,
-+    // Hub provenance survives a demotion as the record's origin (hub-sync
-+    // then flags a newer version instead of overwriting the edited copy).
++    // A copy edited by hand before hub records became read-only keeps its hub
++    // origin (hub-sync flags a newer version instead of overwriting it, and
++    // Settings offers "Restore hub version"); a fork keeps what it was cut from.
 +    ...(existing.hubSlug ? { hubSlug: existing.hubSlug, hubVersion: existing.hubVersion, contentHash: existing.contentHash } : {}),
++    ...(existing.forkedFrom ? { forkedFrom: existing.forkedFrom } : {}),
    };
    const nextSkills = normalizeCustomSkills(skills.map((skill, i) => (i === index ? raw : skill)));
    const skill = nextSkills.find((item) => item.id === skillId) || null;
