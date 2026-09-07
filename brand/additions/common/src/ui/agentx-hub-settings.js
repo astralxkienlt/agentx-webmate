@@ -53,8 +53,10 @@ const COPY = {
     remove: 'Remove',
     removing: 'Removing…',
     open: 'Open on hub',
-    installedHeading: 'Skills from the hub',
-    installedEmpty: 'No skill from the hub yet.',
+    catalogHeading: 'Skill catalogue',
+    catalogLoading: 'Loading the catalogue…',
+    installedHeading: 'Installed from the hub on this browser',
+    installedEmpty: 'Nothing installed from the hub on this browser yet — press Install in the catalogue above.',
     fromHub: 'AgentX Hub',
     editedFromHub: 'Edited from AgentX Hub',
     editedNote: 'edited by hand — not updated automatically',
@@ -134,8 +136,10 @@ const COPY = {
     remove: 'Gỡ',
     removing: 'Đang gỡ…',
     open: 'Mở trên hub',
-    installedHeading: 'Kỹ năng từ hub',
-    installedEmpty: 'Chưa có kỹ năng nào từ hub.',
+    catalogHeading: 'Danh mục kỹ năng',
+    catalogLoading: 'Đang tải danh mục…',
+    installedHeading: 'Đã cài từ hub trên trình duyệt này',
+    installedEmpty: 'Chưa cài kỹ năng nào từ hub trên trình duyệt này — bấm Cài ở danh mục bên trên.',
     fromHub: 'Từ AgentX Hub',
     editedFromHub: 'Đã sửa từ AgentX Hub',
     editedNote: 'đã sửa tay — không tự cập nhật',
@@ -460,6 +464,12 @@ export function createAgentXHubSettingsController({
     const who = status?.subject ? status.subject : '';
     const statusKey = `status_${status?.lastStatus || 'never'}`;
     const workspaces = (status?.workspaces || []).filter((w) => (w.skills || []).length > 0);
+    // `null` = the catalogue has not answered yet (first load or a failed one).
+    const results = state.results === null
+      ? (state.searching ? `<div class="setting-desc">${escapeHtml(copy(l, 'catalogLoading'))}</div>` : '')
+      : state.results.length === 0
+        ? `<div class="setting-desc">${escapeHtml(copy(l, 'noResults'))}</div>`
+        : state.results.map(renderResult).join('');
     root.innerHTML = `
       <div class="ax-hub" data-agentx-hub>
         <div class="ax-hub-head">
@@ -484,9 +494,8 @@ export function createAgentXHubSettingsController({
             <button class="btn-primary" type="submit"${state.searching ? ' disabled' : ''}>${escapeHtml(copy(l, state.searching ? 'searching' : 'search'))}</button>
           </div>
         </form>
-        <div class="ax-hub-results" data-hub-results>
-          ${state.results === null ? '' : state.results.length === 0 ? `<div class="setting-desc">${escapeHtml(copy(l, 'noResults'))}</div>` : state.results.map(renderResult).join('')}
-        </div>
+        <div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'catalogHeading'))}</div>
+        <div class="ax-hub-results" data-hub-results>${results}</div>
         <div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'installedHeading'))}</div>
         <div class="ax-hub-installed-list" data-hub-installed-list>${renderInstalled()}</div>
         ${workspaces.length ? `<div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'workspacesHeading'))}</div>${workspaces.map(renderWorkspace).join('')}` : ''}
@@ -621,6 +630,11 @@ export function createAgentXHubSettingsController({
       bind();
       await refreshStatus();
       render();
+      // The catalogue is what the card is for: load it on open rather than
+      // making the person press Tìm to see that anything is there at all.
+      // `search()` renders on its own and keeps its own error, so a hub that
+      // cannot answer leaves the rest of the card working.
+      await search('');
       return state.status;
     },
     render,

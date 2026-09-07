@@ -820,6 +820,11 @@ test('the Settings card labels hub records, renders search results and installed
     });
     await controller.initialize();
     assert.match(root.innerHTML, /AgentX Skill Hub/);
+    // The catalogue answers on open — nobody should have to press Tìm to
+    // find out whether the hub has anything.
+    assert.match(root.innerHTML, /Danh mục kỹ năng/);
+    assert.match(root.innerHTML, /data-hub-result="vneb-portal"/, 'the catalogue is listed before any search');
+    assert.match(root.innerHTML, /Đã cài từ hub trên trình duyệt này/, 'and the second list says it is about this browser');
     assert.match(root.innerHTML, /Đang đăng nhập: user-123/);
     assert.match(root.innerHTML, /data-hub-installed="vneb-portal"/);
     assert.match(root.innerHTML, /Từ AgentX Hub · vneb-portal/);
