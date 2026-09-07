@@ -64,12 +64,12 @@ const COPY = {
     disabledNote: 'switched off by the hub{reason}',
     parkedHeading: 'Switched off (kept, not loaded)',
     failedNote: 'last install failed: {code}',
-    orgHeading: 'Your organisation',
+    workspacesHeading: 'Shared in your workspaces',
     verdict_safe: 'safe',
     verdict_caution: 'caution',
     verdict_dangerous: 'dangerous',
     visibility_public: 'public',
-    visibility_org: 'organisation',
+    visibility_workspace: 'workspace',
     visibility_private: 'private',
     installedMessage: 'Installed {name} v{version}. It is ready for the next run.',
     removedMessage: 'Removed {name}.',
@@ -145,12 +145,12 @@ const COPY = {
     disabledNote: 'hub đã tắt{reason}',
     parkedHeading: 'Đã tắt (giữ nội dung, không nạp)',
     failedNote: 'lần cài gần nhất lỗi: {code}',
-    orgHeading: 'Tổ chức của bạn',
+    workspacesHeading: 'Dùng chung trong workspace của bạn',
     verdict_safe: 'an toàn',
     verdict_caution: 'cần chú ý',
     verdict_dangerous: 'nguy hiểm',
     visibility_public: 'công khai',
-    visibility_org: 'tổ chức',
+    visibility_workspace: 'workspace',
     visibility_private: 'riêng tư',
     installedMessage: 'Đã cài {name} v{version}. Dùng được ngay ở lượt chạy kế tiếp.',
     removedMessage: 'Đã gỡ {name}.',
@@ -395,6 +395,15 @@ export function createAgentXHubSettingsController({
       </div>`;
   }
 
+  // One line per workspace that actually shares a skill of this kind: the hub
+  // lists every workspace the person belongs to, and a name with nothing after
+  // it says nothing.
+  function renderWorkspace(workspace) {
+    const skills = (workspace.skills || []).map((s) => escapeHtml(`${s.name || s.slug} v${s.version || '?'}`)).join(' · ');
+    return `<div class="setting-desc" data-hub-workspace="${escapeHtml(workspace.slug || workspace.id || '')}">`
+      + `<strong>${escapeHtml(workspace.name || workspace.slug || '')}</strong>: ${skills}</div>`;
+  }
+
   function renderInstalled() {
     const l = lang();
     const items = state.status?.installed || [];
@@ -450,7 +459,7 @@ export function createAgentXHubSettingsController({
     const status = state.status;
     const who = status?.subject ? status.subject : '';
     const statusKey = `status_${status?.lastStatus || 'never'}`;
-    const orgSkills = status?.org?.skills || [];
+    const workspaces = (status?.workspaces || []).filter((w) => (w.skills || []).length > 0);
     root.innerHTML = `
       <div class="ax-hub" data-agentx-hub>
         <div class="ax-hub-head">
@@ -480,7 +489,7 @@ export function createAgentXHubSettingsController({
         </div>
         <div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'installedHeading'))}</div>
         <div class="ax-hub-installed-list" data-hub-installed-list>${renderInstalled()}</div>
-        ${orgSkills.length ? `<div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'orgHeading'))}</div><div class="setting-desc">${orgSkills.map((s) => escapeHtml(`${s.name || s.slug} v${s.version || '?'}`)).join(' · ')}</div>` : ''}
+        ${workspaces.length ? `<div class="setting-label ax-hub-subheading">${escapeHtml(copy(l, 'workspacesHeading'))}</div>${workspaces.map(renderWorkspace).join('')}` : ''}
         <details class="ax-hub-advanced">
           <summary>${escapeHtml(copy(l, 'advanced'))}</summary>
           <div class="setting-desc">${escapeHtml(status?.externalChannel ? copy(l, 'externalChannel') : copy(l, 'externalChannelMissing'))}</div>
