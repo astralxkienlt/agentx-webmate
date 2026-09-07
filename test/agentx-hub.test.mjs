@@ -130,7 +130,7 @@ function fakeHub({ signedIn = true, installs = [], renders = {}, failChanges = n
     async changes(cursor) {
       calls.changes += 1;
       if (failChanges) throw failChanges;
-      return { cursor: 42, installs: structuredClone(installs), updates: [], org: null, events: [], has_more: false, product: 'webmate' };
+      return { cursor: 42, installs: structuredClone(installs), updates: [], workspaces: [], events: [], has_more: false, product: 'webmate' };
     },
     async getRender(slug, version = 'latest') {
       calls.renders.push([slug, version]);
@@ -284,7 +284,7 @@ test('the client sends the ID token and device headers, parses render provenance
       return textResponse(VNEB_RENDER, 200, { 'X-AgentX-Slug': 'older-hub', 'X-AgentX-Version': '1.0.0' });
     }
     if (u.pathname === '/v1/skills') return jsonResponse({ skills: [{ slug: 'vneb-portal', name: 'vneb-portal' }], next_cursor: null });
-    if (u.pathname === '/v1/me/changes') return jsonResponse({ cursor: 7, installs: [], updates: [], org: null, events: [] });
+    if (u.pathname === '/v1/me/changes') return jsonResponse({ cursor: 7, installs: [], updates: [], workspaces: [], events: [] });
     if (u.pathname === '/v1/installs' && init.method === 'POST') return jsonResponse({ id: 'inst-9', ...JSON.parse(init.body) }, 201);
     if (u.pathname === '/v1/installs/inst-9/report') return jsonResponse({ id: 'inst-9', reported_state: JSON.parse(init.body).state });
     if (u.pathname === '/v1/skills/private-one/versions/latest/render/webmate') return jsonResponse({ code: 'skill_not_found', message: 'No such skill.', detail: null }, 404);
@@ -806,7 +806,11 @@ test('the Settings card labels hub records, renders search results and installed
           return {
             ok: true, signedIn: true, subject: 'user-123', baseUrl: HUB, baseUrlSource: 'default', externalChannel: target === 'chrome', lastSyncAt: NOW, lastStatus: 'synced', lastError: null,
             installed: [{ id: 'hub_vneb-portal', name: 'vneb-portal', slug: 'vneb-portal', version: '1.0.0', sourceType: 'hub' }, { id: 'hub_mine', name: 'Mine', slug: 'mine', version: '1.0.0', sourceType: 'text' }],
-            parked: ['parked-one'], notices: { mine: { kind: 'edited', updateAvailable: true, localVersion: '1.0.0', latestVersion: '1.1.0' }, 'vneb-portal': { kind: 'repaired', version: '1.0.0', at: NOW }, 'parked-one': { kind: 'disabled', reason: 'yanked', version: '1.0.0' } }, updates: [], org: { org_id: 'astralx', skills: [{ slug: 'team-portal', name: 'Team portal', version: '1.0.0' }] },
+            parked: ['parked-one'], notices: { mine: { kind: 'edited', updateAvailable: true, localVersion: '1.0.0', latestVersion: '1.1.0' }, 'vneb-portal': { kind: 'repaired', version: '1.0.0', at: NOW }, 'parked-one': { kind: 'disabled', reason: 'yanked', version: '1.0.0' } }, updates: [],
+            workspaces: [
+              { id: 'w1', slug: 'doi-dev', name: 'Đội Dev', role: 'member', skills: [{ slug: 'team-portal', name: 'Team portal', version: '1.0.0' }] },
+              { id: 'w2', slug: 'qa', name: 'QA', role: 'owner', skills: [] },
+            ],
           };
         }
         if (action === 'agentx_hub_install') return { ok: true, skill: { name: 'vneb-portal', version: '1.0.0' } };
@@ -827,7 +831,9 @@ test('the Settings card labels hub records, renders search results and installed
     assert.match(root.innerHTML, /chỉ đọc/, 'the card says hub skills are read-only');
     assert.match(root.innerHTML, /data-hub-parked="parked-one"/);
     assert.match(root.innerHTML, /hub đã tắt — yanked/);
-    assert.match(root.innerHTML, /Team portal v1\.0\.0/);
+    assert.match(root.innerHTML, /Dùng chung trong workspace của bạn/, 'the workspace section replaced the organisation one');
+    assert.match(root.innerHTML, /data-hub-workspace="doi-dev"[^>]*><strong>Đội Dev<\/strong>: Team portal v1\.0\.0/);
+    assert.doesNotMatch(root.innerHTML, /data-hub-workspace="qa"/, 'a workspace sharing nothing of this kind is not named for nothing');
     assert.match(root.innerHTML, target === 'chrome' ? /Cài một chạm từ trang hub: sẵn sàng/ : /không có kênh cài một chạm/);
     await controller.search('vneb');
     assert.match(root.innerHTML, /data-hub-result="vneb-portal"/);
@@ -839,6 +845,28 @@ test('the Settings card labels hub records, renders search results and installed
     assert.match(root.innerHTML, new RegExp(`href="${HUB}/skills/vneb-portal"`));
     assert.doesNotMatch(root.innerHTML, /<script/i);
   }
+});
+
+test('the sync state survives storage: the update and workspace lists a sync wrote are what the next reader gets', async () => {
+  const { emptySyncState, normalizeSyncState } = await load('chrome', 'src/agentx/hub-sync.js');
+  assert.deepEqual(emptySyncState().updates, []);
+  assert.deepEqual(emptySyncState().workspaces, []);
+  // What runSync() writes after a poll, read back the way readState() reads it.
+  const written = {
+    cursor: 12, lastSyncAt: 1, lastStatus: 'synced', lastError: null, parked: {}, notices: {}, counts: {},
+    updates: [{ slug: 'mine', version: '1.1.0', current: '1.0.0' }],
+    workspaces: [{ id: 'w1', slug: 'doi-dev', name: 'Đội Dev', role: 'member', skills: [{ slug: 'team-portal', name: 'Team portal', version: '1.0.0' }] }],
+  };
+  const read = normalizeSyncState(JSON.parse(JSON.stringify(written)));
+  assert.deepEqual(read.updates, written.updates, 'the update list must not be dropped on read');
+  assert.deepEqual(read.workspaces, written.workspaces, 'nor the workspaces the hub shares with this account');
+  // Storage is not to be trusted: rows without a valid slug or id are dropped, roles are pinned.
+  const dirty = normalizeSyncState({
+    updates: [{ slug: '../evil', version: '9' }, { slug: 'ok', version: 2 }],
+    workspaces: [{ slug: 'no-id' }, { id: 'w2', slug: 'qa', name: 'QA', role: 'admin', skills: [{ slug: '../evil' }, { slug: 'fine' }] }],
+  });
+  assert.deepEqual(dirty.updates, [{ slug: 'ok', version: '2', current: '' }]);
+  assert.deepEqual(dirty.workspaces, [{ id: 'w2', slug: 'qa', name: 'QA', role: null, skills: [{ slug: 'fine', name: '', version: '' }] }]);
 });
 
 test('the enabled-skills row actions go through the background: view and edit stay local, fork/restore/remove are messages', async () => {

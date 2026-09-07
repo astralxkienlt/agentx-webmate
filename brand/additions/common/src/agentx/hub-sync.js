@@ -100,7 +100,7 @@ export async function hubRecordIntegrity(record) {
 }
 
 export function emptySyncState() {
-  return { cursor: null, lastSyncAt: 0, lastStatus: 'never', lastError: null, parked: {}, notices: {}, counts: {} };
+  return { cursor: null, lastSyncAt: 0, lastStatus: 'never', lastError: null, parked: {}, notices: {}, counts: {}, updates: [], workspaces: [] };
 }
 
 export function normalizeSyncState(value) {
@@ -117,6 +117,25 @@ export function normalizeSyncState(value) {
   }
   if (value.notices && typeof value.notices === 'object') state.notices = { ...value.notices };
   if (value.counts && typeof value.counts === 'object') state.counts = { ...value.counts };
+  // What the last sync learned but the disk has to carry to the next reader:
+  // `readState()` normalizes on every call, so a key missing here is a key the
+  // Settings card never sees, however faithfully the sync wrote it.
+  if (Array.isArray(value.updates)) {
+    state.updates = value.updates
+      .filter((u) => u && typeof u === 'object' && isValidHubSlug(u.slug))
+      .map((u) => ({ slug: u.slug, version: String(u.version || ''), current: String(u.current || '') }));
+  }
+  if (Array.isArray(value.workspaces)) {
+    state.workspaces = value.workspaces
+      .filter((w) => w && typeof w === 'object' && typeof w.id === 'string' && w.id)
+      .map((w) => ({
+        id: w.id, slug: String(w.slug || ''), name: String(w.name || ''),
+        role: w.role === 'owner' || w.role === 'member' ? w.role : null,
+        skills: (Array.isArray(w.skills) ? w.skills : [])
+          .filter((s) => s && typeof s === 'object' && isValidHubSlug(s.slug))
+          .map((s) => ({ slug: s.slug, name: String(s.name || ''), version: String(s.version || '') })),
+      }));
+  }
   return state;
 }
 
@@ -410,7 +429,14 @@ export function createAgentXHubSyncRunner({
     state.notices = result.notices;
     state.counts = result.counts;
     state.cursor = Number.isFinite(Number(snapshot.cursor)) ? Number(snapshot.cursor) : state.cursor;
-    state.org = snapshot.org ? { org_id: snapshot.org.org_id, skills: (snapshot.org.skills || []).map((s) => ({ slug: s.slug, name: s.name, version: s.version })) } : null;
+    // The skills shared with the workspaces this account belongs to (hub
+    // decision §8 #11 — the organisation is only a visibility boundary now).
+    // Listed for the person to install with a click; never installed on their
+    // behalf, so nothing here touches `customSkills`.
+    state.workspaces = (snapshot.workspaces || []).map((w) => ({
+      id: w.id, slug: w.slug, name: w.name, role: w.role || null,
+      skills: (w.skills || []).map((s) => ({ slug: s.slug, name: s.name, version: s.version })),
+    }));
     state.updates = (snapshot.updates || []).map((u) => ({ slug: u.slug, version: u.latest_version, current: u.reported_version }));
     if (result.changed) await writeState(state, result.skills);
     const sent = await sendReports(result.reports);
@@ -600,7 +626,7 @@ export function createAgentXHubSyncRunner({
       notices: state.notices,
       parked: Object.keys(state.parked),
       updates: state.updates || [],
-      org: state.org || null,
+      workspaces: state.workspaces || [],
       installed: skills.filter((skill) => skill.hubSlug).map((skill) => ({
         id: skill.id, name: skill.name, slug: skill.hubSlug, version: skill.hubVersion || '', contentHash: skill.contentHash || '', sourceType: skill.sourceType,
       })),
