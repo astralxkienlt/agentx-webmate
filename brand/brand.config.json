@@ -30,7 +30,7 @@
     ],
     "sessionIdleTimeoutMs": 691200000,
     "_skillHubBaseUrl_why": "AgentX Skill Hub (plan §8 decision 2). Also the only origin allowed to message the extension (externally_connectable, Chrome/Edge) — scripts/brand-build.mjs derives both from this value.",
-    "skillHubBaseUrl": "https://skills.dev-server.cloud/"
+    "skillHubBaseUrl": "https://skills.astralx.com.vn/"
   },
 
   "replacements": [

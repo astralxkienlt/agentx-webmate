@@ -248,10 +248,10 @@ test('a hub skill declaring ask is in the Ask-mode catalog and loads through loa
 
 test('hub base URL rules: HTTPS, loopback HTTP, no credentials; storage override wins', async () => {
   const { normalizeHubBaseUrl, readHubConfig, writeHubConfig, AGENTX_HUB_CONFIG_STORAGE_KEY } = await load('chrome', 'src/agentx/hub-client.js');
-  assert.equal(normalizeHubBaseUrl('https://skills.dev-server.cloud/'), 'https://skills.dev-server.cloud');
+  assert.equal(normalizeHubBaseUrl('https://skills.astralx.com.vn/'), 'https://skills.astralx.com.vn');
   assert.equal(normalizeHubBaseUrl('http://127.0.0.1:4173/'), 'http://127.0.0.1:4173');
   assert.equal(normalizeHubBaseUrl('http://localhost:8820'), 'http://localhost:8820');
-  for (const bad of ['http://skills.dev-server.cloud', 'https://user:pw@hub.test', 'https://hub.test/?x=1', 'https://hub.test/#f', 'not a url', '']) {
+  for (const bad of ['http://skills.astralx.com.vn', 'https://user:pw@hub.test', 'https://hub.test/?x=1', 'https://hub.test/#f', 'not a url', '']) {
     assert.throws(() => normalizeHubBaseUrl(bad), /HTTPS/, bad);
   }
   const fake = createApi();
@@ -926,12 +926,12 @@ test('the enabled-skills row actions go through the background: view and edit st
 
 test('brand build: manifest channel (Chrome only), runtime config, Settings wiring, background wiring', async () => {
   const chromeManifest = JSON.parse(await fs.readFile(DIST('chrome', 'manifest.json'), 'utf8'));
-  assert.deepEqual(chromeManifest.externally_connectable, { matches: ['https://skills.dev-server.cloud/*'] }, 'exactly the hub origin (plan §8 decision 2)');
+  assert.deepEqual(chromeManifest.externally_connectable, { matches: ['https://skills.astralx.com.vn/*'] }, 'exactly the hub origin (plan §8 decision 2)');
   const firefoxManifest = JSON.parse(await fs.readFile(DIST('firefox', 'manifest.json'), 'utf8'));
   assert.equal(firefoxManifest.externally_connectable, undefined, 'Firefox has no such channel');
   for (const target of ['chrome', 'firefox']) {
     const runtime = await fs.readFile(DIST(target, 'src/agentx/runtime-config.js'), 'utf8');
-    assert.match(runtime, /"skillHubBaseUrl": "https:\/\/skills\.dev-server\.cloud"/, `${target}: runtime config carries the hub`);
+    assert.match(runtime, /"skillHubBaseUrl": "https:\/\/skills\.astralx\.com\.vn"/, `${target}: runtime config carries the hub`);
     const skills = await fs.readFile(DIST(target, 'src/agent/skills.js'), 'utf8');
     assert.match(skills, /export const MAX_CUSTOM_SKILLS = 40;/, `${target}: limit raised`);
     assert.match(skills, /normalizeHubProvenance/, `${target}: patch 080 applied`);
