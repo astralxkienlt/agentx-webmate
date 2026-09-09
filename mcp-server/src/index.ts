@@ -193,6 +193,9 @@ async function handleAuthCommand(command: WorkmateCommand): Promise<CommandOutco
         );
         const signedIn = reply?.signedIn === true;
         if (signedIn) bridge.markSignedIn(target.instanceId, true);
+        // The extension reports its failure code as `code` (an `error` field
+        // would have been turned into a protocol failure by its offscreen bridge).
+        const code = typeof reply?.code === "string" ? reply.code : typeof reply?.error === "string" ? reply.error : null;
         return {
           instanceId: target.instanceId,
           browser: target.browser,
@@ -200,7 +203,7 @@ async function handleAuthCommand(command: WorkmateCommand): Promise<CommandOutco
           outcome: typeof reply?.outcome === "string" ? reply.outcome : "",
           signedIn,
           ...(typeof reply?.email === "string" ? { email: reply.email } : {}),
-          ...(typeof reply?.error === "string" ? { error: reply.error } : {}),
+          ...(code ? { error: code } : {}),
           ...(typeof reply?.message === "string" ? { message: reply.message } : {}),
         };
       } catch (error) {

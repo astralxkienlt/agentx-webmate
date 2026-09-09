@@ -200,7 +200,10 @@ answered by `src/agentx/workmate-auth.js` in the background:
   PKCE). It succeeds only when the profile already holds a Keycloak SSO
   session for the account; it then provisions the gateway key exactly as the
   panel's sign-in does. Answers: `{ ok: true, outcome: "signed-in" |
-  "already-signed-in" | "login-required", signedIn, email? }`; a
+  "already-signed-in" | "login-required", signedIn, email?, code?, message? }`
+  (a failure carries `ok: false, outcome: "error", code, message` — the code
+  is never sent as `error`, which the offscreen bridge reserves for protocol
+  failures); a
   `login-required` answer is held for sixty seconds so a retrying Workmate
   does not spin the identity flow. `{ ok: false, outcome: "unsupported" }`
   means no `chrome.identity` (the Firefox build, an old Chrome).

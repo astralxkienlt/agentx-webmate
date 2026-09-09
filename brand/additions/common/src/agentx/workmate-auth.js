@@ -26,6 +26,11 @@
  * Both install the provisioned gateway credential the way the panel does
  * (installCloudCredential), so the panel — open or not — finds itself signed
  * in through storage. Nothing here takes a credential over the socket.
+ *
+ * Reply shape: `{ ok, outcome, signedIn, code?, message?, … }`. The failure
+ * code travels as `code`, never as `error`: the offscreen bridge turns any
+ * background answer that carries an `error` field into a protocol failure
+ * (`{ ok: false, error }`), which would strip the outcome and the detail.
  */
 
 import { AGENTX_RUNTIME_CONFIG } from './runtime-config.js';
@@ -81,12 +86,15 @@ export function createWorkmateAuth({
 
   function failure(error) {
     const code = error instanceof AgentXCloudError ? error.code : 'error';
+    const detail = error instanceof AgentXCloudError && error.detail && error.detail !== error.message
+      ? ` (${error.detail})`
+      : '';
     return {
       ok: false,
       outcome: 'error',
       signedIn: false,
-      error: code,
-      message: error?.message || String(error),
+      code,
+      message: `${error?.message || String(error)}${detail}`,
     };
   }
 
@@ -137,13 +145,13 @@ export function createWorkmateAuth({
             ok: true,
             outcome: 'login-required',
             signedIn: false,
-            error: error.code,
+            code: error.code,
             message: error.message,
             detail: error.detail || '',
           };
         }
         if (error instanceof AgentXCloudError && error.code === 'identity_unavailable_api') {
-          return { ok: false, outcome: 'unsupported', signedIn: false, error: error.code, message: error.message };
+          return { ok: false, outcome: 'unsupported', signedIn: false, code: error.code, message: error.message };
         }
         return failure(error);
       }

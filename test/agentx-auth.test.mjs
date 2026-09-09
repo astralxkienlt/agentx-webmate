@@ -1457,6 +1457,8 @@ test('auth_hint answers login_required calmly and holds off for a minute; other 
   assert.equal(first.ok, true, 'no session is an ordinary answer, not a failure');
   assert.equal(first.outcome, 'login-required');
   assert.equal(first.signedIn, false);
+  assert.equal(first.code, 'login_required');
+  assert.equal('error' in first, false);
   assert.equal(denied.background.length, 0, 'nothing is installed');
 
   const again = await denied.auth.hint({ loginHint: 'kien@example.test' });
@@ -1471,12 +1473,14 @@ test('auth_hint answers login_required calmly and holds off for a minute; other 
   const failed = await broken.auth.hint({ loginHint: 'kien@example.test' });
   assert.equal(failed.ok, false);
   assert.equal(failed.outcome, 'error');
-  assert.equal(failed.error, 'network_unavailable');
+  assert.equal(failed.code, 'network_unavailable');
+  assert.equal('error' in failed, false, 'a code must not travel as `error` — the offscreen bridge would turn the reply into a protocol failure');
 
   const noIdentity = authHarness({ silent: new AgentXCloudError('identity_unavailable_api', 'no identity') });
   const unsupported = await noIdentity.auth.hint({});
   assert.equal(unsupported.ok, false);
   assert.equal(unsupported.outcome, 'unsupported');
+  assert.equal(unsupported.code, 'identity_unavailable_api');
 });
 
 test('auth_open starts the interactive sign-in with the hint, answers at once, and installs the key when it ends', async () => {
@@ -1504,7 +1508,7 @@ test('auth_open starts the interactive sign-in with the hint, answers at once, a
   const refused = authHarness({ interactive: new AgentXCloudError('sign_in_window_failed', 'no window') });
   const failed = await refused.auth.open({});
   assert.equal(failed.ok, false);
-  assert.equal(failed.error, 'sign_in_window_failed');
+  assert.equal(failed.code, 'sign_in_window_failed');
 
   const same = authHarness({ signedIn: true, email: 'KIEN@example.test' });
   const kept = await same.auth.open({ loginHint: 'kien@example.test' });
