@@ -216,14 +216,17 @@ test("a new socket cannot inherit an earlier extension handshake", async () => {
   await new Promise((resolve) => rogue.on("open", resolve));
   await new Promise((resolve) => setTimeout(resolve, 20));
 
-  assert.equal(bridge.isConnected(), false, "the replacement socket has not sent hello");
-  await assert.rejects(
-    () => bridge.request("cloud_run", { task: "private task", mode: "ask" }),
-    NOT_CONNECTED,
-  );
+  // The extension that completed the handshake keeps the bridge; a socket that
+  // has not said hello is held aside and never displaces it (nor sees a frame).
+  assert.equal(bridge.isConnected(), true, "an unverified socket must not displace the extension");
+  const result = await bridge.request("cloud_run", { task: "private task", mode: "ask" });
+  assert.deepEqual(result, {});
   assert.equal(receivedCommands, 0, "an unverified socket must not receive task frames");
 
   rogue.close();
+  await new Promise((resolve) => rogue.on("close", resolve));
+  assert.equal(bridge.isConnected(), true, "closing the held socket must not touch the extension");
+
   extension.close();
   await bridge.stop();
 });

@@ -308,3 +308,53 @@ test("state.json mirrors the bridge through connect and disconnect", async () =>
   written = JSON.parse(readFileSync(file, "utf8"));
   assert.equal(written.listening, false);
 });
+
+test("a second connection cannot knock the paired extension off until its own hello passes", async () => {
+  writePairing();
+  const bridge = new WebMateBridge();
+  await bridge.start();
+
+  const paired = dial({
+    protocolVersion: 3,
+    token: TOKEN,
+    extra: { version: "1.0.4", browser: "Chrome 152", installType: "workmate" },
+  });
+  assert.equal(await bridge.waitForExtension(3000), true);
+  await paired.acked;
+
+  // A developer copy still speaking v2 dials in: refused, and the paired socket stays as it was.
+  const stale = dial({ protocolVersion: 2 });
+  await stale.closed;
+  assert.equal(stale.events.closes[0].code, 1008);
+  assert.match(stale.events.closes[0].reason, /protocol v3/);
+  assert.equal(bridge.isConnected(), true);
+  assert.equal(paired.events.closes.length, 0, "the paired extension must not be superseded by a rejected hello");
+  assert.equal(bridge.info().browser, "Chrome 152");
+
+  // A wrong token: same outcome.
+  const impostor = dial({ protocolVersion: 3, token: OTHER });
+  await impostor.closed;
+  assert.equal(impostor.events.closes[0].code, 1008);
+  assert.match(impostor.events.closes[0].reason, /token mismatch/i);
+  assert.equal(bridge.isConnected(), true);
+  assert.equal(paired.events.closes.length, 0);
+
+  // A valid second extension takes over, and the first one is told so.
+  const successor = dial({
+    protocolVersion: 3,
+    token: TOKEN,
+    extra: { version: "1.0.5", browser: "Microsoft Edge 152", installType: "workmate" },
+  });
+  const ack = await successor.acked;
+  assert.equal(ack.token, TOKEN);
+  await paired.closed;
+  assert.equal(paired.events.closes[0].code, 1000);
+  assert.match(paired.events.closes[0].reason, /Superseded/);
+  assert.equal(bridge.info().browser, "Microsoft Edge 152");
+  assert.equal(bridge.isConnected(), true);
+
+  successor.socket.close();
+  await successor.closed;
+  await bridge.stop();
+  clearPairing();
+});

@@ -74,6 +74,17 @@ The server replies once per socket:
   "token": "<echo of the pairing token, or null>", "minExtensionVersion": "1.0.4", "minProtocol": 3 }
 ```
 
+While an accepted extension is attached, a second connection to the same port
+is *held* until its own hello passes the same checks; only then does it take
+over (the first socket is closed with 1000 "Superseded"). A rejected hello
+(v2, wrong token, unknown client) or ten seconds of silence closes the newcomer
+alone. So a developer checkout, a store copy, or the person's own browser once a
+Workmate window exists can dial 17374 all day without knocking the
+Workmate-installed copy off — before this rule the merely-connected newcomer
+superseded first and was refused second, and `state.json.connected` flapped
+every few seconds on a machine that had both. While nothing has completed a
+handshake, the latest connection still wins, as before.
+
 Two bridge actions were added for updates (`ALLOWED_BRIDGE_ACTIONS` in the
 extension, `BridgeAction` in the server):
 

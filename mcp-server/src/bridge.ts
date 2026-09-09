@@ -242,6 +242,9 @@ export function extensionFolderPresent(installDir: string = config.installDir): 
   return existsSync(path.join(installDir, "manifest.json"));
 }
 
+/** A second connection must say hello within this long or it is dropped (the attached one is untouched). */
+const CANDIDATE_HELLO_TIMEOUT_MS = 10_000;
+
 export interface BridgeOptions {
   /** Injected for tests; defaults to reading config.pairingFile. */
   readPairing?: () => Promise<Pairing | null>;
@@ -261,6 +264,14 @@ export class WebMateBridge {
   private unavailableReason: string | null = null;
   private lastError: string | null = null;
   private pairingRequired = false;
+  /**
+   * Connections that arrived while an accepted extension is attached. They
+   * stay here until their hello passes; only then do they take over. A second
+   * copy of the extension dialling this port (a developer checkout, a store
+   * build, the person's own browser once a Workmate window exists) can thus
+   * never knock the paired one off by merely connecting.
+   */
+  private candidates = new Set<WebSocket>();
   private listeners: Array<() => void> = [];
   private readonly readPairing: () => Promise<Pairing | null>;
   private readonly installDir: string;
@@ -365,58 +376,19 @@ export class WebMateBridge {
         return;
       }
 
-      // Latest connection wins. The extension reconnects with backoff after a
-      // browser restart or an offscreen-document teardown, and the stale socket
-      // is never reused.
-      if (this.socket) {
-        this.failAllPending(
-          new BridgeError(
-            `${BRAND.extensionName} connection was superseded mid-command.`,
-            undefined,
-            "COMMAND_INTERRUPTED",
-          ),
-        );
-        try {
-          this.socket.close(1000, "Superseded by a newer extension connection");
-        } catch {
-          /* already gone */
-        }
+      // An accepted extension is attached: the newcomer must earn its place
+      // with a valid hello before it can supersede it (see `candidates`).
+      if (this.socket && this.handshakenSocket === this.socket) {
+        this.adoptCandidate(socket);
+        return;
       }
 
-      this.socket = socket;
-      this.handshakenSocket = null;
-      this.extension = { ...NO_EXTENSION };
-      this.missedPongs = 0;
+      // Latest connection wins while nothing has completed a handshake. The
+      // extension reconnects with backoff after a browser restart or an
+      // offscreen-document teardown, and the stale socket is never reused.
+      this.supersedeWith(socket);
       log(`extension connected on ${config.bridgePath}`);
-
-      socket.on("pong", () => {
-        if (this.socket !== socket) return;
-        this.missedPongs = 0;
-      });
-
-      socket.on("message", (raw) => this.handleMessage(socket, raw.toString()));
-
-      socket.on("close", () => {
-        if (this.socket !== socket) return;
-        const wasHandshaken = this.handshakenSocket === socket;
-        this.socket = null;
-        this.handshakenSocket = null;
-        this.extension = { ...NO_EXTENSION };
-        this.missedPongs = 0;
-        log("extension disconnected");
-        this.failAllPending(
-          new BridgeError(
-            `${BRAND.extensionName} disconnected mid-command.`,
-            undefined,
-            "COMMAND_INTERRUPTED",
-          ),
-        );
-        if (wasHandshaken) this.changed();
-      });
-
-      socket.on("error", (error) => {
-        log("socket error:", error instanceof Error ? error.message : String(error));
-      });
+      this.wireSocket(socket);
     });
 
     this.startHeartbeat();
@@ -508,6 +480,122 @@ export class WebMateBridge {
     entry.resolve(msg.result);
   }
 
+  /** Listeners for a socket that is (now) the current one. */
+  private wireSocket(socket: WebSocket): void {
+    socket.on("pong", () => {
+      if (this.socket !== socket) return;
+      this.missedPongs = 0;
+    });
+
+    socket.on("message", (raw) => this.handleMessage(socket, raw.toString()));
+
+    socket.on("close", () => {
+      if (this.socket !== socket) return;
+      const wasHandshaken = this.handshakenSocket === socket;
+      this.socket = null;
+      this.handshakenSocket = null;
+      this.extension = { ...NO_EXTENSION };
+      this.missedPongs = 0;
+      log("extension disconnected");
+      this.failAllPending(
+        new BridgeError(
+          `${BRAND.extensionName} disconnected mid-command.`,
+          undefined,
+          "COMMAND_INTERRUPTED",
+        ),
+      );
+      if (wasHandshaken) this.changed();
+    });
+
+    socket.on("error", (error) => {
+      log("socket error:", error instanceof Error ? error.message : String(error));
+    });
+  }
+
+  /** Drop whatever socket is current (if any) and make `socket` the one we talk to. */
+  private supersedeWith(socket: WebSocket): void {
+    if (this.socket && this.socket !== socket) {
+      this.failAllPending(
+        new BridgeError(
+          `${BRAND.extensionName} connection was superseded mid-command.`,
+          undefined,
+          "COMMAND_INTERRUPTED",
+        ),
+      );
+      try {
+        this.socket.close(1000, "Superseded by a newer extension connection");
+      } catch {
+        /* already gone */
+      }
+    }
+    this.socket = socket;
+    this.handshakenSocket = null;
+    this.extension = { ...NO_EXTENSION };
+    this.missedPongs = 0;
+  }
+
+  /**
+   * Park a connection that arrived while an accepted extension is attached.
+   * Its first frame must be a hello that passes the same checks; then it
+   * supersedes the current socket. Anything else — a rejected hello, silence
+   * for ten seconds, a close — ends only the newcomer.
+   */
+  private adoptCandidate(socket: WebSocket): void {
+    this.candidates.add(socket);
+    log(`another extension connected while one is attached — waiting for its hello`);
+    const timer = setTimeout(() => {
+      if (!this.candidates.has(socket)) return;
+      log("candidate connection sent no hello in time — closing it");
+      this.candidates.delete(socket);
+      try {
+        socket.close(1008, "No hello");
+      } catch {
+        /* already gone */
+      }
+    }, CANDIDATE_HELLO_TIMEOUT_MS);
+    timer.unref?.();
+
+    socket.on("message", (raw) => {
+      if (!this.candidates.has(socket)) return;
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (msg.type !== "hello") return;
+      clearTimeout(timer);
+      void this.handleCandidateHello(socket, msg);
+    });
+    socket.on("close", () => {
+      clearTimeout(timer);
+      this.candidates.delete(socket);
+    });
+    socket.on("error", (error) => {
+      log("candidate socket error:", error instanceof Error ? error.message : String(error));
+    });
+  }
+
+  private async handleCandidateHello(socket: WebSocket, msg: Record<string, unknown>): Promise<void> {
+    const verdict = await this.checkHello(msg);
+    if (!this.candidates.has(socket) || socket.readyState !== 1) return;
+    this.candidates.delete(socket);
+    if (!verdict.ok) {
+      // The attached extension stays exactly as it is; only the newcomer hears no.
+      log(`rejecting a second extension's handshake: ${verdict.reason}`);
+      try {
+        socket.close(1008, verdict.reason.slice(0, 120));
+      } catch {
+        /* already gone */
+      }
+      return;
+    }
+    log("a second extension completed a valid handshake — it takes over");
+    this.supersedeWith(socket);
+    this.wireSocket(socket);
+    this.acceptHello(socket, msg, verdict.pairing, verdict.protocolVersion);
+  }
+
   private rejectHandshake(socket: WebSocket, reason: string): void {
     log(`rejecting handshake: ${reason}`);
     this.lastError = reason;
@@ -521,10 +609,15 @@ export class WebMateBridge {
     this.changed();
   }
 
-  private async handleHello(socket: WebSocket, msg: Record<string, unknown>): Promise<void> {
+  /** The verdict on a hello frame: accept, or the reason to refuse it. Reads the pairing file each time. */
+  private async checkHello(
+    msg: Record<string, unknown>,
+  ): Promise<
+    | { ok: true; pairing: Pairing | null; protocolVersion: number | null }
+    | { ok: false; reason: string; pairingFailure: boolean }
+  > {
     if (msg.client !== EXTENSION_CLIENT_ID) {
-      this.rejectHandshake(socket, `Unknown client ${String(msg.client)}`);
-      return;
+      return { ok: false, reason: `Unknown client ${String(msg.client)}`, pairingFailure: false };
     }
 
     let pairing: Pairing | null = null;
@@ -535,36 +628,52 @@ export class WebMateBridge {
       // disk the operator expects authentication, so an unreadable file cannot
       // quietly become "no authentication".
       this.pairingRequired = true;
-      this.rejectHandshake(
-        socket,
-        error instanceof Error ? error.message : String(error),
-      );
-      return;
+      return { ok: false, reason: error instanceof Error ? error.message : String(error), pairingFailure: true };
     }
-    // The socket may have been superseded while the file was read.
-    if (this.socket !== socket || socket.readyState !== 1) return;
     this.pairingRequired = pairing !== null;
 
     const protocolVersion = typeof msg.protocolVersion === "number" ? msg.protocolVersion : null;
     if (pairing) {
       if (protocolVersion === null || protocolVersion < MIN_PAIRED_PROTOCOL_VERSION) {
-        this.rejectHandshake(
-          socket,
-          `Bridge protocol v${MIN_PAIRED_PROTOCOL_VERSION} required for a Workmate-managed ` +
+        return {
+          ok: false,
+          pairingFailure: false,
+          reason:
+            `Bridge protocol v${MIN_PAIRED_PROTOCOL_VERSION} required for a Workmate-managed ` +
             `extension; this one speaks v${protocolVersion ?? "?"}. Update ${BRAND.productName}.`,
-        );
-        return;
+        };
       }
       if (typeof msg.token !== "string" || msg.token !== pairing.token) {
-        this.rejectHandshake(
-          socket,
-          "Pairing token mismatch: this extension was not installed by the Workmate that runs this " +
+        return {
+          ok: false,
+          pairingFailure: false,
+          reason:
+            "Pairing token mismatch: this extension was not installed by the Workmate that runs this " +
             "server. Reinstall it from Workmate → Settings → Browser, or reset the token there.",
-        );
-        return;
+        };
       }
     }
+    return { ok: true, pairing, protocolVersion };
+  }
 
+  private async handleHello(socket: WebSocket, msg: Record<string, unknown>): Promise<void> {
+    const verdict = await this.checkHello(msg);
+    // The socket may have been superseded while the file was read.
+    if (this.socket !== socket || socket.readyState !== 1) return;
+    if (!verdict.ok) {
+      this.rejectHandshake(socket, verdict.reason);
+      return;
+    }
+    this.acceptHello(socket, msg, verdict.pairing, verdict.protocolVersion);
+  }
+
+  /** Record the accepted extension, answer with hello_ack, wake anyone waiting. */
+  private acceptHello(
+    socket: WebSocket,
+    msg: Record<string, unknown>,
+    pairing: Pairing | null,
+    protocolVersion: number | null,
+  ): void {
     this.handshakenSocket = socket;
     this.lastError = null;
     this.extension = {
@@ -755,6 +864,14 @@ export class WebMateBridge {
     this.heartbeat = null;
     this.missedPongs = 0;
     this.failAllPending(new BridgeError("Bridge shutting down."));
+    for (const candidate of this.candidates) {
+      try {
+        candidate.close(1001, "Server shutting down");
+      } catch {
+        /* ignore */
+      }
+    }
+    this.candidates.clear();
     if (this.socket) {
       try {
         this.socket.close(1001, "Server shutting down");
