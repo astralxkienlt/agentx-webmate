@@ -162,12 +162,21 @@ jobs:
           git add package.json package-lock.json src/chrome/manifest.json src/firefox/manifest.json src/chrome/src/ui/settings.js src/firefox/src/ui/settings.js src/chrome/ARCHITECTURE.md src/firefox/ARCHITECTURE.md CHANGELOG.md
           git commit -m "chore: release v${{ steps.release_meta.outputs.new_version }}"
 
-      - name: Rebuild distribution zips
+      # release.json is the update feed AgentX Workmate polls from the main
+      # branch; it is signed with the Ed25519 key in the WEBMATE_RELEASE_SIGNING_KEY
+      # secret (public half: scripts/release-signing-key.pub.pem, compiled into
+      # Workmate). A missing or mismatching secret fails the release here rather
+      # than shipping a feed every Workmate would ignore.
+      - name: Rebuild distribution zips and the update feed
+        env:
+          WEBMATE_RELEASE_SIGNING_KEY: ${{ secrets.WEBMATE_RELEASE_SIGNING_KEY }}
         run: |
           rm -rf dist/*
           node scripts/build-zip.mjs
-          git add -A dist
-          git commit -m "dist: rebuild submission zips for v${{ steps.release_meta.outputs.new_version }}"
+          node scripts/sign-release.mjs --in dist/release.json --out dist/release.json
+          cp dist/release.json release.json
+          git add -A dist release.json
+          git commit -m "dist: rebuild submission zips and update feed for v${{ steps.release_meta.outputs.new_version }}"
 
       - name: Test
         run: npm test
@@ -189,3 +198,4 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/*.zip
+            dist/release.json

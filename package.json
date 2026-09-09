@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security && npm run test:agentx-auth && node test/agentx-hub.test.mjs",
+    "test": "npm run test:toolbar-guard && node test/run.js && npm run test:security && npm run test:agentx-auth && node test/agentx-hub.test.mjs && node test/workmate-install.test.mjs",
     "test:security": "node test/security/injection-corpus.mjs",
     "test:toolbar-guard": "node test/rich-text-toolbar-guard.mjs",
     "test:injection-bench": "node test/llm/run-scenarios.mjs --category prompt-injection",
@@ -32,7 +32,9 @@
     "brand:watch": "node scripts/brand-build.mjs --watch",
     "brand:audit": "node scripts/brand-build.mjs --audit",
     "brand:clean": "node scripts/brand-build.mjs --clean",
-    "test:agentx-hub": "npm run brand:build && node test/agentx-hub.test.mjs"
+    "test:agentx-hub": "npm run brand:build && node test/agentx-hub.test.mjs",
+    "test:workmate-install": "npm run brand:build && node test/workmate-install.test.mjs",
+    "sign:release": "node scripts/sign-release.mjs"
   },
   "devDependencies": {
     "playwright": "^1.48.0",

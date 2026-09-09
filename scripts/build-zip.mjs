@@ -20,17 +20,23 @@
  *   dist/agentx-webmate-chrome-<version>.zip
  *   dist/agentx-webmate-edge-<version>.zip
  *   dist/agentx-webmate-firefox-<version>.zip
+ *   dist/release.json   (unsigned update feed for AgentX Workmate — sha256 and
+ *                        size of the Chrome zip, compatibility floor from
+ *                        brand.config.json "workmate", notes from CHANGELOG.md;
+ *                        scripts/sign-release.mjs adds the signature)
  *
  * <version> is read from package.json at HEAD, and every archived manifest
  * must match it. An uncommitted version bump is rejected instead of creating
  * a new-looking filename around an old manifest.
  */
 
-import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { buildReleaseManifest, releaseNotesFromChangelog, sha256File } from './release-manifest.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -127,6 +133,26 @@ export function assertStoreReviewableJavaScript(source, label) {
   }
 }
 
+/**
+ * The unsigned update feed for this build. Pure apart from reading the zip:
+ * the workflow signs it right after (scripts/sign-release.mjs) and commits it
+ * both under dist/ and at the repository root.
+ */
+export function buildReleaseManifestForZip({ version, zipPath, brandConfig, changelog, publishedAt }) {
+  const fileName = path.basename(zipPath);
+  const workmate = brandConfig.workmate || {};
+  const notes = releaseNotesFromChangelog(changelog, version);
+  return buildReleaseManifest({
+    version,
+    publishedAt,
+    chrome: { fileName, sha256: sha256File(zipPath), bytes: statSync(zipPath).size },
+    homepage: brandConfig.product?.homepage,
+    minWorkmate: workmate.minWorkmate,
+    minProtocol: workmate.minProtocol,
+    notes: { en: notes, vi: notes },
+  });
+}
+
 function readJsonAtHead(relativePath) {
   const source = execFileSync('git', ['show', `HEAD:${relativePath}`], {
     cwd: root,
@@ -197,6 +223,15 @@ function runCli() {
     );
     console.log(`  ✓ dist/agentx-webmate-${packageName}-${version}.zip`);
   }
+
+  const manifest = buildReleaseManifestForZip({
+    version,
+    zipPath: path.join(distDir, `agentx-webmate-chrome-${version}.zip`),
+    brandConfig: JSON.parse(readFileSync(path.join(root, 'brand', 'brand.config.json'), 'utf8')),
+    changelog: readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'),
+  });
+  writeFileSync(path.join(distDir, 'release.json'), JSON.stringify(manifest, null, 2) + '\n');
+  console.log(`  ✓ dist/release.json (unsigned — run scripts/sign-release.mjs; sha256 ${manifest.chrome.sha256.slice(0, 12)}…)`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
