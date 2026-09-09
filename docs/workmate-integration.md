@@ -184,6 +184,82 @@ the GitHub Release; Workmate polls
 Workmate installs a release only when the sha256 matches the zip and the
 signature verifies. There is no "install anyway" button.
 
+## Signed in together (phase 4)
+
+Workmate signs the person in to AgentX in a browser, then installs this
+extension into the same browser — and the side panel should not ask them to
+sign in again. Three pieces make that hold:
+
+**`auth_hint` / `auth_open` bridge actions.** Both are in the extension's
+`ALLOWED_BRIDGE_ACTIONS` and the server's `BridgeAction`, and both are
+answered by `src/agentx/workmate-auth.js` in the background:
+
+- `auth_hint { loginHint }` runs an authorize request with `prompt=none` and
+  `login_hint=<email>` through `chrome.identity.launchWebAuthFlow`
+  (`interactive: false`, redirect `https://<extension id>.chromiumapp.org/`,
+  PKCE). It succeeds only when the profile already holds a Keycloak SSO
+  session for the account; it then provisions the gateway key exactly as the
+  panel's sign-in does. Answers: `{ ok: true, outcome: "signed-in" |
+  "already-signed-in" | "login-required", signedIn, email? }`; a
+  `login-required` answer is held for sixty seconds so a retrying Workmate
+  does not spin the identity flow. `{ ok: false, outcome: "unsupported" }`
+  means no `chrome.identity` (the Firefox build, an old Chrome).
+- `auth_open { loginHint }` runs the interactive sign-in (a tab on Keycloak,
+  loopback redirect, the same flow as the panel's button) with the email
+  pre-filled, and installs the key. Answers `already-signed-in` when the
+  panel is already signed in as that account.
+
+The Chrome manifest gains the `identity` permission for this
+(`manifestOverrides.chrome.addPermissions`, a union with the upstream list —
+Firefox gets none). **The Keycloak client `agentx-workmate` must list
+`https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/*` among its Valid
+Redirect URIs**, or Keycloak answers `invalid_request` and the silent path
+degrades to `login-required` (the interactive sign-in and everything else keep
+working).
+
+**Several browsers on one server.** A v3 hello may carry `instanceId`, a
+random id minted once per browser profile (`WORKMATE_INSTANCE_ID_KEY` in
+chrome.storage.local). The server keeps every socket whose hello passed,
+keyed by that id (a per-socket id when an older extension sends none), so the
+person's own browser and the Workmate browser window attach side by side
+instead of superseding each other every few seconds. A reconnect from the
+same instance replaces only its own previous socket. Commands go to the
+browser that owns the run they name (learned from `cloud_run`, `cloud_status`
+lists, `cloud_respond`, `cloud_abort` replies), else to the *active* one:
+signed in first, then the most recent hello. `webmate_connection` lists every
+attached browser; `webmate_status` without a run id lists runs from all of
+them.
+
+**`session` frames.** The background watches the AgentX session record and
+relays a change to the offscreen bridge (`cloud-bridge-session`), which sends
+`{ "type": "session", "signedIn": true | false }` on its open socket. The
+server updates that connection's `signedIn` in place — so after a sign-in
+through the panel, through `auth_hint`, or a sign-out, `state.json` and
+`webmate_connection` are right without a reconnect.
+
+`state.json` gains `instanceId` (of the active connection) and
+`connections: [{ instanceId, browser, extensionVersion, installType,
+signedIn, protocolVersion, lastHelloAt, paired, active }]`; the top-level
+fields keep describing the active connection for readers that know one
+extension. Two more command files exist:
+
+```json
+{ "id": "<uuid>", "action": "auth_hint", "payload": { "loginHint": "<email>", "instanceId"?: "<id>", "force"?: true } }
+{ "id": "<uuid>", "action": "auth_open", "payload": { "loginHint": "<email>", "instanceId"?: "<id>" } }
+```
+
+`auth_hint` asks every attached browser nobody is signed in to (or the one
+named); `auth_open` opens one interactive sign-in in the named browser, else
+the active one. The outcome lands in `lastCommand` with `results: [{
+instanceId, browser, ok, outcome, signedIn, email?, error?, message? }]` and
+`signedIn` (any browser signed in). A browser that answered "signed in" is
+marked so at once. `WEBMATE_AUTH_TIMEOUT_MS` (90 s) bounds one browser's
+answer.
+
+The side panel's sign-in gate arms its storage listener from the start, so a
+panel sitting on "Đăng nhập để bắt đầu" unlocks by itself when the background
+signs in.
+
 ## Developer checkout
 
 Nothing changes for a `brand-dist/chrome` load: no `workmate.json`, so the
@@ -206,8 +282,10 @@ constructs the server sets `WEBMATE_DIR` to a scratch directory for the same
 reason.
 
 Tests: `npm test` (extension side: `test/run.js` offscreen-bridge cases,
-`test/workmate-install.test.mjs`), `cd mcp-server && npm test` (server side:
-`test/pairing.test.mjs`, `test/commands.test.mjs`), and the opt-in real-Chrome
+`test/workmate-install.test.mjs`, `test/agentx-auth.test.mjs` for the silent
+sign-in and the Workmate hooks), `cd mcp-server && npm test` (server side:
+`test/pairing.test.mjs`, `test/commands.test.mjs`, `test/bridge-multi.test.mjs`
+for several browsers at once), and the opt-in real-Chrome
 acceptance run `node test/workmate-install-e2e.mjs` (loads brand-dist/chrome
 into a throwaway profile on port 17398 and walks dev mode, pairing, token
 mismatch, the update hooks and the stdio server).
