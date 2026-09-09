@@ -41,6 +41,16 @@ This changelog was generated from the repository Git history and release tags. V
 - **Loading the social-media downloader twice into one page no longer throws.** The v4 auto-arm block left a top-level `const` after the library's IIFE, so the second evaluation in the same main-world realm — the `document_start` content script plus the injection every `download_social_media` call performs, or two tool runs on one tab — died at parse time with `Identifier '_SMD_MSE_AUTOARM_HOSTS' has already been declared`, an uncaught SyntaxError logged on every supported social host. The block now lives in its own IIFE, so a re-evaluation cleanly replaces `window.SocialMediaDownloader` (the refresh that un-stales an old copy after an extension update), and a regression test evaluates the file twice in one realm to keep it that way.
 - **Clicking a `javascript:` link no longer files a Content Security Policy error against the extension.** A synthetic click on `<a href="javascript:…">` asks the browser to run the href as an inline script, and that navigation is checked against the CSP of the world the click came from — so it was refused ("Running the JavaScript URL violates the following Content Security Policy directive `script-src 'self' …`") and, because the click came from the extension's content script, the violation landed on the extension's Errors page rather than the page's own console. Seen on webmail whose menu items are `javascript:void(0)` placeholders, where every agent click logged another entry. Placeholder hrefs are now cancelled by a listener that runs after every one of the page's own handlers, so the page still sees the click exactly as before and only the meaningless navigation goes away — and the suppressor is released the instant the synthetic click ends, so a real click of yours on the same link is untouched. An href carrying real code is still allowed to run, and is cancelled only once this page has actually been observed refusing one; from then on the click reports the refused URL instead of returning a clean success, because in that case the link's whole action never ran.
 
+## [1.0.5] - 2026-09-09
+
+### Changed
+- fix(extension): không lặp chi tiết lỗi trong message của auth_hint; test e2e phủ mã lỗi đi qua trường code
+- fix(extension): mã lỗi của auth_hint/auth_open đi trong trường code (trường error bị offscreen bridge coi là lỗi giao thức và làm mất outcome); server đọc code
+- fix(extension): auth_open trả lời ngay khi mở tab đăng nhập (opened/in-progress), kết quả đi qua khung session; ghi lại trong tài liệu
+- docs(workmate): hợp đồng giai đoạn 4 — SSO im lặng, nhiều trình duyệt, khung session, lệnh auth_*
+- feat(mcp): server 1.2.0 giữ nhiều kết nối theo instanceId, lệnh auth_hint/auth_open, webmate_connection liệt kê trình duyệt
+- feat(extension): đăng nhập im lặng theo gợi ý từ Workmate (auth_hint/auth_open), instanceId trong hello, khung session, gate tự mở khoá
+
 ## [1.0.4] - 2026-09-09
 
 ### Changed
