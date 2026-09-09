@@ -242,7 +242,19 @@ async function rewriteManifest(outDir, config, target) {
   }
 
   const overrides = { ...config.manifestOverrides?.all, ...config.manifestOverrides?.[target] };
+  // `addPermissions` is a union with the upstream list, not a replacement:
+  // spelling out every upstream permission in the brand config would silently
+  // drop whichever one upstream adds next. (Workmate SSO needs `identity` for
+  // chrome.identity.launchWebAuthFlow; Firefox has no such flow.)
+  const addPermissions = [
+    ...(config.manifestOverrides?.all?.addPermissions || []),
+    ...(config.manifestOverrides?.[target]?.addPermissions || []),
+  ];
+  delete overrides.addPermissions;
   Object.assign(manifest, overrides);
+  if (addPermissions.length) {
+    manifest.permissions = [...new Set([...(manifest.permissions || []), ...addPermissions])];
+  }
   assertExtensionIdMatchesKey(manifest, p, target);
 
   // AgentX Skill Hub one-click install (plan Phase 4 item 4): only the hub's

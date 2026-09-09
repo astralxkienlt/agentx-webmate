@@ -58,6 +58,31 @@ test('the built Chrome manifest carries the key and floor; Firefox stays untouch
   assert.equal(firefox.minimum_chrome_version, undefined);
 });
 
+test('the Chrome manifest gains `identity` for the silent Workmate sign-in; the list is a union, Firefox gets none', () => {
+  assert.deepEqual(brandConfig.manifestOverrides.chrome.addPermissions, ['identity']);
+  const upstream = readJson('src/chrome/manifest.json');
+  const chrome = readJson('brand-dist/chrome/manifest.json');
+  assert.ok(chrome.permissions.includes('identity'));
+  assert.equal(chrome.addPermissions, undefined, 'the override key itself must not leak into the manifest');
+  for (const permission of upstream.permissions) {
+    assert.ok(chrome.permissions.includes(permission), `upstream permission ${permission} must survive the union`);
+  }
+  assert.equal(new Set(chrome.permissions).size, chrome.permissions.length, 'no duplicates');
+  const firefox = readJson('brand-dist/firefox/manifest.json');
+  assert.equal(firefox.permissions.includes('identity'), false);
+});
+
+test('the built background answers the two Workmate sign-in hooks through workmate-auth.js', () => {
+  const background = read('brand-dist/chrome/src/background.js');
+  assert.match(background, /import \{ createWorkmateAuth \} from '\.\/agentx\/workmate-auth\.js'/);
+  assert.match(background, /case 'auth_hint':\s*return await workmateAuth\.hint\(msg\)/);
+  assert.match(background, /case 'auth_open':\s*return await workmateAuth\.open\(msg\)/);
+  assert.ok(fs.existsSync(path.join(ROOT, 'brand-dist/chrome/src/agentx/workmate-auth.js')));
+  const auth = read('brand-dist/chrome/src/agentx/workmate-auth.js');
+  assert.match(auth, /silentSignInAndProvision/);
+  assert.match(auth, /installCloudCredential/);
+});
+
 test('a developer pairing file in brand-dist is kept by the build and refused by build-zip', () => {
   // The build never writes workmate.json (Workmate does), but a developer may
   // copy theirs in to pair the dev build; the packaging step must then refuse.
@@ -79,11 +104,16 @@ test('the built offscreen bridge announces protocol v3 and the Workmate hooks', 
   assert.match(source, /client: 'webbrain-extension'/, 'the wire identifier must survive the brand build');
   assert.match(source, /'workmate_prepare_update'/);
   assert.match(source, /'workmate_reload'/);
+  assert.match(source, /'auth_hint'/);
+  assert.match(source, /'auth_open'/);
+  assert.match(source, /type: 'session', signedIn/, 'a sign-in change goes out as a session frame');
+  assert.match(source, /hello\.instanceId = instanceId/);
   assert.match(source, /action: 'cloud_bridge_identity'/, 'the offscreen bridge asks the background for its identity before dialling');
   assert.doesNotMatch(source, /chrome\.storage|chrome\.runtime\.getManifest|chrome\.runtime\.getURL/, 'offscreen documents have no chrome.* API beyond runtime messaging');
   const config = read('brand-dist/chrome/src/cloud-bridge-config.js');
   assert.match(config, /WORKMATE_CONFIG_PATH = 'workmate\.json'/);
   assert.match(config, /WORKMATE_SESSION_STORAGE_KEY = 'agentxAuthSessionV1'/);
+  assert.match(config, /WORKMATE_INSTANCE_ID_KEY = 'webbrainBridgeInstanceId'/);
   const background = read('brand-dist/chrome/src/background.js');
   assert.match(background, /case 'cloud_bridge_identity':/);
   assert.match(background, /case 'workmate_reload':/);

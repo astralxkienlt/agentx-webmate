@@ -428,7 +428,7 @@ const {
   cloudBridgeUrlFrom,
   isCloudBridgeEnabled,
   parseWorkmateConfig,
-  WORKMATE_SESSION_STORAGE_KEY,
+  WORKMATE_INSTANCE_ID_KEY, WORKMATE_SESSION_STORAGE_KEY,
 } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/cloud-bridge-config.js').replace(/\\/g, '/')
 );
@@ -18804,6 +18804,7 @@ function createOffscreenCloudBridgeHarness({
   storageAvailable = true,
   brands = [{ brand: 'Chromium', version: '152' }, { brand: 'Google Chrome', version: '152' }, { brand: 'Not?A_Brand', version: '99' }],
   manifestVersion = '1.0.3',
+  instanceId = 'inst-test',
 } = {}) {
   const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/cloud-bridge.js'), 'utf8');
   const sockets = [];
@@ -18848,7 +18849,7 @@ function createOffscreenCloudBridgeHarness({
       workmate = parsed.config;
       workmateError = parsed.error;
     }
-    return { version: manifestVersion, signedIn: storageAvailable ? signedIn : null, workmate, workmateError };
+    return { version: manifestVersion, signedIn: storageAvailable ? signedIn : null, instanceId, workmate, workmateError };
   };
   vm.runInNewContext(source, {
     URL,
@@ -18995,6 +18996,8 @@ test('offscreen cloud bridge preserves failed run envelopes and rejects unauthor
     ['scheduled-jobs', 'cloud_scheduled_jobs'],
     ['prepare-update', 'workmate_prepare_update'],
     ['reload', 'workmate_reload'],
+    ['auth-hint', 'auth_hint'],
+    ['auth-open', 'auth_open'],
   ]) {
     socket.emit('message', {
       data: JSON.stringify({ id, action, payload: { runId: 'run_source' } }),
@@ -19152,13 +19155,35 @@ test('offscreen cloud bridge dials the Settings URL in dev mode and announces a 
   assert.equal(hello.browser, 'Chrome 152');
   assert.equal(hello.installType, 'dev');
   assert.equal(hello.signedIn, false);
+  assert.equal(hello.instanceId, 'inst-test', 'the per-profile id lets the server tell two copies of one browser apart');
   assert.equal('token' in hello, false, 'a dev install has no token to send');
   assert.equal(statusOf().installType, 'dev');
+  assert.equal(statusOf().instanceId, 'inst-test');
   assert.equal(statusOf().workmate, null);
 
   // A server that only speaks v2 never sends hello_ack; the socket stays up.
   sockets[0].emit('message', { data: JSON.stringify({ id: 'x', action: 'cloud_status', payload: {} }) });
   assert.equal(sockets[0].readyState, 1);
+});
+
+test('offscreen cloud bridge relays a sign-in change as a session frame, only while a socket is open', async () => {
+  const { listener, sockets, start, statusOf } = createOffscreenCloudBridgeHarness({ instanceId: '' });
+  await start('ws://127.0.0.1:17374/extension');
+  const hello = (sockets[0].emit('open'), sockets[0].sent[0]);
+  assert.equal('instanceId' in hello, false, 'no id from storage means no id on the wire (the server assigns a per-socket one)');
+
+  let reply;
+  listener({ type: 'cloud-bridge-session', signedIn: true }, null, value => { reply = value; });
+  assert.deepEqual(sockets[0].sent[1], { type: 'session', signedIn: true });
+  assert.equal(reply.connected, true, 'the relay answers with the bridge status');
+
+  // A non-boolean payload sends nothing; a closed socket sends nothing.
+  listener({ type: 'cloud-bridge-session', signedIn: 'yes' }, null, () => {});
+  assert.equal(sockets[0].sent.length, 2);
+  sockets[0].close();
+  listener({ type: 'cloud-bridge-session', signedIn: false }, null, () => {});
+  assert.equal(sockets[0].sent.length, 2, 'no frame after close');
+  assert.equal(statusOf().connected, false);
 });
 
 test('offscreen cloud bridge follows workmate.json: its socket URL, token and install type', async () => {
@@ -19374,7 +19399,32 @@ test('cloud run controller answers cloud_bridge_identity from the manifest, stor
   });
 
   const dev = await build({ fetchFails: true }).bridgeIdentity();
-  assert.deepEqual(dev, { version: '1.0.4', signedIn: false, workmate: null, workmateError: '' });
+  // This fake storage cannot `set`, so no instance id can be minted: '' (the server assigns a per-socket id).
+  assert.deepEqual(dev, { version: '1.0.4', signedIn: false, instanceId: '', workmate: null, workmateError: '' });
+
+  // With a writable storage the per-profile instance id is minted once and then reused.
+  const stored = {};
+  const minting = createCloudRunController({
+    chromeApi: {
+      storage: {
+        local: {
+          get: async (keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(k => k in stored).map(k => [k, stored[k]])),
+          set: async (patch) => { Object.assign(stored, patch); },
+        },
+        session: { get: async () => ({}), set: async () => {} },
+      },
+      runtime: { sendMessage: async () => ({}), getManifest: () => ({ version: '1.0.4' }), getURL: (rel) => rel },
+      tabs: { query: async () => [] },
+      windows: { update: async () => ({}) },
+    },
+    agent: { isRunning: () => false, abort: () => {} },
+    ensureOffscreen: async () => {},
+    fetchImpl: async () => ({ ok: false, status: 404 }),
+  });
+  const firstId = (await minting.bridgeIdentity()).instanceId;
+  assert.match(firstId, /^[0-9a-f-]{36}$/);
+  assert.equal(stored[WORKMATE_INSTANCE_ID_KEY], firstId, 'the id is persisted per profile');
+  assert.equal((await minting.bridgeIdentity()).instanceId, firstId, 'and reused on the next dial');
 
   const signedIn = await build({ session: { idToken: 'jwt', user: { subject: 'sub' } } }).bridgeIdentity();
   assert.equal(signedIn.signedIn, true);

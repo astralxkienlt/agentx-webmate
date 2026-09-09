@@ -49,6 +49,16 @@ export const WORKMATE_CONFIG_PATH = 'workmate.json';
 export const WORKMATE_SESSION_STORAGE_KEY = 'agentxAuthSessionV1';
 
 /**
+ * Per-profile random id the bridge sends as `hello.instanceId`. Two copies of
+ * this extension can dial the same Workmate server from the same browser
+ * binary — the person's own profile and the Workmate browser window — and
+ * `browser` ("Chrome 152") cannot tell them apart. The id is minted once per
+ * profile (chrome.storage.local) and survives reloads, so a reconnect
+ * replaces its own previous socket on the server and nothing else's.
+ */
+export const WORKMATE_INSTANCE_ID_KEY = 'webbrainBridgeInstanceId';
+
+/**
  * Parse workmate.json text. Returns `{ config: null, error }` for anything
  * unusable — the bridge then dials the Settings URL and shows the error, so a
  * broken file from Workmate never silences the bridge. `wsUrl` is passed

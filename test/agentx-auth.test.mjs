@@ -10,6 +10,7 @@ const SERVICE_PATH = path.join(CHROME_ROOT, 'src/agentx/cloud-service.js');
 const CONTROLLER_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-settings.js');
 const UI_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-cloud-ui.js');
 const GATE_PATH = path.join(CHROME_ROOT, 'src/ui/agentx-login-gate.js');
+const WORKMATE_AUTH_PATH = path.join(CHROME_ROOT, 'src/agentx/workmate-auth.js');
 const OPENAI_PROVIDER_PATH = path.join(CHROME_ROOT, 'src/providers/openai.js');
 const TRANSCRIBE_PATH = path.join(CHROME_ROOT, 'src/agent/transcribe.js');
 const MODELS_PATH = path.join(CHROME_ROOT, 'src/agentx/cloud-models.js');
@@ -25,6 +26,7 @@ const {
 } = await import(pathToFileURL(SERVICE_PATH).href);
 const { createAgentXCloudSettingsController } = await import(pathToFileURL(CONTROLLER_PATH).href);
 const { createAgentXLoginGate } = await import(pathToFileURL(GATE_PATH).href);
+const { createWorkmateAuth, LOGIN_REQUIRED_HOLDOFF_MS } = await import(pathToFileURL(WORKMATE_AUTH_PATH).href);
 const { renderAgentXCloudPanel } = await import(pathToFileURL(UI_PATH).href);
 const { OpenAICompatibleProvider } = await import(pathToFileURL(OPENAI_PROVIDER_PATH).href);
 const { transcribeAudio } = await import(pathToFileURL(TRANSCRIBE_PATH).href);
@@ -355,6 +357,172 @@ test('authorization code + PKCE uses ID token and provisions the configured gate
   assert.equal(result.credential.model, 'model-a');
   assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].user.email, 'kien@example.test');
   assert.equal(fake.values[AGENTX_DEVICE_STORAGE_KEY].id, modelRequest.headers['X-AgentX-Device']);
+});
+
+/** The OIDC + gateway fetches every sign-in test needs, with hooks for the token and model-key requests. */
+function ssoFetch({ onAuthorize, onToken, onModelKey } = {}) {
+  return async (url, init = {}) => {
+    const requestUrl = String(url);
+    if (requestUrl === `${ISSUER}/.well-known/openid-configuration`) {
+      return jsonResponse({
+        issuer: ISSUER,
+        authorization_endpoint: `${ISSUER}/authorize`,
+        token_endpoint: TOKEN_ENDPOINT,
+        end_session_endpoint: `${ISSUER}/logout`,
+        revocation_endpoint: `${ISSUER}/revoke`,
+      });
+    }
+    if (requestUrl === TOKEN_ENDPOINT) {
+      onToken?.(init);
+      const form = new URLSearchParams(init.body);
+      return jsonResponse({
+        id_token: jwt({
+          iss: ISSUER,
+          aud: CLIENT_ID,
+          sub: 'user-123',
+          email: 'kien@example.test',
+          name: 'Kien',
+          nonce: onAuthorize?.().searchParams.get('nonce'),
+          exp: Math.floor((NOW + 10 * 60_000) / 1000),
+        }),
+        refresh_token: `refresh-for-${form.get('code')}`,
+      });
+    }
+    if (requestUrl === `${CONFIG.secondBrainBaseUrl}/v1/model-key`) {
+      onModelKey?.(init);
+      return jsonResponse({
+        key: 'sk-silent-secret',
+        key_alias: 'agentx-kien',
+        token: 'handle-1',
+        base_url: CONFIG.litellmBaseUrl,
+        models: ['model-a'],
+        default_model: 'model-a',
+        status: 'issued',
+        account: 'kien',
+      });
+    }
+    if (requestUrl === `${CONFIG.litellmBaseUrl}/models`) {
+      return jsonResponse({ data: [{ id: 'model-a' }] });
+    }
+    throw new Error(`Unexpected request: ${requestUrl}`);
+  };
+}
+
+/** chrome.identity as the silent flow sees it: records the authorize URL, answers with a redirect URL or Chrome's error. */
+function fakeIdentity({ respond }) {
+  const calls = [];
+  return {
+    calls,
+    identity: {
+      getRedirectURL: () => 'https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/',
+      launchWebAuthFlow(details) {
+        calls.push(details);
+        return Promise.resolve().then(() => respond(new URL(details.url), details));
+      },
+    },
+  };
+}
+
+test('silent sign-in runs prompt=none through chrome.identity and provisions like the interactive flow', async () => {
+  let authUrl = null;
+  const { calls, identity } = fakeIdentity({
+    respond(url) {
+      authUrl = url;
+      const callback = new URL('https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/');
+      callback.searchParams.set('code', 'silent-code');
+      callback.searchParams.set('state', url.searchParams.get('state'));
+      return callback.toString();
+    },
+  });
+  const fake = createApi({});
+  fake.api.identity = identity;
+  fake.api.runtime.id = 'pfadeibckkgklmmjghiikadphihbpape';
+  let tokenRequest;
+  const fetchImpl = ssoFetch({ onAuthorize: () => authUrl, onToken: (init) => { tokenRequest = init; } });
+
+  const result = await service(fake.api, fetchImpl).silentSignInAndProvision({ loginHint: 'kien@example.test' });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].interactive, false, 'the silent flow must never pop a window');
+  assert.equal(authUrl.searchParams.get('prompt'), 'none');
+  assert.equal(authUrl.searchParams.get('login_hint'), 'kien@example.test');
+  assert.equal(authUrl.searchParams.get('redirect_uri'), 'https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/');
+  assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256');
+  const tokenForm = new URLSearchParams(tokenRequest.body);
+  assert.equal(tokenForm.get('code'), 'silent-code');
+  assert.equal(tokenForm.get('redirect_uri'), 'https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/');
+  assert.ok(tokenForm.get('code_verifier'));
+  assert.equal(result.session.user.email, 'kien@example.test');
+  assert.equal(result.credential.key, 'sk-silent-secret');
+  assert.equal(fake.values[AGENTX_SESSION_STORAGE_KEY].user.email, 'kien@example.test', 'the session is persisted for the panel to find');
+});
+
+test('silent sign-in reports login_required when the browser holds no session, and never exchanges a code', async () => {
+  let tokenRequested = false;
+  const fetchImpl = ssoFetch({ onToken: () => { tokenRequested = true; } });
+
+  // Keycloak's own answer to prompt=none without a session.
+  const keycloakSaysNo = fakeIdentity({
+    respond(url) {
+      const callback = new URL('https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/');
+      callback.searchParams.set('error', 'login_required');
+      callback.searchParams.set('state', url.searchParams.get('state'));
+      return callback.toString();
+    },
+  });
+  let fake = createApi({});
+  fake.api.identity = keycloakSaysNo.identity;
+  await assert.rejects(
+    () => service(fake.api, fetchImpl).silentSignIn({ loginHint: 'kien@example.test' }),
+    (error) => error.code === 'login_required',
+  );
+
+  // Chrome's own refusal in non-interactive mode.
+  const chromeSaysNo = fakeIdentity({ respond() { throw new Error('User interaction required.'); } });
+  fake = createApi({});
+  fake.api.identity = chromeSaysNo.identity;
+  await assert.rejects(
+    () => service(fake.api, fetchImpl).silentSignIn(),
+    (error) => error.code === 'login_required',
+  );
+
+  // A redirect whose state is not ours is dropped before anything else is read.
+  const forged = fakeIdentity({
+    respond() {
+      return 'https://pfadeibckkgklmmjghiikadphihbpape.chromiumapp.org/?code=stolen&state=attacker';
+    },
+  });
+  fake = createApi({});
+  fake.api.identity = forged.identity;
+  await assert.rejects(
+    () => service(fake.api, fetchImpl).silentSignIn(),
+    (error) => error.code === 'state_mismatch',
+  );
+
+  // No chrome.identity at all (Firefox build, an old Chrome): a distinct code, not a crash.
+  fake = createApi({});
+  await assert.rejects(
+    () => service(fake.api, fetchImpl).silentSignIn(),
+    (error) => error.code === 'identity_unavailable_api',
+  );
+
+  assert.equal(tokenRequested, false);
+});
+
+test('the interactive sign-in carries a login_hint when Workmate asks for one', async () => {
+  let authUrl;
+  const fake = createApi({}, {
+    onTabCreated(tab, events) {
+      authUrl = new URL(tab.url);
+      const callback = new URL(CONFIG.oidcRedirectUris[0]);
+      callback.searchParams.set('code', 'authorization-code');
+      callback.searchParams.set('state', authUrl.searchParams.get('state'));
+      events.onUpdated.emit(tab.id, { url: callback.toString() });
+    },
+  });
+  await service(fake.api, ssoFetch({ onAuthorize: () => authUrl })).signIn({ loginHint: 'kien@example.test' });
+  assert.equal(authUrl.searchParams.get('login_hint'), 'kien@example.test');
+  assert.equal(authUrl.searchParams.get('prompt'), null, 'the interactive flow never asks for prompt=none');
 });
 
 test('LiteLLM model list overrides stale Second Brain model metadata', async () => {
@@ -1174,6 +1342,155 @@ test('signing out elsewhere re-locks the panel that is already open', async () =
 
   assert.equal(harness.gate.isLocked(), true);
   assert.match(harness.dom.parts.notice.textContent, /đăng xuất/);
+});
+
+test('a locked panel unlocks on its own when the background signs in (Workmate auth_hint)', async () => {
+  const clock = { now: NOW };
+  const harness = gateHarness({ clock, seed: {} });
+
+  const pending = harness.gate.start();
+  await flushMicrotasks();
+  assert.equal(harness.gate.isLocked(), true);
+  assert.equal(harness.calls.length, 0);
+
+  // The service worker's silent sign-in lands the session and the cached key in storage…
+  harness.values[AGENTX_SESSION_STORAGE_KEY] = session({ lastActiveAt: NOW });
+  harness.values[AGENTX_CREDENTIAL_STORAGE_KEY] = { version: 1, records: [credential()] };
+  // …and the storage event is what the panel sees.
+  harness.storageChanged.emit(
+    { [AGENTX_SESSION_STORAGE_KEY]: { oldValue: undefined, newValue: harness.values[AGENTX_SESSION_STORAGE_KEY] } },
+    'local',
+  );
+  await pending;
+  harness.gate.stop();
+
+  assert.equal(harness.gate.isLocked(), false, 'no click, no visibility change: the storage event alone unlocks');
+  assert.equal(harness.providerState.active, 'webbrain_cloud');
+  assert.equal(harness.calls.find((call) => call.action === 'update_provider').data.config.apiKey, 'sk-existing-secret');
+});
+
+/** A cloud service stand-in for the Workmate auth hooks: scripted answers, recorded calls. */
+function fakeAuthService({ signedIn = false, email = '', silent, interactive } = {}) {
+  const calls = [];
+  const result = {
+    session: { user: { subject: 'user-123', email: 'kien@example.test' } },
+    credential: credential(),
+  };
+  return {
+    calls,
+    service: {
+      async publicStatus() {
+        calls.push(['status']);
+        return signedIn ? { signedIn: true, outcome: 'stored', user: { email } } : { signedIn: false, outcome: 'needs-login', user: null };
+      },
+      async silentSignInAndProvision(options) {
+        calls.push(['silent', options]);
+        if (typeof silent === 'function') return silent(options);
+        if (silent instanceof Error) throw silent;
+        return result;
+      },
+      async signInAndProvision(options) {
+        calls.push(['interactive', options]);
+        if (interactive instanceof Error) throw interactive;
+        return result;
+      },
+    },
+  };
+}
+
+function authHarness(serviceOptions = {}, { now = () => NOW } = {}) {
+  const { service: cloud, calls } = fakeAuthService(serviceOptions);
+  const background = [];
+  const providerState = { providers: { webbrain_cloud: {} }, active: 'openai' };
+  const auth = createWorkmateAuth({
+    api: {},
+    service: cloud,
+    now,
+    sendToBackground: async (action, data = {}) => {
+      background.push({ action, data });
+      if (action === 'get_providers') return structuredClone(providerState);
+      if (action === 'update_provider') {
+        Object.assign(providerState.providers.webbrain_cloud, data.config);
+        return { ok: true };
+      }
+      if (action === 'set_active_provider') {
+        providerState.active = data.providerId;
+        return { ok: true };
+      }
+      throw new Error(`Unexpected background action: ${action}`);
+    },
+  });
+  return { auth, calls, background, providerState };
+}
+
+test('auth_hint signs in silently and installs the key; a signed-in browser is left alone', async () => {
+  const fresh = authHarness();
+  const outcome = await fresh.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.outcome, 'signed-in');
+  assert.equal(outcome.signedIn, true);
+  assert.equal(outcome.email, 'kien@example.test');
+  assert.deepEqual(fresh.calls[1], ['silent', { loginHint: 'kien@example.test' }]);
+  assert.equal(fresh.providerState.active, 'webbrain_cloud');
+  assert.equal(fresh.providerState.providers.webbrain_cloud.apiKey, 'sk-existing-secret');
+
+  const already = authHarness({ signedIn: true, email: 'other@example.test' });
+  const kept = await already.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(kept.outcome, 'already-signed-in');
+  assert.equal(kept.matchesHint, false, 'a different account is reported, never replaced');
+  assert.equal(already.calls.some(([kind]) => kind === 'silent'), false);
+  assert.equal(already.background.length, 0);
+});
+
+test('auth_hint answers login_required calmly and holds off for a minute; other failures are reported', async () => {
+  let now = NOW;
+  const noSession = authHarness(
+    { silent: Object.assign(new Error('no session'), { code: 'login_required' }) },
+    { now: () => now },
+  );
+  // The service throws a real AgentXCloudError in production; mirror its shape.
+  const { AgentXCloudError } = await import(pathToFileURL(SERVICE_PATH).href);
+  noSession.calls.length = 0;
+  const denied = authHarness({ silent: new AgentXCloudError('login_required', 'no session') }, { now: () => now });
+  const first = await denied.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(first.ok, true, 'no session is an ordinary answer, not a failure');
+  assert.equal(first.outcome, 'login-required');
+  assert.equal(first.signedIn, false);
+  assert.equal(denied.background.length, 0, 'nothing is installed');
+
+  const again = await denied.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(again.heldOff, true, 'the same hint is not retried within the holdoff');
+  assert.equal(denied.calls.filter(([kind]) => kind === 'silent').length, 1);
+
+  now = NOW + LOGIN_REQUIRED_HOLDOFF_MS + 1;
+  await denied.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(denied.calls.filter(([kind]) => kind === 'silent').length, 2, 'after the holdoff it asks Keycloak again');
+
+  const broken = authHarness({ silent: new AgentXCloudError('network_unavailable', 'offline') });
+  const failed = await broken.auth.hint({ loginHint: 'kien@example.test' });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.outcome, 'error');
+  assert.equal(failed.error, 'network_unavailable');
+
+  const noIdentity = authHarness({ silent: new AgentXCloudError('identity_unavailable_api', 'no identity') });
+  const unsupported = await noIdentity.auth.hint({});
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.outcome, 'unsupported');
+});
+
+test('auth_open runs the interactive sign-in with the hint and installs the key', async () => {
+  const fresh = authHarness();
+  const outcome = await fresh.auth.open({ loginHint: 'kien@example.test' });
+  assert.equal(outcome.outcome, 'signed-in');
+  assert.equal(outcome.silent, false);
+  assert.deepEqual(fresh.calls[1], ['interactive', { loginHint: 'kien@example.test' }]);
+  assert.equal(fresh.providerState.active, 'webbrain_cloud');
+
+  const same = authHarness({ signedIn: true, email: 'KIEN@example.test' });
+  const kept = await same.auth.open({ loginHint: 'kien@example.test' });
+  assert.equal(kept.outcome, 'already-signed-in');
+  assert.equal(kept.matchesHint, true, 'email comparison ignores case');
+  assert.equal(same.calls.some(([kind]) => kind === 'interactive'), false);
 });
 
 test('a hung status check times out to a retry button instead of spinning forever', async () => {

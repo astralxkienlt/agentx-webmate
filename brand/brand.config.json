@@ -354,9 +354,11 @@
   "manifestOverrides": {
     "all": {},
     "_chrome_why": "`key` pins the extension ID whether the folder is loaded unpacked by Workmate or packed for a store; `minimum_chrome_version` 121 is the first Chrome without the developer-mode nag bubble. Firefox (MV2, AMO) gets neither.",
+    "_chrome_addPermissions_why": "Union with the upstream permissions (scripts/brand-build.mjs). `identity` is for chrome.identity.launchWebAuthFlow: Workmate's `auth_hint` runs a prompt=none authorize against Keycloak so a browser already signed in to Workmate signs WebMate in without a click (docs/workmate-integration.md, phase 4). The redirect https://<extensionId>.chromiumapp.org/ must be registered on the Keycloak client.",
     "chrome": {
       "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAspeiZ2IcJ5uERe4tbeiXPMFPnJum+RWgvhGTj2z1c+TpZ1rzp8Movs7jrksZfmLLgAi9LlggNBDDp99T5l0/l3Qztn5OPGVRHAsBvNdHwjLPHyH7d3cBkueBKVAd5v4+AVWUM56/kJoAWipClvJgx0mN3OiBz8ArR+YRcAIshHIJVNqLWB3KbVDjKCApdlShmt9urzZX6sg3KzH/eaA8BTjuTedDzMQxa8Qgz/zuzbNYXRt6OePaQN2AXTIFnjhNh1yMFBvZBtnDk8WryC/Uia6p3JLJYSohkNtoIVt6Kgk4N/zOQs1EqgWxBE61hM6hv5p4cXOl/y0H9qFagqX7yQIDAQAB",
-      "minimum_chrome_version": "121"
+      "minimum_chrome_version": "121",
+      "addPermissions": ["identity"]
     }
   },
 

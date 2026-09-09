@@ -597,9 +597,8 @@ export function createAgentXCloudService(options = {}) {
     return { session, persistence };
   }
 
-  async function signIn() {
-    const oidc = await discoverOidc();
-    const redirectUri = redirectUris[0];
+  /** A fresh PKCE authorize request; `extra` adds prompt/login_hint for the silent flow. */
+  async function buildAuthorizeRequest(oidc, redirectUri, { loginHint = '', extra = {} } = {}) {
     const codeVerifier = randomBase64Url(cryptoImpl, 48);
     const codeChallenge = await sha256Base64Url(codeVerifier, cryptoImpl);
     const state = randomBase64Url(cryptoImpl, 32);
@@ -614,14 +613,173 @@ export function createAgentXCloudService(options = {}) {
       nonce,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
+      ...(loginHint ? { login_hint: loginHint } : {}),
+      ...extra,
     })) {
       authUrl.searchParams.set(key, value);
     }
-    const code = await awaitAuthorizationCode(authUrl.toString(), redirectUri, state);
+    return { authUrl: authUrl.toString(), codeVerifier, state, nonce };
+  }
+
+  /**
+   * Interactive sign-in: a tab on Keycloak, the loopback redirect watched via
+   * tabs.onUpdated. `loginHint` (an email) pre-fills the account when the
+   * Workmate desktop app asked for the sign-in (`auth_open`).
+   */
+  async function signIn({ loginHint = '' } = {}) {
+    const oidc = await discoverOidc();
+    const redirectUri = redirectUris[0];
+    const request = await buildAuthorizeRequest(oidc, redirectUri, { loginHint });
+    const code = await awaitAuthorizationCode(request.authUrl, redirectUri, request.state);
     return exchangeAuthorizationCode(oidc, {
       code,
-      codeVerifier,
-      nonce,
+      codeVerifier: request.codeVerifier,
+      nonce: request.nonce,
+      redirectUri,
+    });
+  }
+
+  /**
+   * The redirect the silent flow lands on: chrome.identity's own
+   * https://<extension id>.chromiumapp.org/ — never fetched, only observed by
+   * the browser, and it must be registered on the Keycloak client.
+   */
+  function silentRedirectUri() {
+    let fromApi = '';
+    try {
+      fromApi = String(api.identity?.getRedirectURL?.() || '');
+    } catch {
+      fromApi = '';
+    }
+    if (fromApi) return fromApi;
+    const id = String(api.runtime?.id || '').trim();
+    if (!id) {
+      throw new AgentXCloudError(
+        'identity_unavailable_api',
+        'chrome.identity chưa sẵn sàng trong ngữ cảnh này nên không đăng nhập im lặng được.',
+      );
+    }
+    return `https://${id}.chromiumapp.org/`;
+  }
+
+  function launchWebAuthFlow(details) {
+    const identity = api.identity;
+    if (typeof identity?.launchWebAuthFlow !== 'function') {
+      throw new AgentXCloudError(
+        'identity_unavailable_api',
+        'chrome.identity chưa sẵn sàng trong ngữ cảnh này nên không đăng nhập im lặng được.',
+      );
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (error, url) => {
+        if (settled) return;
+        settled = true;
+        if (error) reject(error);
+        else resolve(url);
+      };
+      let returned;
+      try {
+        returned = identity.launchWebAuthFlow(details, (responseUrl) => {
+          const lastError = api.runtime?.lastError;
+          if (lastError) done(new Error(lastError.message || String(lastError)));
+          else done(null, responseUrl);
+        });
+      } catch (error) {
+        done(error);
+        return;
+      }
+      // MV3 returns a promise when no callback is given; some shims return
+      // one regardless. Either way the first settlement wins.
+      if (returned && typeof returned.then === 'function') {
+        returned.then((url) => done(null, url), (error) => done(error));
+      }
+    });
+  }
+
+  /** Chrome's own wording for "no session to reuse" in the non-interactive flow. */
+  function isInteractionRequiredMessage(message) {
+    return /interaction required|not signed in|did not approve|not approve access|user cancelled|user canceled/i
+      .test(String(message || ''));
+  }
+
+  /**
+   * Silent sign-in for AgentX Workmate (`auth_hint`): a prompt=none authorize
+   * in a hidden chrome.identity flow. Succeeds only when this browser profile
+   * already holds a Keycloak SSO session for the account — the one Workmate
+   * signed in with, when Workmate opened its sign-in in this browser. Every
+   * "no session" outcome surfaces as code `login_required`; the caller then
+   * leaves the person alone or offers the interactive sign-in.
+   */
+  async function silentSignIn({ loginHint = '', timeoutMs = 20_000 } = {}) {
+    const oidc = await discoverOidc();
+    const redirectUri = silentRedirectUri();
+    const request = await buildAuthorizeRequest(oidc, redirectUri, {
+      loginHint,
+      extra: { prompt: 'none' },
+    });
+    let responseUrl;
+    try {
+      responseUrl = await launchWebAuthFlow({
+        url: request.authUrl,
+        interactive: false,
+        // Keycloak answers prompt=none with a server-side redirect straight
+        // back to the redirect URI, so nothing has to run after page load.
+        abortOnLoadForNonInteractive: true,
+        timeoutMsForNonInteractive: timeoutMs,
+      });
+    } catch (error) {
+      if (error instanceof AgentXCloudError) throw error;
+      const detail = error?.message || String(error);
+      if (isInteractionRequiredMessage(detail)) {
+        throw new AgentXCloudError(
+          'login_required',
+          'Trình duyệt này chưa có phiên đăng nhập AgentX để dùng lại.',
+          { detail },
+        );
+      }
+      throw new AgentXCloudError(
+        'silent_sign_in_failed',
+        `Không chạy được đăng nhập im lặng: ${detail}`,
+        { detail, transient: true },
+      );
+    }
+    let callback;
+    try {
+      callback = new URL(String(responseUrl || ''));
+    } catch {
+      throw new AgentXCloudError('silent_sign_in_failed', 'Trình duyệt không trả về URL kết thúc đăng nhập.');
+    }
+    const params = callback.searchParams;
+    if (params.get('state') !== request.state) {
+      throw new AgentXCloudError('state_mismatch', 'OAuth state không khớp nên đăng nhập bị hủy.');
+    }
+    const oauthError = params.get('error');
+    if (oauthError) {
+      if (['login_required', 'interaction_required', 'consent_required', 'account_selection_required']
+        .includes(oauthError)) {
+        throw new AgentXCloudError(
+          'login_required',
+          'Trình duyệt này chưa có phiên đăng nhập AgentX để dùng lại.',
+          { detail: params.get('error_description') || oauthError },
+        );
+      }
+      throw new AgentXCloudError(
+        oauthError,
+        params.get('error_description') || 'Keycloak từ chối đăng nhập im lặng.',
+      );
+    }
+    const code = params.get('code');
+    if (!code) {
+      throw new AgentXCloudError(
+        'authorization_code_missing',
+        'Callback đăng nhập không chứa authorization code.',
+      );
+    }
+    return exchangeAuthorizationCode(oidc, {
+      code,
+      codeVerifier: request.codeVerifier,
+      nonce: request.nonce,
       redirectUri,
     });
   }
@@ -992,8 +1150,19 @@ export function createAgentXCloudService(options = {}) {
     }
   }
 
-  async function signInAndProvision() {
-    const signedIn = await signIn();
+  async function signInAndProvision(options = {}) {
+    const signedIn = await signIn(options);
+    const credential = await provisionModelKey(signedIn.session, { rotate: false });
+    return {
+      credential,
+      session: signedIn.session,
+      persistenceWarning: signedIn.persistence.persisted ? '' : 'session_not_persisted',
+    };
+  }
+
+  /** silentSignIn followed by the same provisioning the interactive path does. */
+  async function silentSignInAndProvision(options = {}) {
+    const signedIn = await silentSignIn(options);
     const credential = await provisionModelKey(signedIn.session, { rotate: false });
     return {
       credential,
@@ -1094,6 +1263,9 @@ export function createAgentXCloudService(options = {}) {
     retryProvision,
     signIn,
     signInAndProvision,
+    silentRedirectUri,
+    silentSignIn,
+    silentSignInAndProvision,
     signOut,
     touchSession,
   };

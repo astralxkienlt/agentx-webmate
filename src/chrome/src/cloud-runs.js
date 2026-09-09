@@ -9,6 +9,7 @@ import {
   CLOUD_BRIDGE_URL_KEY,
   DEFAULT_CLOUD_BRIDGE_URL,
   WORKMATE_CONFIG_PATH,
+  WORKMATE_INSTANCE_ID_KEY,
   WORKMATE_SESSION_STORAGE_KEY,
   cloudBridgeUrlFrom,
   isCloudBridgeEnabled,
@@ -1544,12 +1545,35 @@ export function createCloudRunController({
     return { workmate: config, workmateError: error };
   }
 
+  /** Whether a stored AgentX session record counts as signed in (presence only; validity is the service's business). */
+  function sessionSignedIn(session) {
+    return Boolean(session && typeof session === 'object' && session.idToken && session.user?.subject);
+  }
+
+  /**
+   * The per-profile id sent as `hello.instanceId` (see WORKMATE_INSTANCE_ID_KEY).
+   * Minted on first use and kept in chrome.storage.local; '' when storage is
+   * unavailable, in which case the server falls back to a per-socket id.
+   */
+  async function bridgeInstanceId() {
+    try {
+      const stored = await api.storage.local.get([WORKMATE_INSTANCE_ID_KEY]);
+      const existing = stored?.[WORKMATE_INSTANCE_ID_KEY];
+      if (typeof existing === 'string' && existing.trim()) return existing.trim();
+      const minted = globalThis.crypto.randomUUID();
+      await api.storage.local.set({ [WORKMATE_INSTANCE_ID_KEY]: minted });
+      return minted;
+    } catch {
+      return '';
+    }
+  }
+
   /**
    * `cloud_bridge_identity` — what the offscreen bridge needs to introduce
    * itself in `hello`, gathered here because an offscreen document has no
    * chrome.* API beyond runtime messaging: manifest version, whether an AgentX
    * session is signed in (null when storage cannot answer — never guessed),
-   * and the parsed workmate.json.
+   * the per-profile instance id, and the parsed workmate.json.
    */
   async function bridgeIdentity() {
     let version = '';
@@ -1559,12 +1583,25 @@ export function createCloudRunController({
     let signedIn = null;
     try {
       const stored = await api.storage.local.get([WORKMATE_SESSION_STORAGE_KEY]);
-      const session = stored?.[WORKMATE_SESSION_STORAGE_KEY];
-      signedIn = Boolean(session && typeof session === 'object' && session.idToken && session.user?.subject);
+      signedIn = sessionSignedIn(stored?.[WORKMATE_SESSION_STORAGE_KEY]);
     } catch { /* storage unavailable */ }
+    const instanceId = await bridgeInstanceId();
     const { workmate, workmateError } = await readWorkmateConfig();
-    return { version, signedIn, workmate, workmateError };
+    return { version, signedIn, instanceId, workmate, workmateError };
   }
+
+  // A sign-in or sign-out must reach the server without waiting for the next
+  // hello: Workmate shows "connected · not signed in" from the last hello and
+  // decides from it whether to offer sign-in. The offscreen document cannot
+  // watch storage itself, so the change is relayed to it here and it sends a
+  // `session` frame on the open socket (docs/workmate-integration.md).
+  api.storage?.onChanged?.addListener?.((changes, area) => {
+    if (area !== 'local' || !changes || !(WORKMATE_SESSION_STORAGE_KEY in changes)) return;
+    const signedIn = sessionSignedIn(changes[WORKMATE_SESSION_STORAGE_KEY]?.newValue);
+    try {
+      Promise.resolve(api.runtime.sendMessage({ type: 'cloud-bridge-session', signedIn })).catch(() => {});
+    } catch { /* no offscreen document to tell */ }
+  });
 
   async function startBridge(url = DEFAULT_CLOUD_BRIDGE_URL) {
     await ensureOffscreen();

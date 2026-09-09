@@ -154,6 +154,7 @@ export function createAgentXLoginGate({
   let busyAction = '';
   let notice = '';
   let watching = false;
+  let watchingStorage = false;
   let pollTimer = null;
   // Bumped at the start of every restore/sign-in attempt. An attempt that is
   // no longer current must not touch the UI or unlock the panel: its deadline
@@ -398,17 +399,37 @@ export function createAgentXLoginGate({
     teardown.push(() => documentRef?.removeEventListener('visibilitychange', onVisible));
 
     pollTimer = setInterval(() => { void checkSession(); }, SESSION_POLL_INTERVAL_MS);
+    watchStorage();
+  }
 
+  // The session record can change under an open panel in both directions:
+  // a sign-out from Settings, and — since Workmate can sign the extension in
+  // from the background (`auth_hint`, silent SSO) — a sign-in while this panel
+  // sits locked on "Đăng nhập để bắt đầu". So the listener is armed from
+  // start(), not only after the first unlock.
+  function watchStorage() {
+    if (watchingStorage) return;
+    watchingStorage = true;
     const onStorage = (changes, area) => {
       if (area !== 'local' || !(AGENTX_SESSION_STORAGE_KEY in changes)) return;
-      if (changes[AGENTX_SESSION_STORAGE_KEY].newValue) return;
+      if (changes[AGENTX_SESSION_STORAGE_KEY].newValue) {
+        // Signed in elsewhere. A locked, idle panel picks the session up now
+        // instead of on its next visibility change; an unlocked one already
+        // holds a working key and needs nothing.
+        if (locked && !busyAction) void restore();
+        return;
+      }
+      if (locked) return;
       // The sign-out happened in another document, so this one still holds the
       // session in memory. Drop it first or the relock would re-provision from
       // the stale copy and unlock again straight away.
       void service.clearSession().then(() => relock('signedOutElsewhere'));
     };
     api?.storage?.onChanged?.addListener?.(onStorage);
-    teardown.push(() => api?.storage?.onChanged?.removeListener?.(onStorage));
+    teardown.push(() => {
+      api?.storage?.onChanged?.removeListener?.(onStorage);
+      watchingStorage = false;
+    });
   }
 
   elements.button?.addEventListener('click', () => { void signIn(); });
@@ -421,6 +442,7 @@ export function createAgentXLoginGate({
       unlocked = new Promise((resolve) => { resolveUnlocked = resolve; });
       lock();
       render();
+      watchStorage();
       void restore();
       return unlocked;
     },

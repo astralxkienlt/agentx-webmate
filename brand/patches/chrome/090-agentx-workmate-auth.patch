@@ -1,0 +1,39 @@
+diff --git a/src/background.js b/src/background.js
+--- a/src/background.js
++++ b/src/background.js
+@@ -13,6 +13,7 @@
+   refreshBuiltInSkillRecord,
+ } from './agent/skills.js';
+ import { createAgentXHubSyncRunner } from './agentx/hub-sync.js';
++import { createWorkmateAuth } from './agentx/workmate-auth.js';
+ import { ScheduledJobManager } from './agent/scheduler.js';
+ import {
+   compileWorkflowFromDemonstration,
+@@ -950,6 +951,15 @@
+ });
+ agentxHubSync.install();
+ 
++// AgentX Workmate sign-in hooks (docs/workmate-integration.md, phase 4):
++// `auth_hint` reuses the browser's Keycloak session silently, `auth_open`
++// runs the interactive sign-in. Both land the credential the way the side
++// panel does, through this worker's own provider messages.
++const workmateAuth = createWorkmateAuth({
++  api: chrome,
++  sendToBackground: (action, data = {}) => handleMessage({ ...data, target: 'background', action }, null),
++});
++
+ // A valid key plus explicit consent enables CapSolver. Requiring the existing
+ // boolean preserves legacy profiles that saved a key while the old switch was
+ // off; pressing Save Key in the new UI sets consent to true.
+@@ -2387,6 +2397,11 @@
+     case 'workmate_reload':
+       setTimeout(() => chrome.runtime.reload(), 250);
+       return { ok: true, reloadInMs: 250 };
++    // Workmate sign-in hooks, relayed by the offscreen bridge (phase 4).
++    case 'auth_hint':
++      return await workmateAuth.hint(msg);
++    case 'auth_open':
++      return await workmateAuth.open(msg);
+     case 'prepare_recording_host':
+       return await prepareRecordingHost();
+     case 'start_tab_recording': {

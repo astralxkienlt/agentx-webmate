@@ -20,17 +20,24 @@
  *     simply ignores the extra fields of.
  *
  * An offscreen document has no chrome.* API beyond runtime messaging, so the
- * facts the hello needs — manifest version, sign-in state, the parsed
- * workmate.json — come from the background (`cloud_bridge_identity`,
- * cloud-runs.js) before every dial. Only the loopback check on the URL and the
- * hello_ack token comparison live here, at the socket.
+ * facts the hello needs — manifest version, sign-in state, the per-profile
+ * instance id, the parsed workmate.json — come from the background
+ * (`cloud_bridge_identity`, cloud-runs.js) before every dial. Only the
+ * loopback check on the URL and the hello_ack token comparison live here, at
+ * the socket. A sign-in change after the hello arrives from the background as
+ * `cloud-bridge-session` and goes out as a `session` frame, so the server's
+ * picture of "signed in" does not wait for a reconnect.
  */
 
 (() => {
   // Provisioning seeds Settings from a privileged extension page before this
   // bridge starts. Keep configuration mutations out of the WebSocket command
-  // surface; the bridge is intentionally limited to managed run operations
-  // plus the two Workmate update hooks (drain, reload).
+  // surface; the bridge is intentionally limited to managed run operations,
+  // the two Workmate update hooks (drain, reload) and the two Workmate sign-in
+  // hooks (auth_hint: silent prompt=none authorize; auth_open: the interactive
+  // sign-in). Neither sign-in hook takes credentials over the socket — they
+  // carry at most a login_hint (an email), and the browser's own Keycloak
+  // cookies decide whether anything happens.
   const BRIDGE_PROTOCOL_VERSION = 3;
   const BRIDGE_CAPABILITIES = ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1', 'workmate_update_v1'];
   const ALLOWED_BRIDGE_ACTIONS = new Set([
@@ -43,6 +50,8 @@
     'cloud_abort',
     'workmate_prepare_update',
     'workmate_reload',
+    'auth_hint',
+    'auth_open',
   ]);
   // Ceiling on the reconnect backoff. This dials loopback, so a refused attempt
   // costs a syscall pair and no network traffic — a long ceiling buys nothing
@@ -72,6 +81,7 @@
   let workmateError = '';
   // From the background's identity answer at the most recent dial.
   let extensionVersion = '';
+  let instanceId = '';
   // What the server told us in hello_ack on the current socket.
   let server = null;
 
@@ -141,6 +151,7 @@
    */
   function applyIdentity(identity) {
     extensionVersion = typeof identity.version === 'string' ? identity.version : '';
+    instanceId = typeof identity.instanceId === 'string' ? identity.instanceId : '';
     workmateError = typeof identity.workmateError === 'string' ? identity.workmateError : '';
     const raw = identity.workmate && typeof identity.workmate === 'object' ? identity.workmate : null;
     if (!raw) {
@@ -176,6 +187,7 @@
       lastError,
       installType: workmate ? 'workmate' : 'dev',
       version: extensionVersion,
+      instanceId,
       browser: describeBrowser(),
       workmate: workmate
         ? {
@@ -257,6 +269,7 @@
       status: status(),
     };
     if (workmate?.token) hello.token = workmate.token;
+    if (instanceId) hello.instanceId = instanceId;
     return hello;
   }
 
@@ -440,6 +453,15 @@
       return false;
     }
     if (msg.type === 'cloud-bridge-status') {
+      sendResponse(status());
+      return false;
+    }
+    if (msg.type === 'cloud-bridge-session') {
+      // Relayed by the background when the AgentX session appears or goes;
+      // the server updates its "signed in" fact for this socket in place.
+      if (typeof msg.signedIn === 'boolean' && socket?.readyState === WebSocket.OPEN) {
+        sendJson({ type: 'session', signedIn: msg.signedIn }, socket);
+      }
       sendResponse(status());
       return false;
     }
