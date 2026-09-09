@@ -161,7 +161,8 @@ test("end to end: prepare_update drains the extension, reload restarts it, state
         return;
       }
       if (msg.action === "auth_open") {
-        ext.send(JSON.stringify({ id: msg.id, ok: true, result: { ok: true, outcome: "already-signed-in", signedIn: true } }));
+        // A refusal carries its code as `code` (never `error`, which the offscreen bridge reserves).
+        ext.send(JSON.stringify({ id: msg.id, ok: true, result: { ok: false, outcome: "error", signedIn: false, code: "sign_in_window_failed", message: "no window" } }));
         return;
       }
       if (msg.action === "workmate_prepare_update") {
@@ -196,8 +197,11 @@ test("end to end: prepare_update drains the extension, reload restarts it, state
 
     dropCommand(commandsDir, "cmd-open", "auth_open", { loginHint: "kien@example.test" });
     await until(() => readState()?.lastCommand?.id === "cmd-open", { label: "auth_open outcome", timeoutMs: 10_000 });
-    assert.equal(readState().lastCommand.ok, true);
+    const opened = readState().lastCommand;
+    assert.equal(opened.ok, false);
     assert.ok(seen.includes("auth_open"), "auth_open goes to the active browser even when it is signed in");
+    assert.deepEqual(opened.results.map((r) => [r.outcome, r.error, r.message]), [["error", "sign_in_window_failed", "no window"]], "the extension's `code` lands as the result's error");
+    assert.match(opened.error, /no window/);
 
     dropCommand(commandsDir, "cmd-prepare", "prepare_update");
     await until(() => readState()?.lastCommand?.id === "cmd-prepare", { label: "prepare_update outcome", timeoutMs: 10_000 });

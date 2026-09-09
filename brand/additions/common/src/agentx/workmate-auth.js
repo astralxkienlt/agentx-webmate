@@ -86,7 +86,8 @@ export function createWorkmateAuth({
 
   function failure(error) {
     const code = error instanceof AgentXCloudError ? error.code : 'error';
-    const detail = error instanceof AgentXCloudError && error.detail && error.detail !== error.message
+    const message = error?.message || String(error);
+    const detail = error instanceof AgentXCloudError && error.detail && !message.includes(error.detail)
       ? ` (${error.detail})`
       : '';
     return {
@@ -94,7 +95,7 @@ export function createWorkmateAuth({
       outcome: 'error',
       signedIn: false,
       code,
-      message: `${error?.message || String(error)}${detail}`,
+      message: `${message}${detail}`,
     };
   }
 
