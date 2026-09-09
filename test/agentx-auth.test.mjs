@@ -1391,6 +1391,7 @@ function fakeAuthService({ signedIn = false, email = '', silent, interactive } =
       },
       async signInAndProvision(options) {
         calls.push(['interactive', options]);
+        if (typeof interactive === 'function') return interactive(options);
         if (interactive instanceof Error) throw interactive;
         return result;
       },
@@ -1478,13 +1479,32 @@ test('auth_hint answers login_required calmly and holds off for a minute; other 
   assert.equal(unsupported.outcome, 'unsupported');
 });
 
-test('auth_open runs the interactive sign-in with the hint and installs the key', async () => {
-  const fresh = authHarness();
+test('auth_open starts the interactive sign-in with the hint, answers at once, and installs the key when it ends', async () => {
+  let finish;
+  const fresh = authHarness({
+    interactive: () => new Promise((resolve) => { finish = resolve; }),
+  });
   const outcome = await fresh.auth.open({ loginHint: 'kien@example.test' });
-  assert.equal(outcome.outcome, 'signed-in');
-  assert.equal(outcome.silent, false);
+  assert.equal(outcome.outcome, 'opened', 'the reply does not wait for the person to type a password');
+  assert.equal(outcome.signedIn, false);
   assert.deepEqual(fresh.calls[1], ['interactive', { loginHint: 'kien@example.test' }]);
-  assert.equal(fresh.providerState.active, 'webbrain_cloud');
+  assert.equal((await fresh.auth.status()).interactiveOpen, true);
+  assert.equal((await fresh.auth.open({ loginHint: 'kien@example.test' })).outcome, 'in-progress', 'no second tab while one is open');
+  assert.equal(fresh.providerState.active, 'openai', 'nothing installed yet');
+
+  finish({ session: { user: { subject: 'user-123', email: 'kien@example.test' } }, credential: credential() });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fresh.providerState.active, 'webbrain_cloud', 'the key lands once the sign-in ends');
+  const after = await fresh.auth.status();
+  assert.equal(after.interactiveOpen, false);
+  assert.equal(after.lastInteractive.outcome, 'signed-in');
+
+  // A sign-in that ends at once (already-known error) is reported in the reply itself.
+  const { AgentXCloudError } = await import(pathToFileURL(SERVICE_PATH).href);
+  const refused = authHarness({ interactive: new AgentXCloudError('sign_in_window_failed', 'no window') });
+  const failed = await refused.auth.open({});
+  assert.equal(failed.ok, false);
+  assert.equal(failed.error, 'sign_in_window_failed');
 
   const same = authHarness({ signedIn: true, email: 'KIEN@example.test' });
   const kept = await same.auth.open({ loginHint: 'kien@example.test' });

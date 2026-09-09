@@ -16,7 +16,12 @@
  *                             the identity flow.
  *   auth_open { loginHint }   the interactive sign-in the panel's button
  *                             runs, opened from Workmate's "Đăng nhập WebMate"
- *                             button with the email pre-filled.
+ *                             button with the email pre-filled. Answers as
+ *                             soon as the sign-in tab is open (`opened`);
+ *                             the person may take minutes, so the outcome
+ *                             reaches Workmate through the session relay
+ *                             (a `session` frame once the session is stored),
+ *                             not through this reply.
  *
  * Both install the provisioned gateway credential the way the panel does
  * (installCloudCredential), so the panel — open or not — finds itself signed
@@ -50,6 +55,10 @@ export function createWorkmateAuth({
 
   let cloud = service;
   let inFlight = null;
+  // The interactive sign-in that is currently open, if any, and how the last
+  // one ended (reported by status() for Workmate's diagnostics).
+  let interactive = null;
+  let lastInteractive = null;
   // After Keycloak said "no session" for a hint, the same hint gets the same
   // answer for a while: the person has not signed in to Workmate in between.
   let holdoff = { until: 0, loginHint: '' };
@@ -65,6 +74,8 @@ export function createWorkmateAuth({
       signedIn: Boolean(current.signedIn),
       email: String(current.user?.email || ''),
       outcome: String(current.outcome || ''),
+      interactiveOpen: interactive !== null,
+      lastInteractive,
     };
   }
 
@@ -144,19 +155,43 @@ export function createWorkmateAuth({
     return runExclusive(async () => {
       const already = await alreadySignedIn(loginHint);
       if (already && already.matchesHint) return already;
-      try {
-        const result = await getService().signInAndProvision({ loginHint });
-        await installCloudCredential(sendToBackground, result.credential);
-        return {
-          ok: true,
-          outcome: 'signed-in',
-          signedIn: true,
-          email: String(result.session?.user?.email || ''),
-          silent: false,
-        };
-      } catch (error) {
-        return failure(error);
+      if (interactive) {
+        return { ok: true, outcome: 'in-progress', signedIn: false, startedAt: interactive.startedAt };
       }
+      const startedAt = now();
+      interactive = { startedAt, loginHint };
+      // Runs for as long as the person takes; the bridge reply below does not
+      // wait for it. The stored session (storage.onChanged → session frame)
+      // is how Workmate learns the end of it.
+      const flow = getService()
+        .signInAndProvision({ loginHint })
+        .then(async (result) => {
+          await installCloudCredential(sendToBackground, result.credential);
+          lastInteractive = {
+            ok: true,
+            outcome: 'signed-in',
+            email: String(result.session?.user?.email || ''),
+            finishedAt: now(),
+          };
+        })
+        .catch((error) => {
+          lastInteractive = { ...failure(error), finishedAt: now() };
+        })
+        .finally(() => {
+          if (interactive && interactive.startedAt === startedAt) interactive = null;
+        });
+      // Give the tab a moment to open so a refusal to open one (no window,
+      // no tabs permission) is reported here rather than swallowed.
+      const opened = await Promise.race([
+        flow.then(() => 'settled'),
+        new Promise((resolve) => setTimeout(() => resolve('opened'), 750)),
+      ]);
+      if (opened === 'settled') {
+        return lastInteractive?.ok
+          ? { ok: true, outcome: 'signed-in', signedIn: true, email: lastInteractive.email, silent: false }
+          : { ...(lastInteractive || failure(new Error('sign-in ended'))), signedIn: false };
+      }
+      return { ok: true, outcome: 'opened', signedIn: false, startedAt };
     });
   }
 

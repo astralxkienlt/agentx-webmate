@@ -204,10 +204,14 @@ answered by `src/agentx/workmate-auth.js` in the background:
   `login-required` answer is held for sixty seconds so a retrying Workmate
   does not spin the identity flow. `{ ok: false, outcome: "unsupported" }`
   means no `chrome.identity` (the Firefox build, an old Chrome).
-- `auth_open { loginHint }` runs the interactive sign-in (a tab on Keycloak,
-  loopback redirect, the same flow as the panel's button) with the email
-  pre-filled, and installs the key. Answers `already-signed-in` when the
-  panel is already signed in as that account.
+- `auth_open { loginHint }` starts the interactive sign-in (a tab on
+  Keycloak, loopback redirect, the same flow as the panel's button) with the
+  email pre-filled and answers `{ ok: true, outcome: "opened" }` as soon as
+  the tab is up — the person may take minutes, so the end of it reaches
+  Workmate through the `session` frame below, not through this reply
+  (`in-progress` while a tab is already open; `already-signed-in` when the
+  panel is signed in as that account). The key is installed when the flow
+  ends.
 
 The Chrome manifest gains the `identity` permission for this
 (`manifestOverrides.chrome.addPermissions`, a union with the upstream list —
