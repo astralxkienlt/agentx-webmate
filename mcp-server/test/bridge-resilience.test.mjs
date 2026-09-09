@@ -12,7 +12,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import WebSocket from "ws";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+// Never read the developer machine's real ~/.agentx/webmate (Workmate writes a
+// pairing.json there, which would switch this bridge into paired mode and
+// reject the v2 fake extension below).
+process.env.WEBMATE_DIR = mkdtempSync(join(tmpdir(), "webmate-test-"));
 process.env.WEBMATE_BRIDGE_PORT = process.env.WEBMATE_BRIDGE_PORT || "17398";
 process.env.WEBMATE_HEARTBEAT_INTERVAL_MS = "60";
 process.env.WEBMATE_CONNECT_GRACE_MS = "4000";

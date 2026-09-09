@@ -181,6 +181,19 @@ Settings URL and no token; `node mcp-server/dist/index.js` without a
 write `state.json` into `<AgentX root>/webmate/` — set `WEBMATE_STATE_FILE=off`
 (and `WEBMATE_COMMANDS_DIR=off`) to keep a scratch server out of it.
 
+**Once Workmate has run on the machine** it has written
+`<AgentX root>/webmate/pairing.json`, and every server that resolves that
+folder — including a checkout's `dist/index.js` that a Workmate account config
+points at — runs paired and rejects a `brand-dist/chrome` load with
+"Bridge protocol v3 required / Pairing token mismatch". To keep developing
+against the dev build, copy the machine's
+`<AgentX root>/webmate/AgentX WebMate/workmate.json` into `brand-dist/chrome/`
+and Reload the extension: `brand:build` preserves that file across rebuilds and
+`build:zip` refuses to package a tree that contains it. Delete it (or
+`pairing.json`) to go back to unpaired dev mode. Every test that spawns or
+constructs the server sets `WEBMATE_DIR` to a scratch directory for the same
+reason.
+
 Tests: `npm test` (extension side: `test/run.js` offscreen-bridge cases,
 `test/workmate-install.test.mjs`), `cd mcp-server && npm test` (server side:
 `test/pairing.test.mjs`, `test/commands.test.mjs`), and the opt-in real-Chrome

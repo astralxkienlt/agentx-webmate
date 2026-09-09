@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Load runs.ts with a poll interval much longer than the requested run timeout.
 // Before the deadline cap, this 20ms timeout blocked for the full 500ms poll.
 process.env.WEBMATE_POLL_INTERVAL_MS = "500";
 
+// Never read the developer machine's real ~/.agentx/webmate (Workmate writes a
+// pairing.json there, which would switch this bridge into paired mode and
+// reject the v2 fake extension below).
+process.env.WEBMATE_DIR = mkdtempSync(join(tmpdir(), "webmate-test-"));
 const { awaitSettled } = await import("../dist/runs.js");
 
 test("awaitSettled never sleeps past the requested deadline", async () => {

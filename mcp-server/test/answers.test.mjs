@@ -11,7 +11,14 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+// Never read the developer machine's real ~/.agentx/webmate (Workmate writes a
+// pairing.json there, which would switch this bridge into paired mode and
+// reject the v2 fake extension below).
+process.env.WEBMATE_DIR = mkdtempSync(join(tmpdir(), "webmate-test-"));
 const { describePendingInput, describeSnapshot, validateAnswer } = await import("../dist/runs.js");
 const { BRAND } = await import("../dist/brand.generated.js");
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

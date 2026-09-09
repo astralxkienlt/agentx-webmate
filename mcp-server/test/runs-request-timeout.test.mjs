@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 process.env.WEBMATE_POLL_INTERVAL_MS = "5";
 
 const { PERMISSION_MODES, awaitSettled, describeSnapshot, startRun } = await import(
   "../dist/runs.js"
 );
+// Never read the developer machine's real ~/.agentx/webmate (Workmate writes a
+// pairing.json there, which would switch this bridge into paired mode and
+// reject the v2 fake extension below).
+process.env.WEBMATE_DIR = mkdtempSync(join(tmpdir(), "webmate-test-"));
 const { BridgeError } = await import("../dist/bridge.js");
 
 /** A bridge that records the one payload it is handed. */
