@@ -6,8 +6,11 @@
  * document and we host the listener. That also means every command below is
  * initiated by us and answered by the extension.
  *
- * Wire protocol (already shipping in the extension, unchanged here):
- *   extension -> us   {type:'hello', client, protocolVersion, capabilities, status}
+ * Wire protocol:
+ *   extension -> us   {type:'hello', client, protocolVersion, capabilities, status,
+ *                      // v3 adds:
+ *                      version, browser, installType, token?, signedIn}
+ *   us -> extension   {type:'hello_ack', serverVersion, token|null, minExtensionVersion, minProtocol}
  *   us -> extension   {id, action, payload}
  *   extension -> us   {id, ok:true,  result}
  *                     {id, ok:false, error, status?}
@@ -15,11 +18,27 @@
  * The extension spreads `payload` over the message it forwards to its own
  * background worker, so payload keys become top-level fields there. Send the
  * exact field names `cloud-runs.js` reads.
+ *
+ * Paired mode: when Workmate has written a pairing file (see pairing.ts) the
+ * hello must speak v3 and carry the pairing token, and we echo the token back
+ * so the extension can tell us apart from any other local process on the
+ * port. Without the file, v2 hellos are accepted exactly as before — that is
+ * the developer checkout and the store build.
  */
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { BRAND } from "./brand.generated.js";
 import { config } from "./config.js";
+import type { WebmateErrorCode } from "./errors.js";
+import { readPairing as readPairingFile, type Pairing } from "./pairing.js";
+import {
+  BRIDGE_PROTOCOL_VERSION,
+  MIN_EXTENSION_VERSION,
+  MIN_PAIRED_PROTOCOL_VERSION,
+  SERVER_VERSION,
+} from "./version.js";
 
 /**
  * The `client` value the extension puts in its hello frame. This is a wire
@@ -29,12 +48,14 @@ import { config } from "./config.js";
  */
 export const EXTENSION_CLIENT_ID = "webbrain-extension";
 
-/** Actions already present in the extension's ALLOWED_BRIDGE_ACTIONS set. */
+/** Actions present in the extension's ALLOWED_BRIDGE_ACTIONS set. */
 export type BridgeAction =
   | "cloud_run"
   | "cloud_status"
   | "cloud_respond"
-  | "cloud_abort";
+  | "cloud_abort"
+  | "workmate_prepare_update"
+  | "workmate_reload";
 
 export interface CloudSnapshot {
   runId: string;
@@ -63,6 +84,35 @@ export interface CloudSnapshot {
   [key: string]: unknown;
 }
 
+/** What the attached extension said about itself in `hello`. */
+export interface ExtensionInfo {
+  version: string | null;
+  browser: string | null;
+  installType: "workmate" | "dev" | null;
+  signedIn: boolean | null;
+  protocolVersion: number | null;
+  lastHelloAt: string | null;
+  capabilities: string[];
+}
+
+const NO_EXTENSION: ExtensionInfo = {
+  version: null,
+  browser: null,
+  installType: null,
+  signedIn: null,
+  protocolVersion: null,
+  lastHelloAt: null,
+  capabilities: [],
+};
+
+/** Everything state.json needs, read after any `onChange` notification. */
+export interface BridgeSnapshot extends ExtensionInfo {
+  listening: boolean;
+  connected: boolean;
+  pairingRequired: boolean;
+  error: string | null;
+}
+
 export const TERMINAL_STATUSES = new Set(["completed", "failed", "aborted"]);
 
 interface Pending {
@@ -74,15 +124,19 @@ interface Pending {
 export class BridgeError extends Error {
   readonly status?: number;
   readonly code?: "COMMAND_TIMEOUT" | "COMMAND_INTERRUPTED";
+  /** Structured code Workmate reacts to; see errors.ts. */
+  readonly webmateCode?: WebmateErrorCode;
   constructor(
     message: string,
     status?: number,
     code?: "COMMAND_TIMEOUT" | "COMMAND_INTERRUPTED",
+    webmateCode?: WebmateErrorCode,
   ) {
     super(message);
     this.name = "BridgeError";
     this.status = status;
     this.code = code;
+    this.webmateCode = webmateCode;
   }
 }
 
@@ -174,18 +228,84 @@ export function connectInstructions(): string {
   );
 }
 
+/** Same message for a Workmate-managed install, where Settings is not the fix. */
+export function pairedConnectInstructions(): string {
+  return (
+    `Open the browser ${BRAND.productName} was installed into (Workmate → Settings → Browser ` +
+    "shows which). If chrome://extensions lists it as switched off, switch it back on; " +
+    "the extension reconnects on its own within a few seconds."
+  );
+}
+
+/** Whether Workmate has unpacked the extension folder on this machine. */
+export function extensionFolderPresent(installDir: string = config.installDir): boolean {
+  return existsSync(path.join(installDir, "manifest.json"));
+}
+
+export interface BridgeOptions {
+  /** Injected for tests; defaults to reading config.pairingFile. */
+  readPairing?: () => Promise<Pairing | null>;
+  installDir?: string;
+}
+
 export class WebMateBridge {
   private wss: WebSocketServer | null = null;
   private socket: WebSocket | null = null;
   private pending = new Map<number, Pending>();
   private nextId = 1;
-  private extensionCapabilities: string[] = [];
-  private extensionProtocol: number | null = null;
+  private extension: ExtensionInfo = { ...NO_EXTENSION };
   private handshakenSocket: WebSocket | null = null;
   private waiters: Array<() => void> = [];
   private heartbeat: NodeJS.Timeout | null = null;
   private missedPongs = 0;
   private unavailableReason: string | null = null;
+  private lastError: string | null = null;
+  private pairingRequired = false;
+  private listeners: Array<() => void> = [];
+  private readonly readPairing: () => Promise<Pairing | null>;
+  private readonly installDir: string;
+
+  constructor(options: BridgeOptions = {}) {
+    this.readPairing =
+      options.readPairing ??
+      (async () => (config.pairingFile ? readPairingFile(config.pairingFile) : null));
+    this.installDir = options.installDir ?? config.installDir;
+  }
+
+  /** Subscribe to state changes (listen, connect, handshake, disconnect, errors). */
+  onChange(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((entry) => entry !== listener);
+    };
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        log("state listener failed:", error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
+  /** What state.json publishes. */
+  snapshot(): BridgeSnapshot {
+    return {
+      ...this.extension,
+      capabilities: [...this.extension.capabilities],
+      listening: this.wss !== null,
+      connected: this.isConnected(),
+      pairingRequired: this.pairingRequired,
+      error: this.unavailableReason ?? this.lastError,
+    };
+  }
+
+  /** Facts from the current extension's hello (empty when nothing is attached). */
+  info(): ExtensionInfo {
+    return { ...this.extension, capabilities: [...this.extension.capabilities] };
+  }
 
   /**
    * Record that this bridge will never attach, and why.
@@ -196,6 +316,7 @@ export class WebMateBridge {
    */
   markUnavailable(reason: string): void {
     this.unavailableReason = reason;
+    this.changed();
   }
 
   /** The reason the bridge is unusable, or null when it is merely unattached. */
@@ -264,8 +385,7 @@ export class WebMateBridge {
 
       this.socket = socket;
       this.handshakenSocket = null;
-      this.extensionCapabilities = [];
-      this.extensionProtocol = null;
+      this.extension = { ...NO_EXTENSION };
       this.missedPongs = 0;
       log(`extension connected on ${config.bridgePath}`);
 
@@ -278,10 +398,10 @@ export class WebMateBridge {
 
       socket.on("close", () => {
         if (this.socket !== socket) return;
+        const wasHandshaken = this.handshakenSocket === socket;
         this.socket = null;
         this.handshakenSocket = null;
-        this.extensionCapabilities = [];
-        this.extensionProtocol = null;
+        this.extension = { ...NO_EXTENSION };
         this.missedPongs = 0;
         log("extension disconnected");
         this.failAllPending(
@@ -291,6 +411,7 @@ export class WebMateBridge {
             "COMMAND_INTERRUPTED",
           ),
         );
+        if (wasHandshaken) this.changed();
       });
 
       socket.on("error", (error) => {
@@ -299,7 +420,19 @@ export class WebMateBridge {
     });
 
     this.startHeartbeat();
-    log(`listening on ws://127.0.0.1:${config.bridgePort}${config.bridgePath}`);
+    // Learn the pairing mode up front so state.json and the "not connected"
+    // wording are right before the first hello arrives.
+    try {
+      this.pairingRequired = (await this.readPairing()) !== null;
+    } catch (error) {
+      this.pairingRequired = true;
+      this.lastError = error instanceof Error ? error.message : String(error);
+    }
+    log(
+      `listening on ws://127.0.0.1:${config.bridgePort}${config.bridgePath}` +
+        (this.pairingRequired ? " (Workmate pairing required)" : ""),
+    );
+    this.changed();
   }
 
   /**
@@ -355,27 +488,7 @@ export class WebMateBridge {
 
     // Handshake frame — no id, nothing to correlate.
     if (msg.type === "hello") {
-      if (msg.client !== EXTENSION_CLIENT_ID) {
-        log(`rejecting unknown bridge client: ${String(msg.client)}`);
-        socket.close(1008, "Unknown client");
-        if (this.socket === socket) {
-          this.socket = null;
-          this.handshakenSocket = null;
-        }
-        return;
-      }
-      this.handshakenSocket = socket;
-      this.extensionProtocol = typeof msg.protocolVersion === "number" ? msg.protocolVersion : null;
-      this.extensionCapabilities = Array.isArray(msg.capabilities)
-        ? (msg.capabilities as string[])
-        : [];
-      log(
-        `handshake ok — protocol v${this.extensionProtocol}, capabilities: ` +
-          (this.extensionCapabilities.join(", ") || "none"),
-      );
-      const waiters = this.waiters;
-      this.waiters = [];
-      for (const wake of waiters) wake();
+      void this.handleHello(socket, msg);
       return;
     }
 
@@ -393,6 +506,105 @@ export class WebMateBridge {
       return;
     }
     entry.resolve(msg.result);
+  }
+
+  private rejectHandshake(socket: WebSocket, reason: string): void {
+    log(`rejecting handshake: ${reason}`);
+    this.lastError = reason;
+    // 1008 = policy violation. The extension backs off for a minute on it.
+    socket.close(1008, reason.slice(0, 120));
+    if (this.socket === socket) {
+      this.socket = null;
+      this.handshakenSocket = null;
+      this.extension = { ...NO_EXTENSION };
+    }
+    this.changed();
+  }
+
+  private async handleHello(socket: WebSocket, msg: Record<string, unknown>): Promise<void> {
+    if (msg.client !== EXTENSION_CLIENT_ID) {
+      this.rejectHandshake(socket, `Unknown client ${String(msg.client)}`);
+      return;
+    }
+
+    let pairing: Pairing | null = null;
+    try {
+      pairing = await this.readPairing();
+    } catch (error) {
+      // A present-but-broken pairing file must fail closed: with the file on
+      // disk the operator expects authentication, so an unreadable file cannot
+      // quietly become "no authentication".
+      this.pairingRequired = true;
+      this.rejectHandshake(
+        socket,
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+    // The socket may have been superseded while the file was read.
+    if (this.socket !== socket || socket.readyState !== 1) return;
+    this.pairingRequired = pairing !== null;
+
+    const protocolVersion = typeof msg.protocolVersion === "number" ? msg.protocolVersion : null;
+    if (pairing) {
+      if (protocolVersion === null || protocolVersion < MIN_PAIRED_PROTOCOL_VERSION) {
+        this.rejectHandshake(
+          socket,
+          `Bridge protocol v${MIN_PAIRED_PROTOCOL_VERSION} required for a Workmate-managed ` +
+            `extension; this one speaks v${protocolVersion ?? "?"}. Update ${BRAND.productName}.`,
+        );
+        return;
+      }
+      if (typeof msg.token !== "string" || msg.token !== pairing.token) {
+        this.rejectHandshake(
+          socket,
+          "Pairing token mismatch: this extension was not installed by the Workmate that runs this " +
+            "server. Reinstall it from Workmate → Settings → Browser, or reset the token there.",
+        );
+        return;
+      }
+    }
+
+    this.handshakenSocket = socket;
+    this.lastError = null;
+    this.extension = {
+      version: typeof msg.version === "string" && msg.version ? msg.version : null,
+      browser: typeof msg.browser === "string" && msg.browser ? msg.browser : null,
+      installType:
+        msg.installType === "workmate" || msg.installType === "dev" ? msg.installType : null,
+      signedIn: typeof msg.signedIn === "boolean" ? msg.signedIn : null,
+      protocolVersion,
+      lastHelloAt: new Date().toISOString(),
+      capabilities: Array.isArray(msg.capabilities) ? (msg.capabilities as string[]) : [],
+    };
+    log(
+      `handshake ok — protocol v${protocolVersion}, ` +
+        `${BRAND.productName} ${this.extension.version ?? "?"} on ${this.extension.browser ?? "unknown browser"} ` +
+        `(${this.extension.installType ?? "unknown install"}${pairing ? ", paired" : ""}), capabilities: ` +
+        (this.extension.capabilities.join(", ") || "none"),
+    );
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "hello_ack",
+          serverVersion: SERVER_VERSION,
+          protocolVersion: BRIDGE_PROTOCOL_VERSION,
+          // Echoing the token is how the extension knows we read the same
+          // pairing file Workmate wrote for it. Never echo an unverified token.
+          token: pairing ? pairing.token : null,
+          minExtensionVersion: MIN_EXTENSION_VERSION,
+          minProtocol: pairing ? MIN_PAIRED_PROTOCOL_VERSION : 2,
+        }),
+      );
+    } catch (error) {
+      log("could not send hello_ack:", error instanceof Error ? error.message : String(error));
+    }
+
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const wake of waiters) wake();
+    this.changed();
   }
 
   private failAllPending(error: Error): void {
@@ -413,7 +625,54 @@ export class WebMateBridge {
   }
 
   capabilities(): string[] {
-    return [...this.extensionCapabilities];
+    return [...this.extension.capabilities];
+  }
+
+  /** Whether a Workmate pairing file is in force (as of the last check). */
+  isPaired(): boolean {
+    return this.pairingRequired;
+  }
+
+  /**
+   * Re-read whether a pairing file is in force. Called on the failure path
+   * only, so a Workmate that installed (or removed) the pairing since this
+   * server started still gets the right wording without a restart.
+   */
+  private async refreshPairingMode(): Promise<void> {
+    try {
+      this.pairingRequired = (await this.readPairing()) !== null;
+    } catch {
+      this.pairingRequired = true;
+    }
+  }
+
+  /** notConnectedError() after refreshing the pairing mode from disk. */
+  async describeNotConnected(): Promise<BridgeError> {
+    await this.refreshPairingMode();
+    return this.notConnectedError();
+  }
+
+  /**
+   * The error a command gets when nothing is attached — worded for the way
+   * this extension was installed, and coded so Workmate can act on it.
+   */
+  notConnectedError(): BridgeError {
+    if (this.pairingRequired && !extensionFolderPresent(this.installDir)) {
+      return new BridgeError(
+        `${BRAND.productName} is not installed in any browser on this machine yet. ` +
+          "Ask the user to install it from Workmate → Settings → Browser.",
+        undefined,
+        undefined,
+        "WEBMATE_NOT_INSTALLED",
+      );
+    }
+    return new BridgeError(
+      `No ${BRAND.extensionName} is connected. ` +
+        (this.pairingRequired ? pairedConnectInstructions() : connectInstructions()),
+      undefined,
+      undefined,
+      "WEBMATE_NOT_CONNECTED",
+    );
   }
 
   /** Resolve once the extension has connected and completed its handshake. */
@@ -444,7 +703,7 @@ export class WebMateBridge {
     // with "no extension is connected" — that wording sends the user off to
     // check browser settings that are already correct.
     if (this.unavailableReason !== null) {
-      throw new BridgeError(this.unavailableReason);
+      throw new BridgeError(this.unavailableReason, undefined, undefined, "WEBMATE_PORT_IN_USE");
     }
 
     // The extension dials us, so a command issued right after this process
@@ -456,9 +715,7 @@ export class WebMateBridge {
     }
     const socket = this.socket;
     if (!socket || !this.isConnected()) {
-      throw new BridgeError(
-        `No ${BRAND.extensionName} is connected. ${connectInstructions()}`,
-      );
+      throw await this.describeNotConnected();
     }
 
     const id = this.nextId++;
@@ -506,10 +763,12 @@ export class WebMateBridge {
       }
       this.socket = null;
       this.handshakenSocket = null;
+      this.extension = { ...NO_EXTENSION };
     }
     if (this.wss) {
       await new Promise<void>((resolve) => this.wss!.close(() => resolve()));
       this.wss = null;
     }
+    this.changed();
   }
 }

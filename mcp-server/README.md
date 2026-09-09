@@ -12,15 +12,19 @@ AgentX Workmate ──stdio──▶ agentx-webmate-mcp ──ws://127.0.0.1:173
 
 ### AgentX Workmate (recommended)
 
-The server ships in Workmate's MCP catalog:
+Workmate ships this server as one bundled file and installs the extension
+itself — see [`docs/workmate-integration.md`](../docs/workmate-integration.md)
+for the whole contract (folder layout, `workmate.json`, `pairing.json`,
+`state.json`, command files, the signed `release.json` feed). From the CLI:
 
 ```bash
-agentx mcp install official/webmate
+agentx mcp install webmate
 ```
 
-This clones the WebMate repository into `~/.agentx/mcp-installs/webmate`, builds
-`mcp-server/`, and writes an `mcp_servers.webmate` block into
-`~/.agentx/config.yaml`. Start a new session (or run `/reload-mcp`) and the six
+This copies the bundled server into `~/.agentx/mcp-installs/webmate/` (no git,
+no npm — the catalog entry is `install.type: bundled`) and writes an
+`mcp_servers.webmate` block into the profile's `config.yaml`, launched with the
+Node.js Workmate manages. Start a new session (or run `/reload-mcp`) and the six
 tools appear as `mcp__webmate__webmate_run`, `mcp__webmate__webmate_extract`, and
 so on. The bundled `webmate` skill teaches the agent when to reach for them
 instead of its own headless `browser_*` tools.
@@ -259,14 +263,45 @@ AgentX WebMate exposes roughly fifty primitives internally — `click_ax`, `type
 | `WEBMATE_COMMAND_TIMEOUT_MS` | `30000` | Per-command reply timeout. |
 | `WEBMATE_RUN_TIMEOUT_MS` | `300000` | Default ceiling for `webmate_run` polling. |
 | `WEBMATE_POLL_INTERVAL_MS` | `1000` | Status poll interval. |
+| `WEBMATE_DIR` | `<AgentX root>/webmate` | Workmate's machine-level WebMate folder (extension, pairing, state, commands). Default: `AGENTX_HOME` with `accounts/<slug>` / `profiles/<name>` stripped, else `~/.agentx` (`%LOCALAPPDATA%\agentx` on Windows). |
+| `WEBMATE_PAIRING_FILE` | `<dir>/pairing.json` | Pairing token written by Workmate. Present ⇒ hello must be v3 and carry the token. |
+| `WEBMATE_STATE_FILE` | `<dir>/state.json` | Bridge state published for Workmate; `off` disables the writer. |
+| `WEBMATE_COMMANDS_DIR` | `<dir>/commands` | Command files from Workmate (`prepare_update`, `reload`, `resume`); `off` disables the watcher. |
+| `WEBMATE_PREPARE_UPDATE_TIMEOUT_MS` | `60000` | How long `prepare_update` waits for in-flight runs to finish. |
 
 Each variable also accepts the upstream `WEBBRAIN_*` spelling; when both are
 set, `WEBMATE_*` wins.
 
+## Workmate pairing, state and commands
+
+When AgentX Workmate installed the extension, `<dir>/pairing.json` exists and
+the bridge runs **paired**: every `hello` must speak protocol v3 and carry the
+token Workmate also wrote into the extension's `workmate.json`; the server
+echoes the token in `hello_ack` so the extension can tell a Workmate server
+from any other local process on the port. Without the file the server behaves
+exactly as before (v2 hellos, no token) — that is a developer checkout or a
+store install. A present but unreadable file rejects every handshake rather
+than falling back to unauthenticated mode.
+
+The server publishes `state.json` (`listening`, `connected`, `browser`,
+`extensionVersion`, `installType`, `signedIn`, `protocolVersion`, `error`,
+`lastCommand`) through a temp file and rename on every change, and consumes
+`commands/<uuid>.json` files: `prepare_update` asks the extension to drain
+(no new runs) and polls until it reports idle, `reload` restarts it, `resume`
+lifts a drain. Only the process that holds the port writes or consumes these;
+the loser of a port conflict stays silent.
+
+Every failing tool result starts with a structured code and repeats it as
+`structuredContent.code`, so Workmate can react without parsing prose:
+`WEBMATE_NOT_INSTALLED`, `WEBMATE_NOT_CONNECTED`, `WEBMATE_OUTDATED`,
+`WEBMATE_NOT_SIGNED_IN`, `WEBMATE_PORT_IN_USE` (`WEBMATE_DISABLED` is raised by
+Workmate itself). `webmate_connection` additionally reports the extension's
+version, browser, install type and sign-in state.
+
 ## Security notes
 
 - The listener binds `127.0.0.1` only. Anything that can reach this port can drive your signed-in browser — never expose it to a network or a container bridge.
-- Connections from HTTP(S) pages and other non-extension browser origins are rejected before they can replace the extension socket. Accepted connections must also present the extension's `hello` frame with `client: "webbrain-extension"` (the wire identifier inherited from upstream; the brand build keeps protocol tokens unchanged); anything else is closed. This is **not** authentication. The shipping extension sends no shared secret, so a local process could impersonate it. Treat the port as trusted-local, and see [`docs/security-model.md`](../docs/security-model.md).
+- Connections from HTTP(S) pages and other non-extension browser origins are rejected before they can replace the extension socket. Accepted connections must also present the extension's `hello` frame with `client: "webbrain-extension"` (the wire identifier inherited from upstream; the brand build keeps protocol tokens unchanged); anything else is closed. On its own this is **not** authentication: a developer or store install sends no shared secret, so a local process could impersonate it, and the port must be treated as trusted-local — see [`docs/security-model.md`](../docs/security-model.md). A Workmate install adds the pairing token in both directions (`hello.token`, `hello_ack.token`), which closes that gap for the extension folder Workmate manages.
 - A `webmate_run` timeout does **not** abort the run. A task that already submitted a form should not be silently killed — the browser keeps going and `webmate_status` picks it back up.
 - `allow_api_mutations` lifts the UI-first rule and is off by default. It is accepted only with `mode: "act"`; Ask runs remain read-only. The UI path is visible and stoppable; direct API mutations are neither.
 - Act-mode permission requests pause the run as `needs_user_input` and are answered with exactly `once`, `always` or `deny`. The extension's gate fails closed — any other text is a denial — so `webmate_respond` refuses non-matching answers before they reach the browser. `always` persists a grant for that host; prefer `once` unless the user asked for more.
@@ -277,7 +312,7 @@ set, `WEBMATE_*` wins.
 npm test
 ```
 
-The suite stands up the real listener and connects a fake extension speaking the exact frames `src/chrome/src/offscreen/cloud-bridge.js` emits — handshake, id correlation under concurrency, error propagation, disconnect mid-command, and the poll/timeout/clarify paths — then spawns the built server over stdio and checks the advertised catalog. If the extension's wire format changes, these fail. That is intentional.
+The suite stands up the real listener and connects a fake extension speaking the exact frames `src/chrome/src/offscreen/cloud-bridge.js` emits — handshake (v2 and paired v3, `hello_ack`, token and protocol refusals), id correlation under concurrency, error propagation, disconnect mid-command, the poll/timeout/clarify paths, `state.json` and the command files — then spawns the built server over stdio and checks the advertised catalog and structured error codes. If the extension's wire format changes, these fail. That is intentional.
 
 ## License
 

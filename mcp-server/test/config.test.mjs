@@ -151,3 +151,36 @@ test("upstream WEBBRAIN_* names still work, and WEBMATE_* wins when both are set
     /WEBBRAIN_BRIDGE_PORT must be an integer/,
   );
 });
+
+test("the WebMate directory anchors at the install root, above account and profile layers", async () => {
+  const { resolveWebmateDir, stripHomeScopingSegments, platformAgentxRoot } = await loadConfig(CLEAN);
+  const sep = (p) => p.split("\\").join("/");
+
+  assert.equal(sep(stripHomeScopingSegments("/Users/k/.agentx")), "/Users/k/.agentx");
+  assert.equal(sep(stripHomeScopingSegments("/Users/k/.agentx/accounts/kien")), "/Users/k/.agentx");
+  assert.equal(sep(stripHomeScopingSegments("/Users/k/.agentx/profiles/work")), "/Users/k/.agentx");
+  assert.equal(sep(stripHomeScopingSegments("/Users/k/.agentx/accounts/kien/profiles/work")), "/Users/k/.agentx");
+
+  // Explicit wins, then AGENTX_HOME (per-account) climbs to the root.
+  assert.equal(sep(resolveWebmateDir({ WEBMATE_DIR: "/tmp/wm" })), "/tmp/wm");
+  assert.equal(sep(resolveWebmateDir({ AGENTX_HOME: "/Users/k/.agentx/accounts/kien" })), "/Users/k/.agentx/webmate");
+  // Platform default mirrors hermes_constants.py: ~/.agentx vs %LOCALAPPDATA%\\agentx.
+  assert.equal(sep(resolveWebmateDir({}, "darwin", "/Users/k")), "/Users/k/.agentx/webmate");
+  assert.equal(sep(platformAgentxRoot({ LOCALAPPDATA: "C:\\Users\\k\\AppData\\Local" }, "win32", "C:\\Users\\k")), "C:/Users/k/AppData/Local/agentx");
+  assert.equal(sep(platformAgentxRoot({}, "win32", "C:\\Users\\k")), "C:/Users/k/AppData/Local/agentx");
+});
+
+test("state, pairing and commands paths follow the WebMate directory and can be switched off", async () => {
+  const on = await loadConfig({ ...CLEAN, WEBMATE_DIR: "/tmp/wm-on", WEBMATE_STATE_FILE: undefined, WEBMATE_PAIRING_FILE: undefined, WEBMATE_COMMANDS_DIR: undefined });
+  const norm = (p) => (p == null ? p : p.split("\\").join("/"));
+  assert.equal(norm(on.config.webmateDir), "/tmp/wm-on");
+  assert.equal(norm(on.config.pairingFile), "/tmp/wm-on/pairing.json");
+  assert.equal(norm(on.config.stateFile), "/tmp/wm-on/state.json");
+  assert.equal(norm(on.config.commandsDir), "/tmp/wm-on/commands");
+  assert.equal(norm(on.config.installDir), "/tmp/wm-on/AgentX WebMate");
+
+  const off = await loadConfig({ ...CLEAN, WEBMATE_DIR: "/tmp/wm-off", WEBMATE_STATE_FILE: "off", WEBMATE_COMMANDS_DIR: "off", WEBMATE_PAIRING_FILE: "/etc/pairing.json" });
+  assert.equal(off.config.stateFile, null);
+  assert.equal(off.config.commandsDir, null);
+  assert.equal(norm(off.config.pairingFile), "/etc/pairing.json");
+});

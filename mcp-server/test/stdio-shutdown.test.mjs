@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -38,9 +41,10 @@ function waitForText(stream, pattern, timeoutMs) {
 
 test("closing MCP stdin stops the bridge process", async () => {
   const port = await freePort();
+  const webmateDir = mkdtempSync(path.join(tmpdir(), "webmate-stdio-"));
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: packageDir,
-    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port), WEBMATE_DIR: webmateDir },
     stdio: ["pipe", "ignore", "pipe"],
   });
 
@@ -59,5 +63,6 @@ test("closing MCP stdin stops the bridge process", async () => {
     assert.equal(code, 0);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill();
+    rmSync(webmateDir, { recursive: true, force: true });
   }
 });

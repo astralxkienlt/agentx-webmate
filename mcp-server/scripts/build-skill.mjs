@@ -84,6 +84,8 @@ export async function buildSkill() {
         toolPrefix: brand.toolPrefix,
         bundleFile: brand.bundleFile,
         bridgePort: 17374,
+        extensionId: brand.extensionId,
+        installDirName: brand.installDirName,
         version,
       },
       null,

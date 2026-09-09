@@ -25,7 +25,24 @@ test("AgentX WebMate derives every name from product.* alone", () => {
     skillName: "webmate",
     packageName: "agentx-webmate-mcp",
     bundleFile: "agentx-webmate-mcp.mjs",
+    installDirName: "AgentX WebMate",
+    extensionId: "",
+    minWorkmate: "",
+    minProtocol: 3,
+    releaseFeedUrl: "",
   });
+});
+
+test("the Workmate install contract comes from product.extensionId and the workmate key", () => {
+  const brand = deriveBrand({
+    product: { name: "AgentX WebMate", shortName: "WebMate", extensionId: "pfadeibckkgklmmjghiikadphihbpape" },
+    workmate: { installDirName: "AgentX WebMate", minWorkmate: "0.21.0", minProtocol: 3, releaseFeedUrl: "https://x/release.json" },
+  });
+  assert.equal(brand.extensionId, "pfadeibckkgklmmjghiikadphihbpape");
+  assert.equal(brand.installDirName, "AgentX WebMate");
+  assert.equal(brand.minWorkmate, "0.21.0");
+  assert.equal(brand.minProtocol, 3);
+  assert.equal(brand.releaseFeedUrl, "https://x/release.json");
 });
 
 test("netMind overrides only what it needs under the mcp key", () => {

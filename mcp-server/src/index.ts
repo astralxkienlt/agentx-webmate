@@ -33,9 +33,14 @@ import {
   WebMateBridge,
   connectInstructions,
   describePortConflict,
+  pairedConnectInstructions,
   type CloudSnapshot,
 } from "./bridge.js";
+import { CommandWatcher, type CommandOutcome, type WorkmateCommand } from "./commands.js";
 import { bridgeUrl, config } from "./config.js";
+import type { WebmateErrorCode } from "./errors.js";
+import { StateFile } from "./state.js";
+import { SERVER_VERSION } from "./version.js";
 import {
   PERMISSION_MODES,
   abort,
@@ -47,7 +52,7 @@ import {
 } from "./runs.js";
 
 export const SERVER_NAME = BRAND.serverName;
-export const SERVER_VERSION = "1.0.0";
+export { SERVER_VERSION };
 
 const PRODUCT = BRAND.productName;
 const T = {
@@ -60,6 +65,89 @@ const T = {
 };
 
 const bridge = new WebMateBridge();
+
+// state.json for Workmate. Seeded with facts that never change for this
+// process; everything else is copied from the bridge on each change.
+const state = new StateFile(
+  config.stateFile,
+  { pid: process.pid, port: config.bridgePort, serverVersion: SERVER_VERSION },
+  (...args) => console.error(`[${SERVER_NAME}-mcp]`, ...args),
+);
+bridge.onChange(() => {
+  const snapshot = bridge.snapshot();
+  // Only the process that holds the port publishes. The loser of a port
+  // conflict never reaches `listening`, and the goodbye at shutdown is
+  // written explicitly by shutdown() itself.
+  if (!snapshot.listening) return;
+  state.update({
+    listening: snapshot.listening,
+    connected: snapshot.connected,
+    pairingRequired: snapshot.pairingRequired,
+    browser: snapshot.browser,
+    extensionVersion: snapshot.version,
+    installType: snapshot.installType,
+    signedIn: snapshot.signedIn,
+    protocolVersion: snapshot.protocolVersion,
+    lastHelloAt: snapshot.lastHelloAt,
+    error: snapshot.error,
+  });
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Run one Workmate command file. `prepare_update` keeps asking the extension
+ * to drain until it reports no busy runs (or the deadline passes) so Workmate
+ * can swap the folder without cutting a task off; `reload` restarts the
+ * extension; `resume` lifts a drain when an update is called off.
+ */
+async function handleWorkmateCommand(command: WorkmateCommand): Promise<CommandOutcome> {
+  if (!bridge.isConnected()) {
+    // Nothing to drain or reload — Workmate treats this as "browser closed,
+    // swap the folder right away".
+    return { ok: false, busy: 0, error: bridge.notConnectedError().webmateCode ?? "WEBMATE_NOT_CONNECTED" };
+  }
+  if (command.action === "reload") {
+    await bridge.request("workmate_reload", {}, 10_000);
+    return { ok: true };
+  }
+  if (command.action === "resume") {
+    const result = await bridge.request<{ busy?: number }>("workmate_prepare_update", { resume: true }, 10_000);
+    return { ok: true, busy: Number(result?.busy ?? 0) };
+  }
+  const deadline = Date.now() + config.prepareUpdateTimeoutMs;
+  let busy = Number.POSITIVE_INFINITY;
+  for (;;) {
+    const result = await bridge.request<{ busy?: number }>("workmate_prepare_update", {}, 10_000);
+    busy = Number(result?.busy ?? 0);
+    if (busy <= 0) return { ok: true, busy: 0 };
+    if (Date.now() >= deadline) {
+      return { ok: false, busy, error: `still ${busy} run(s) busy after ${config.prepareUpdateTimeoutMs}ms` };
+    }
+    await sleep(Math.min(1_000, Math.max(0, deadline - Date.now())));
+  }
+}
+
+const commands = new CommandWatcher({
+  dir: config.commandsDir,
+  handle: handleWorkmateCommand,
+  onResult: (command, outcome, timing) => {
+    state.update({
+      lastCommand: {
+        id: command.id,
+        action: command.action,
+        ok: outcome.ok,
+        busy: typeof outcome.busy === "number" ? outcome.busy : undefined,
+        error: outcome.error ?? null,
+        ...timing,
+      },
+    });
+    console.error(
+      `[${SERVER_NAME}-mcp] command ${command.action} (${command.id}): ${outcome.ok ? "ok" : `failed — ${outcome.error}`}`,
+    );
+  },
+  log: (...args) => console.error(`[${SERVER_NAME}-mcp]`, ...args),
+});
 
 const server = new McpServer(
   {
@@ -120,13 +208,33 @@ const permissionModeParam = z
 type TextResult = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 };
 
-const ok = (text: string): TextResult => ({ content: [{ type: "text", text }] });
-const fail = (text: string): TextResult => ({ content: [{ type: "text", text }], isError: true });
+const ok = (text: string, structuredContent?: Record<string, unknown>): TextResult => ({
+  content: [{ type: "text", text }],
+  ...(structuredContent ? { structuredContent } : {}),
+});
+
+/**
+ * A failure. When it maps to one of the WEBMATE_* codes the code leads the
+ * text AND rides along as `structuredContent.code`, so Workmate can match it
+ * without parsing prose and the agent still reads a full sentence.
+ */
+const fail = (text: string, code?: WebmateErrorCode): TextResult => ({
+  content: [{ type: "text", text: code ? `${code}: ${text}` : text }],
+  isError: true,
+  ...(code ? { structuredContent: { code, message: text } } : {}),
+});
 
 function toolError(error: unknown): TextResult {
-  if (error instanceof BridgeError) return fail(error.message);
+  if (error instanceof BridgeError) {
+    if (error.webmateCode) return fail(error.message, error.webmateCode);
+    // 428 is the extension refusing to start because it has no usable model
+    // provider. In this brand that means nobody is signed in to the panel.
+    if (error.status === 428) return fail(error.message, "WEBMATE_NOT_SIGNED_IN");
+    return fail(error.message);
+  }
   return fail(error instanceof Error ? error.message : String(error));
 }
 
@@ -497,7 +605,7 @@ server.registerTool(
     // answer. Report it before the generic "check your browser settings"
     // text below, which would send the user to settings that are already fine.
     const unavailable = bridge.unavailable();
-    if (unavailable) return fail(unavailable);
+    if (unavailable) return fail(unavailable, "WEBMATE_PORT_IN_USE");
 
     // Same grace the command path uses, so this diagnostic never reports
     // "not connected" for a browser that is one backoff tick from attaching.
@@ -505,27 +613,73 @@ server.registerTool(
       await bridge.waitForExtension(config.connectProbeMs);
     }
     if (bridge.isConnected()) {
-      const caps = bridge.capabilities();
-      return ok(
-        `Connected. Listening on ${bridgeUrl()}.` +
-          (caps.length ? `\nExtension capabilities: ${caps.join(", ")}` : ""),
-      );
+      const info = bridge.info();
+      const facts = [
+        `${PRODUCT} ${info.version ?? "(version unknown)"}`,
+        info.browser ?? "unknown browser",
+        info.installType === "workmate"
+          ? "installed by Workmate"
+          : info.installType === "dev"
+            ? "developer/store install"
+            : "install type unknown",
+        `bridge protocol v${info.protocolVersion ?? "?"}`,
+        info.signedIn === true ? "signed in" : info.signedIn === false ? "NOT signed in" : "sign-in state unknown",
+      ];
+      const lines = [
+        `Connected. Listening on ${bridgeUrl()}.`,
+        `Extension: ${facts.join(" · ")}`,
+      ];
+      if (info.capabilities.length) lines.push(`Extension capabilities: ${info.capabilities.join(", ")}`);
+      let code: WebmateErrorCode | null = null;
+      if (info.signedIn === false) {
+        code = "WEBMATE_NOT_SIGNED_IN";
+        lines.push(
+          "",
+          `${code}: nobody is signed in to ${PRODUCT}, so it has no model to run with. ` +
+            `Ask the user to open the ${PRODUCT} side panel in that browser and sign in, then retry.`,
+        );
+      }
+      return ok(lines.join("\n"), {
+        connected: true,
+        code,
+        version: info.version,
+        browser: info.browser,
+        installType: info.installType,
+        protocolVersion: info.protocolVersion,
+        signedIn: info.signedIn,
+        serverVersion: SERVER_VERSION,
+        url: bridgeUrl(),
+      });
     }
-    return ok(
-      `Not connected. Listening on ${bridgeUrl()}, but no extension has dialled in.\n\n` +
-        `To connect: open a Chromium browser (Chrome, Edge, Brave) with the ${BRAND.extensionName} ` +
-        `installed. ${connectInstructions()}\n` +
-        "The extension holds one bridge socket at a time, so this cannot run at the same " +
-        "time as the Cloud bridge on port 17373 or the LM Studio plugin on 17375.\n\n" +
-        "Firefox cannot host the bridge — that build has no offscreen document. If the " +
-        "user is on Firefox, say so rather than suggesting settings changes.",
-    );
+    const notConnected = await bridge.describeNotConnected();
+    const code = notConnected.webmateCode ?? "WEBMATE_NOT_CONNECTED";
+    const text =
+      code === "WEBMATE_NOT_INSTALLED"
+        ? `${code}: ${notConnected.message}\nListening on ${bridgeUrl()}; nothing can dial in until the ` +
+          "extension is installed into a browser."
+        : `${code}: Not connected. Listening on ${bridgeUrl()}, but no extension has dialled in.\n\n` +
+          (bridge.isPaired()
+            ? `To connect: ${pairedConnectInstructions()}\n`
+            : `To connect: open a Chromium browser (Chrome, Edge, Brave) with the ${BRAND.extensionName} ` +
+              `installed. ${connectInstructions()}\n`) +
+          "The extension holds one bridge socket at a time, so this cannot run at the same " +
+          "time as the Cloud bridge on port 17373 or the LM Studio plugin on 17375.\n\n" +
+          "Firefox cannot host the bridge — that build has no offscreen document. If the " +
+          "user is on Firefox, say so rather than suggesting settings changes.";
+    return ok(text, { connected: false, code, serverVersion: SERVER_VERSION, url: bridgeUrl() });
   },
 );
+
+// Whether this process owns the port — and with it the right to write
+// state.json and consume command files. The loser of a port conflict does
+// neither: the winner's files are the truthful ones.
+let ownsBridge = false;
 
 async function main(): Promise<void> {
   try {
     await bridge.start();
+    ownsBridge = true;
+    await commands.start();
 
     // Give an already-open extension a bounded chance to reconnect before the
     // stdio server advertises browser tools. If this promise is discarded, the
@@ -552,9 +706,14 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  commands.stop();
   await bridge.stop().catch((error) => {
     console.error(`[${SERVER_NAME}-mcp] shutdown error:`, error);
   });
+  if (ownsBridge) {
+    state.update({ listening: false, connected: false });
+    await state.flush();
+  }
   process.exit(0);
 }
 

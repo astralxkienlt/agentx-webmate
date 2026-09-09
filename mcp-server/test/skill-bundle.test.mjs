@@ -44,7 +44,7 @@ test("the single-file skill bundle serves the same catalog as the tsc build", as
     command: process.execPath,
     args: [outfile],
     cwd: dir, // no node_modules anywhere near: the bundle must be self-contained
-    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port), WEBMATE_DIR: dir },
     stderr: "pipe",
   });
   const client = new Client({ name: "skill-bundle-test", version: "1.0.0" });
@@ -58,6 +58,10 @@ test("the single-file skill bundle serves the same catalog as the tsc build", as
     );
     const result = await client.callTool({ name: tool("connection"), arguments: {} });
     assert.match(result.content.map((c) => c.text).join("\n"), new RegExp(`ws://127\\.0\\.0\\.1:${port}/extension`));
+    // Nothing dialled in: the diagnostic carries the structured code both ways.
+    assert.match(result.content[0].text, /^WEBMATE_NOT_CONNECTED: /);
+    assert.equal(result.structuredContent?.code, "WEBMATE_NOT_CONNECTED");
+    assert.equal(result.structuredContent?.connected, false);
   } finally {
     await client.close().catch(() => {});
     rmSync(dir, { recursive: true, force: true });

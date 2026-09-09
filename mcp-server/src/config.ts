@@ -14,6 +14,9 @@
  * fighting over one listener.
  */
 
+import { homedir } from "node:os";
+import path from "node:path";
+
 import { BRAND } from "./brand.generated.js";
 
 const PREFIXES = [...new Set([BRAND.envPrefix, "WEBMATE_", "WEBBRAIN_"])];
@@ -22,10 +25,10 @@ const PREFIXES = [...new Set([BRAND.envPrefix, "WEBMATE_", "WEBBRAIN_"])];
  * Resolve `<PREFIX><suffix>` across the accepted prefixes. Returns the variable
  * name that was actually set so error messages point at the right spelling.
  */
-function readEnv(suffix: string): { name: string; raw: string } | null {
+function readEnv(suffix: string, env: NodeJS.ProcessEnv = process.env): { name: string; raw: string } | null {
   for (const prefix of PREFIXES) {
     const name = `${prefix}${suffix}`;
-    const raw = process.env[name];
+    const raw = env[name];
     if (raw) return { name, raw };
   }
   return null;
@@ -84,6 +87,74 @@ function stringFromEnv(suffix: string, fallback: string): string {
   return readEnv(suffix)?.raw || fallback;
 }
 
+/**
+ * A file/dir setting that Workmate can point elsewhere, or switch off with
+ * the literal `off` (used by tests that must not touch the real profile).
+ */
+function optionalPathFromEnv(suffix: string, fallback: string): string | null {
+  const found = readEnv(suffix);
+  if (!found) return fallback;
+  const raw = found.raw.trim();
+  if (!raw || raw.toLowerCase() === "off") return null;
+  return path.resolve(raw);
+}
+
+/**
+ * Root of the AgentX install on this platform, mirroring
+ * `_get_platform_default_hermes_home()` in Workmate's hermes_constants.py:
+ * `~/.agentx` on POSIX, `%LOCALAPPDATA%\agentx` on Windows.
+ */
+export function platformAgentxRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): string {
+  if (platform === "win32") {
+    const local = (env.LOCALAPPDATA || "").trim();
+    if (local) return path.join(local, "agentx");
+    return path.join(home, "AppData", "Local", "agentx");
+  }
+  return path.join(home, ".agentx");
+}
+
+/**
+ * Climb out of Workmate's `accounts/<slug>` and `profiles/<name>` layers.
+ * AGENTX_HOME as passed to a gateway is per account; the extension folder is
+ * per machine, so it anchors at the install root above those layers. Mirrors
+ * `_strip_home_scoping_segments()` in hermes_constants.py.
+ */
+export function stripHomeScopingSegments(home: string, pathModule: typeof path = path): string {
+  let current = pathModule.resolve(home);
+  if (pathModule.basename(pathModule.dirname(current)) === "profiles") {
+    current = pathModule.dirname(pathModule.dirname(current));
+  }
+  if (pathModule.basename(pathModule.dirname(current)) === "accounts") {
+    current = pathModule.dirname(pathModule.dirname(current));
+  }
+  return current;
+}
+
+/**
+ * Where Workmate keeps everything WebMate-related on this machine:
+ * `<root>/webmate` with the extension folder, pairing.json, state.json and the
+ * commands directory inside. Resolution: WEBMATE_DIR (Workmate sets it when
+ * it registers this server) → AGENTX_HOME stripped of account/profile layers
+ * → the platform default root.
+ */
+export function resolveWebmateDir(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): string {
+  const explicit = readEnv("DIR", env);
+  if (explicit) return path.resolve(explicit.raw.trim());
+  const agentxHome = (env.AGENTX_HOME || "").trim();
+  const root = agentxHome ? stripHomeScopingSegments(agentxHome) : platformAgentxRoot(env, platform, home);
+  return path.join(root, "webmate");
+}
+
+const webmateDir = resolveWebmateDir();
+
 export const config = {
   /** Port this process listens on for the extension's outbound bridge socket. */
   bridgePort: portFromEnv("BRIDGE_PORT", 17374),
@@ -137,6 +208,27 @@ export const config = {
    * Set to 0 to disable.
    */
   heartbeatIntervalMs: optionalDurationFromEnv("HEARTBEAT_INTERVAL_MS", 15_000),
+
+  /** Machine-level WebMate directory Workmate owns (see resolveWebmateDir). */
+  webmateDir,
+
+  /** Workmate pairing token; absent file = unauthenticated dev mode. */
+  pairingFile: optionalPathFromEnv("PAIRING_FILE", path.join(webmateDir, "pairing.json")),
+
+  /** Bridge state published for Workmate; `off` disables the writer. */
+  stateFile: optionalPathFromEnv("STATE_FILE", path.join(webmateDir, "state.json")),
+
+  /** Command files from Workmate (prepare_update / reload); `off` disables the watcher. */
+  commandsDir: optionalPathFromEnv("COMMANDS_DIR", path.join(webmateDir, "commands")),
+
+  /** The unpacked extension folder Workmate points the browser at. */
+  installDir: path.join(webmateDir, BRAND.installDirName),
+
+  /**
+   * How long `prepare_update` waits for in-flight runs to finish before
+   * reporting that the browser is still busy.
+   */
+  prepareUpdateTimeoutMs: durationFromEnv("PREPARE_UPDATE_TIMEOUT_MS", 60_000),
 } as const;
 
 /** The URL the user must paste into Settings → General → Advanced → Cloud bridge. */

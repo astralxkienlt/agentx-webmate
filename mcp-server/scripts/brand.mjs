@@ -37,6 +37,7 @@ export function deriveBrand(config) {
   if (!toolPrefix) throw new Error("brand: cannot derive a tool prefix from product.shortName");
   const serverName = mcp.serverName || slug;
   const productName = product.name || shortName;
+  const workmate = config?.workmate || {};
   return {
     productName,
     // "the AgentX WebMate extension" but "the netMind Extension" — never "Extension extension".
@@ -50,6 +51,14 @@ export function deriveBrand(config) {
     skillName: mcp.skillName || toolPrefix,
     packageName: mcp.packageName || `${slug}-mcp`,
     bundleFile: `${serverName}-mcp.mjs`,
+    // Workmate install contract (brand.config.json "workmate" + product.extensionId):
+    // the folder name the browser is pointed at, the fixed extension ID Workmate
+    // looks for in browser profiles, and the compatibility floor release.json carries.
+    installDirName: workmate.installDirName || productName,
+    extensionId: product.extensionId || "",
+    minWorkmate: workmate.minWorkmate || "",
+    minProtocol: Number.isInteger(workmate.minProtocol) ? workmate.minProtocol : 3,
+    releaseFeedUrl: workmate.releaseFeedUrl || "",
   };
 }
 

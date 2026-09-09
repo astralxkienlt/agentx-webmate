@@ -12,6 +12,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createInterface } from "node:readline";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -105,9 +108,12 @@ test("the conflict message names the port and how to get out of it", async () =>
 test("the server still serves its tools when the port is taken", async () => {
   const port = await freePort();
   const squatter = await occupy(port);
+  // A throwaway WebMate dir: the server must never write state.json into the
+  // developer's real profile from a test.
+  const webmateDir = mkdtempSync(path.join(tmpdir(), "webmate-port-conflict-"));
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: packageDir,
-    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port), WEBMATE_DIR: webmateDir },
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -159,6 +165,9 @@ test("the server still serves its tools when the port is taken", async () => {
     const text = probe.result.content[0].text;
     assert.match(text, new RegExp(`Port ${port} is already in use`));
     assert.equal(probe.result.isError, true);
+    // Structured code for Workmate, in the text and beside it.
+    assert.match(text, /^WEBMATE_PORT_IN_USE: /);
+    assert.equal(probe.result.structuredContent?.code, "WEBMATE_PORT_IN_USE");
 
     // And a real command says the same thing rather than blaming the browser.
     const run = await call("tools/call", {
@@ -170,5 +179,6 @@ test("the server still serves its tools when the port is taken", async () => {
     child.stdin.end();
     squatter.close();
     if (child.exitCode === null && child.signalCode === null) child.kill();
+    rmSync(webmateDir, { recursive: true, force: true });
   }
 });
