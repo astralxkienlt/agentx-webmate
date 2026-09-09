@@ -21,7 +21,8 @@ import {
   signReleaseManifest,
   verifyReleaseManifest,
 } from '../scripts/release-manifest.mjs';
-import { buildReleaseManifestForZip } from '../scripts/build-zip.mjs';
+import { WORKMATE_PAIRING_FILE } from '../scripts/brand-build.mjs';
+import { assertNoPairingFile, buildReleaseManifestForZip } from '../scripts/build-zip.mjs';
 import { runCli as signReleaseCli } from '../scripts/sign-release.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,7 +56,21 @@ test('the built Chrome manifest carries the key and floor; Firefox stays untouch
   const firefox = readJson('brand-dist/firefox/manifest.json');
   assert.equal(firefox.key, undefined);
   assert.equal(firefox.minimum_chrome_version, undefined);
-  assert.ok(!fs.existsSync(path.join(ROOT, 'brand-dist/chrome/workmate.json')), 'a developer build ships no workmate.json — that file is Workmate\'s to write');
+});
+
+test('a developer pairing file in brand-dist is kept by the build and refused by build-zip', () => {
+  // The build never writes workmate.json (Workmate does), but a developer may
+  // copy theirs in to pair the dev build; the packaging step must then refuse.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webmate-pairing-guard-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'manifest.json'), '{}');
+    assert.doesNotThrow(() => assertNoPairingFile(dir, 'clean tree'));
+    fs.writeFileSync(path.join(dir, 'workmate.json'), '{"schema":1,"token":"secret"}');
+    assert.throws(() => assertNoPairingFile(dir, 'paired tree'), /workmate\.json.*never carry a pairing token/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  assert.equal(WORKMATE_PAIRING_FILE, 'workmate.json');
 });
 
 test('the built offscreen bridge announces protocol v3 and the Workmate hooks', () => {

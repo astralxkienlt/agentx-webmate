@@ -30,7 +30,7 @@
  * a new-looking filename around an old manifest.
  */
 
-import { readFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -47,6 +47,22 @@ const targets = [
   { packageName: 'edge', sourceDir: 'chrome' },
   { packageName: 'firefox', sourceDir: 'firefox' },
 ];
+
+/**
+ * A developer may drop their machine's workmate.json (pairing token, socket
+ * URL) into brand-dist/chrome to pair the dev build with their Workmate; the
+ * brand build preserves it. It must never be archived: a release zip carrying
+ * one machine's token would be installed on every user's machine.
+ */
+export function assertNoPairingFile(brandedDir, label) {
+  const pairing = path.join(brandedDir, 'workmate.json');
+  if (existsSync(pairing)) {
+    throw new Error(
+      `${label} contains workmate.json (a developer pairing file); delete it before packaging — `
+      + 'a release must never carry a pairing token.'
+    );
+  }
+}
 
 export function assertMatchingArchiveVersion(expected, actual, label) {
   if (actual !== expected) {
@@ -204,6 +220,7 @@ function runCli() {
     const brandedDir = path.join(root, 'brand-dist', sourceDir);
     const manifest = JSON.parse(readFileSync(path.join(brandedDir, 'manifest.json'), 'utf8'));
     assertMatchingArchiveVersion(version, manifest.version, `brand-dist/${sourceDir}/manifest.json version`);
+    assertNoPairingFile(brandedDir, `brand-dist/${sourceDir}`);
     for (const relativePath of STORE_REVIEWED_JAVASCRIPT_PATHS) {
       const archivePath = path.join(brandedDir, relativePath);
       assertStoreReviewableJavaScript(readFileSync(archivePath, 'utf8'), archivePath);

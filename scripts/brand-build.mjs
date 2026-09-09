@@ -117,12 +117,21 @@ async function copyTree(from, to, { skip = () => false, written = null } = {}) {
   return n;
 }
 
+// A developer pairs the brand-dist build with the Workmate on their machine by
+// copying ~/.agentx/webmate/AgentX WebMate/workmate.json into brand-dist/chrome
+// (see docs/workmate-integration.md). The build never creates that file, and
+// prune() must not delete it either — otherwise every rebuild silently
+// unpairs the dev extension. scripts/build-zip.mjs refuses to package a tree
+// that contains it, so a pairing token can never ride into a release.
+export const WORKMATE_PAIRING_FILE = 'workmate.json';
+
 // Remove files a previous build left behind (upstream deleted them, or they
 // dropped out of features.exclude), then drop the directories that emptied out.
 async function prune(outDir, written) {
   let removed = 0;
   for (const rel of await walk(outDir)) {
-    if (written.has(rel.split(path.sep).join('/'))) continue;
+    const posix = rel.split(path.sep).join('/');
+    if (written.has(posix) || posix === WORKMATE_PAIRING_FILE) continue;
     await fs.rm(path.join(outDir, rel), { force: true });
     removed++;
   }

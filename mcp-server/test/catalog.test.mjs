@@ -6,6 +6,9 @@ import test from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const { BRAND, tool } = await import("../dist/brand.generated.js");
@@ -22,12 +25,16 @@ async function freePort() {
   return port;
 }
 
+const scratchDir = mkdtempSync(join(tmpdir(), "webmate-catalog-"));
+process.on("exit", () => rmSync(scratchDir, { recursive: true, force: true }));
+
 function spawnServer(port) {
   return new StdioClientTransport({
     command: process.execPath,
     args: ["dist/index.js"],
     cwd: packageDir,
-    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port) },
+    // state.json / commands go to a scratch dir, never the developer's real profile.
+    env: { ...process.env, WEBMATE_BRIDGE_PORT: String(port), WEBMATE_DIR: scratchDir },
     stderr: "pipe",
   });
 }
