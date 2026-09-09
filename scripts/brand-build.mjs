@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { EXTENSION_ID_PATTERN, extensionIdFromPublicKey } from './extension-id.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -233,6 +234,7 @@ async function rewriteManifest(outDir, config, target) {
 
   const overrides = { ...config.manifestOverrides?.all, ...config.manifestOverrides?.[target] };
   Object.assign(manifest, overrides);
+  assertExtensionIdMatchesKey(manifest, p, target);
 
   // AgentX Skill Hub one-click install (plan Phase 4 item 4): only the hub's
   // own origin may message the extension. Firefox has no externally_connectable
@@ -247,6 +249,34 @@ async function rewriteManifest(outDir, config, target) {
 
   await writeAtomic(file, (tmp) => fs.writeFile(tmp, JSON.stringify(manifest, null, 2) + '\n'));
   return manifest;
+}
+
+// AgentX Workmate installs the Chrome build unpacked from a folder it owns and
+// recognises it in the browser profile by ID. The ID is a function of the
+// manifest `key`, and product.extensionId is what Workmate is compiled
+// against — so the two must never drift. Fail the build, not the install.
+function assertExtensionIdMatchesKey(manifest, product, target) {
+  if (!manifest.key) {
+    if (target === 'chrome' && product.extensionId) {
+      throw new Error(
+        `brand.config.json product.extensionId is set but manifestOverrides.chrome.key is missing; ` +
+          `without the key Chrome derives the ID from the install path and Workmate cannot find the extension.`
+      );
+    }
+    return;
+  }
+  const derived = extensionIdFromPublicKey(manifest.key);
+  if (!product.extensionId || !EXTENSION_ID_PATTERN.test(product.extensionId)) {
+    throw new Error(
+      `brand.config.json product.extensionId must be the 32-letter ID derived from the manifest key: ${derived}`
+    );
+  }
+  if (derived !== product.extensionId) {
+    throw new Error(
+      `brand.config.json product.extensionId (${product.extensionId}) does not match manifestOverrides.${target}.key ` +
+        `(derives to ${derived}). Regenerate one from the other; Workmate looks up the extension by this ID.`
+    );
+  }
 }
 
 const applyIcons = (outDir, written) =>

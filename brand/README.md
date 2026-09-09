@@ -170,6 +170,31 @@ Clone theo kiểu **partial + sparse** vì repo gốc nặng ~1GB:
   ```
 - Remote `upstream` đã khoá push (`DISABLED_read_only`) để không lỡ tay đẩy code thương hiệu lên repo gốc.
 
+## Khoá `key`, ID cố định và hợp đồng với AgentX Workmate
+
+Workmate cài extension này kiểu *unpacked* từ thư mục nó sở hữu
+(`~/.agentx/webmate/AgentX WebMate/`) và nhận diện nó trong profile trình duyệt bằng
+ID. ID chỉ ổn định khi manifest có `key`, nên:
+
+| Chỗ | Nội dung |
+|---|---|
+| `brand.config.json` → `manifestOverrides.chrome.key` | Khoá công khai RSA-2048 (SPKI, base64). Chỉ áp cho Chrome/Edge; Firefox không nhận. Đi kèm `minimum_chrome_version: "121"` — bản Chrome đầu tiên bỏ hộp nhắc developer mode. |
+| `brand.config.json` → `product.extensionId` | ID suy ra từ `key` (SHA-256 của SPKI, 16 byte đầu, chữ a–p). Hiện là `pfadeibckkgklmmjghiikadphihbpape`. `scripts/brand-build.mjs` **fail build** nếu hai giá trị không khớp (`scripts/extension-id.mjs`). |
+| `brand.config.json` → `workmate` | Tên thư mục cài (`installDirName`), sàn tương thích (`minWorkmate`, `minProtocol`) ghi vào `release.json`, địa chỉ feed, đường dẫn khoá công khai ký feed. |
+| `scripts/release-signing-key.pub.pem` | Khoá công khai Ed25519 xác minh `release.json`; bản sao được biên dịch vào Workmate. |
+
+**Khoá bí mật không nằm trong kho.** Trên máy người bảo trì: `~/.agentx/webmate-keys/manifest-key.pem`
+(khoá RSA của manifest — mất nó không sao, chỉ cần giữ `key` trong config; nhưng đừng để lộ) và
+`~/.agentx/webmate-keys/release-signing-key.pem` (khoá ký feed — CI đọc từ secret
+`WEBMATE_RELEASE_SIGNING_KEY`; lộ khoá này là kẻ khác ký được bản cập nhật cho mọi Workmate).
+
+Lưu ý khi dev: có `key` nghĩa là bản nạp từ `brand-dist/chrome` cũng mang ID cố định. Bản đã nạp
+theo đường dẫn trước đây (ID `pobbeoaonfpakadnbgcpijngnkhnmemg`) sau khi Reload sẽ đổi sang ID mới,
+và dữ liệu `chrome.storage` (phiên đăng nhập, cài đặt) gắn với ID cũ không đi theo.
+
+Hợp đồng đầy đủ (workmate.json, pairing.json, state.json, lệnh cập nhật, release.json ký):
+`docs/workmate-integration.md`.
+
 ## Lớp AgentX Skill Hub (Phase 4)
 
 Cài skill trình duyệt từ [AgentX Skill Hub](https://skills.astralx.com.vn) — chi tiết ở `docs/integration-webmate.md` của repo hub. Trong `brand/`:

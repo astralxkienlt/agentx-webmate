@@ -5,7 +5,9 @@
     "slug": "agentx-webmate",
     "description": "AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
     "homepage": "https://github.com/astralxkienlt/agentx-webmate",
-    "firefoxId": "agentx-webmate@example.com"
+    "firefoxId": "agentx-webmate@example.com",
+    "_extensionId_why": "Fixed Chrome/Edge extension ID, derived from manifestOverrides.chrome.key (SHA-256 of the SPKI public key, first 16 bytes, a-p). Workmate reads extensions.settings[<this id>] in the browser profile to know whether WebMate is installed; scripts/brand-build.mjs fails the build if the two ever disagree. The private half lives outside the repo (~/.agentx/webmate-keys/manifest-key.pem).",
+    "extensionId": "pfadeibckkgklmmjghiikadphihbpape"
   },
 
   "mcp": {
@@ -350,7 +352,21 @@
   },
 
   "manifestOverrides": {
-    "all": {}
+    "all": {},
+    "_chrome_why": "`key` pins the extension ID whether the folder is loaded unpacked by Workmate or packed for a store; `minimum_chrome_version` 121 is the first Chrome without the developer-mode nag bubble. Firefox (MV2, AMO) gets neither.",
+    "chrome": {
+      "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAspeiZ2IcJ5uERe4tbeiXPMFPnJum+RWgvhGTj2z1c+TpZ1rzp8Movs7jrksZfmLLgAi9LlggNBDDp99T5l0/l3Qztn5OPGVRHAsBvNdHwjLPHyH7d3cBkueBKVAd5v4+AVWUM56/kJoAWipClvJgx0mN3OiBz8ArR+YRcAIshHIJVNqLWB3KbVDjKCApdlShmt9urzZX6sg3KzH/eaA8BTjuTedDzMQxa8Qgz/zuzbNYXRt6OePaQN2AXTIFnjhNh1yMFBvZBtnDk8WryC/Uia6p3JLJYSohkNtoIVt6Kgk4N/zOQs1EqgWxBE61hM6hv5p4cXOl/y0H9qFagqX7yQIDAQAB",
+      "minimum_chrome_version": "121"
+    }
+  },
+
+  "workmate": {
+    "_why": "Contract with AgentX Workmate, which installs this extension unpacked from a folder it owns and updates it from release.json (scripts/build-zip.mjs, scripts/sign-release.mjs). installDirName is the folder Chrome is pointed at — Chrome stores the absolute path, so the name never changes between versions. minWorkmate/minProtocol are copied into release.json so an old Workmate does not install an extension it cannot talk to.",
+    "installDirName": "AgentX WebMate",
+    "minWorkmate": "0.21.0",
+    "minProtocol": 3,
+    "releaseFeedUrl": "https://raw.githubusercontent.com/astralxkienlt/agentx-webmate/main/release.json",
+    "releasePublicKeyFile": "scripts/release-signing-key.pub.pem"
   },
 
   "audit": {
