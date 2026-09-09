@@ -28,7 +28,9 @@ import { z } from "zod";
 
 import { BRAND, tool } from "./brand.generated.js";
 import {
+  type BridgeAction,
   BridgeError,
+  type ConnectionSummary,
   PortInUseError,
   WebMateBridge,
   connectInstructions,
@@ -89,6 +91,18 @@ bridge.onChange(() => {
     signedIn: snapshot.signedIn,
     protocolVersion: snapshot.protocolVersion,
     lastHelloAt: snapshot.lastHelloAt,
+    instanceId: snapshot.instanceId,
+    connections: snapshot.connections.map((connection) => ({
+      instanceId: connection.instanceId,
+      browser: connection.browser,
+      extensionVersion: connection.version,
+      installType: connection.installType,
+      signedIn: connection.signedIn,
+      protocolVersion: connection.protocolVersion,
+      lastHelloAt: connection.lastHelloAt,
+      paired: connection.paired,
+      active: connection.active,
+    })),
     error: snapshot.error,
   });
 });
@@ -102,6 +116,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * extension; `resume` lifts a drain when an update is called off.
  */
 async function handleWorkmateCommand(command: WorkmateCommand): Promise<CommandOutcome> {
+  if (command.action === "auth_hint" || command.action === "auth_open") {
+    return handleAuthCommand(command);
+  }
   if (!bridge.isConnected()) {
     // Nothing to drain or reload — Workmate treats this as "browser closed,
     // swap the folder right away".
@@ -128,6 +145,86 @@ async function handleWorkmateCommand(command: WorkmateCommand): Promise<CommandO
   }
 }
 
+/** One browser's answer to a sign-in command, as recorded in state.json. */
+interface AuthResult {
+  instanceId: string;
+  browser: string | null;
+  ok: boolean;
+  outcome: string;
+  signedIn: boolean;
+  email?: string;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * `auth_hint` (phase 4): ask every attached browser nobody is signed in to —
+ * or the one `payload.instanceId` names — to reuse its Keycloak session for
+ * `payload.loginHint`, silently. `auth_open`: open the interactive sign-in in
+ * the named browser, else the active one. A browser that answers "signed
+ * in" is marked so at once; the extension's `session` frame confirms it.
+ */
+async function handleAuthCommand(command: WorkmateCommand): Promise<CommandOutcome> {
+  const loginHint = typeof command.payload.loginHint === "string" ? command.payload.loginHint.trim() : "";
+  const only = typeof command.payload.instanceId === "string" ? command.payload.instanceId.trim() : "";
+  const all = bridge.connections();
+  let targets: ConnectionSummary[] = only ? all.filter((c) => c.instanceId === only) : all;
+  if (command.action === "auth_hint") {
+    if (command.payload.force !== true) targets = targets.filter((c) => c.signedIn !== true);
+  } else if (!only) {
+    const active = all.find((c) => c.active);
+    targets = active ? [active] : [];
+  }
+  if (!targets.length) {
+    if (!all.length) {
+      return { ok: false, busy: 0, error: bridge.notConnectedError().webmateCode ?? "WEBMATE_NOT_CONNECTED", results: [] };
+    }
+    return { ok: true, results: [], skipped: all.length, signedIn: all.some((c) => c.signedIn === true) };
+  }
+  const action: BridgeAction = command.action === "auth_hint" ? "auth_hint" : "auth_open";
+  const results: AuthResult[] = await Promise.all(
+    targets.map(async (target) => {
+      try {
+        const reply = await bridge.request<Record<string, unknown> | null>(
+          action,
+          { loginHint },
+          config.authCommandTimeoutMs,
+          { instanceId: target.instanceId, unclamped: true },
+        );
+        const signedIn = reply?.signedIn === true;
+        if (signedIn) bridge.markSignedIn(target.instanceId, true);
+        return {
+          instanceId: target.instanceId,
+          browser: target.browser,
+          ok: reply?.ok !== false,
+          outcome: typeof reply?.outcome === "string" ? reply.outcome : "",
+          signedIn,
+          ...(typeof reply?.email === "string" ? { email: reply.email } : {}),
+          ...(typeof reply?.error === "string" ? { error: reply.error } : {}),
+          ...(typeof reply?.message === "string" ? { message: reply.message } : {}),
+        };
+      } catch (error) {
+        return {
+          instanceId: target.instanceId,
+          browser: target.browser,
+          ok: false,
+          outcome: "error",
+          signedIn: false,
+          error: error instanceof BridgeError && error.code ? error.code : "error",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
+  );
+  const failed = results.find((r) => !r.ok);
+  return {
+    ok: !failed,
+    results,
+    signedIn: results.some((r) => r.signedIn),
+    error: failed ? `${failed.browser ?? failed.instanceId}: ${failed.message ?? failed.error ?? "failed"}` : null,
+  };
+}
+
 const commands = new CommandWatcher({
   dir: config.commandsDir,
   handle: handleWorkmateCommand,
@@ -139,6 +236,8 @@ const commands = new CommandWatcher({
         ok: outcome.ok,
         busy: typeof outcome.busy === "number" ? outcome.busy : undefined,
         error: outcome.error ?? null,
+        ...(Array.isArray(outcome.results) ? { results: outcome.results } : {}),
+        ...(typeof outcome.signedIn === "boolean" ? { signedIn: outcome.signedIn } : {}),
         ...timing,
       },
     });
@@ -491,6 +590,33 @@ server.registerTool(
   },
   async ({ run_id }): Promise<TextResult> => {
     try {
+      if (!run_id) {
+        // Every attached browser keeps its own runs; list them all.
+        const attached = bridge.connections();
+        const lists = await Promise.all(
+          attached.map((connection) =>
+            bridge
+              .request<{ runs?: CloudSnapshot[] }>("cloud_status", {}, undefined, { instanceId: connection.instanceId })
+              .then((result) => (result?.runs ?? []).map((run) => ({ run, browser: connection.browser })))
+              .catch(() => []),
+          ),
+        );
+        if (!attached.length) {
+          // Same wording (and connect grace) as a targeted status call.
+          await getStatus(bridge, undefined);
+        }
+        const rows = lists.flat();
+        if (!rows.length) return ok(`No ${PRODUCT} runs on record.`);
+        const several = attached.length > 1;
+        return ok(
+          rows
+            .map(
+              ({ run, browser }) =>
+                `${run.runId}  ${run.status.padEnd(16)}  ${several ? `[${browser ?? "?"}]  ` : ""}${run.task ?? ""}`,
+            )
+            .join("\n"),
+        );
+      }
       const result = await getStatus(bridge, run_id);
       const runs = (result as { runs?: CloudSnapshot[] }).runs;
       if (runs) {
@@ -614,22 +740,40 @@ server.registerTool(
     }
     if (bridge.isConnected()) {
       const info = bridge.info();
-      const facts = [
-        `${PRODUCT} ${info.version ?? "(version unknown)"}`,
-        info.browser ?? "unknown browser",
-        info.installType === "workmate"
-          ? "installed by Workmate"
-          : info.installType === "dev"
-            ? "developer/store install"
-            : "install type unknown",
-        `bridge protocol v${info.protocolVersion ?? "?"}`,
-        info.signedIn === true ? "signed in" : info.signedIn === false ? "NOT signed in" : "sign-in state unknown",
-      ];
+      const attached = bridge.connections();
+      const describe = (entry: {
+        version: string | null;
+        browser: string | null;
+        installType: "workmate" | "dev" | null;
+        protocolVersion: number | null;
+        signedIn: boolean | null;
+      }) =>
+        [
+          `${PRODUCT} ${entry.version ?? "(version unknown)"}`,
+          entry.browser ?? "unknown browser",
+          entry.installType === "workmate"
+            ? "installed by Workmate"
+            : entry.installType === "dev"
+              ? "developer/store install"
+              : "install type unknown",
+          `bridge protocol v${entry.protocolVersion ?? "?"}`,
+          entry.signedIn === true ? "signed in" : entry.signedIn === false ? "NOT signed in" : "sign-in state unknown",
+        ].join(" · ");
       const lines = [
         `Connected. Listening on ${bridgeUrl()}.`,
-        `Extension: ${facts.join(" · ")}`,
+        `Extension: ${describe(info)}`,
       ];
       if (info.capabilities.length) lines.push(`Extension capabilities: ${info.capabilities.join(", ")}`);
+      if (attached.length > 1) {
+        lines.push(
+          "",
+          `${attached.length} browsers are attached; runs go to the active one unless they name a run that lives elsewhere:`,
+          ...attached.map(
+            (connection) =>
+              `  • ${describe(connection)}${connection.active ? " · ACTIVE" : ""} (instance ${connection.instanceId})`,
+          ),
+        );
+      }
       let code: WebmateErrorCode | null = null;
       if (info.signedIn === false) {
         code = "WEBMATE_NOT_SIGNED_IN";
@@ -647,6 +791,17 @@ server.registerTool(
         installType: info.installType,
         protocolVersion: info.protocolVersion,
         signedIn: info.signedIn,
+        instanceId: info.instanceId,
+        connections: attached.map((connection) => ({
+          instanceId: connection.instanceId,
+          browser: connection.browser,
+          version: connection.version,
+          installType: connection.installType,
+          protocolVersion: connection.protocolVersion,
+          signedIn: connection.signedIn,
+          paired: connection.paired,
+          active: connection.active,
+        })),
         serverVersion: SERVER_VERSION,
         url: bridgeUrl(),
       });

@@ -50,9 +50,12 @@ async function until(predicate, { timeoutMs = 5_000, label = "condition" } = {})
   throw new Error(`timed out waiting for ${label}`);
 }
 
-test("parseCommand accepts the three actions and names unknown ones", () => {
+test("parseCommand accepts the five actions and names unknown ones", () => {
   const { command } = parseCommand(JSON.stringify({ id: "c1", action: "prepare_update" }), "/x/c1.json");
   assert.deepEqual(command, { id: "c1", action: "prepare_update", payload: {}, file: "/x/c1.json" });
+  const hint = parseCommand(JSON.stringify({ id: "c2", action: "auth_hint", payload: { loginHint: "k@x.test" } }), "/x/c2.json").command;
+  assert.deepEqual(hint, { id: "c2", action: "auth_hint", payload: { loginHint: "k@x.test" }, file: "/x/c2.json" });
+  assert.equal(parseCommand(JSON.stringify({ action: "auth_open" }), "/x/c3.json").command.action, "auth_open");
   assert.equal(parseCommand(JSON.stringify({ action: "reload" }), "/x/abc.json").command.id, "abc", "id falls back to the file stem");
   assert.match(parseCommand(JSON.stringify({ action: "format_disk" }), "/x/y.json").reason, /unknown action/);
   assert.match(parseCommand("nope", "/x/y.json").reason, /not JSON/);
@@ -141,7 +144,8 @@ test("end to end: prepare_update drains the extension, reload restarts it, state
           version: "1.0.4",
           browser: "Chrome 152",
           installType: "dev",
-          signedIn: true,
+          signedIn: false,
+          instanceId: "inst-e2e",
           capabilities: ["workmate_update_v1"],
           status: {},
         }),
@@ -151,6 +155,15 @@ test("end to end: prepare_update drains the extension, reload restarts it, state
       const msg = JSON.parse(raw.toString());
       if (!msg.action) return;
       seen.push(msg.action);
+      if (msg.action === "auth_hint") {
+        assert.equal(msg.payload.loginHint, "kien@example.test");
+        ext.send(JSON.stringify({ id: msg.id, ok: true, result: { ok: true, outcome: "signed-in", signedIn: true, email: "kien@example.test" } }));
+        return;
+      }
+      if (msg.action === "auth_open") {
+        ext.send(JSON.stringify({ id: msg.id, ok: true, result: { ok: true, outcome: "already-signed-in", signedIn: true } }));
+        return;
+      }
       if (msg.action === "workmate_prepare_update") {
         // Two polls report work in flight, then the browser is idle.
         const reply = { ok: true, draining: true, busy };
@@ -162,6 +175,29 @@ test("end to end: prepare_update drains the extension, reload restarts it, state
     });
     await until(() => readState()?.connected === true, { label: "extension connected (state.json)" });
     assert.equal(readState().browser, "Chrome 152");
+    assert.equal(readState().signedIn, false);
+    assert.equal(readState().instanceId, "inst-e2e");
+    assert.deepEqual(readState().connections.map((c) => [c.instanceId, c.browser, c.active]), [["inst-e2e", "Chrome 152", true]]);
+
+    // auth_hint reaches the browser nobody is signed in to, with the account email.
+    dropCommand(commandsDir, "cmd-hint", "auth_hint", { loginHint: "kien@example.test" });
+    await until(() => readState()?.lastCommand?.id === "cmd-hint", { label: "auth_hint outcome", timeoutMs: 10_000 });
+    const hinted = readState().lastCommand;
+    assert.equal(hinted.ok, true, `auth_hint failed: ${hinted.error}`);
+    assert.equal(hinted.signedIn, true);
+    assert.deepEqual(hinted.results.map((r) => [r.instanceId, r.outcome, r.signedIn, r.email]), [["inst-e2e", "signed-in", true, "kien@example.test"]]);
+    assert.equal(readState().signedIn, true, "the answer marks the browser signed in at once");
+
+    // A second hint has nobody left to ask.
+    dropCommand(commandsDir, "cmd-hint-2", "auth_hint", { loginHint: "kien@example.test" });
+    await until(() => readState()?.lastCommand?.id === "cmd-hint-2", { label: "second auth_hint outcome", timeoutMs: 10_000 });
+    assert.deepEqual(readState().lastCommand.results, []);
+    assert.equal(seen.filter((a) => a === "auth_hint").length, 1, "signed-in browsers are not asked again");
+
+    dropCommand(commandsDir, "cmd-open", "auth_open", { loginHint: "kien@example.test" });
+    await until(() => readState()?.lastCommand?.id === "cmd-open", { label: "auth_open outcome", timeoutMs: 10_000 });
+    assert.equal(readState().lastCommand.ok, true);
+    assert.ok(seen.includes("auth_open"), "auth_open goes to the active browser even when it is signed in");
 
     dropCommand(commandsDir, "cmd-prepare", "prepare_update");
     await until(() => readState()?.lastCommand?.id === "cmd-prepare", { label: "prepare_update outcome", timeoutMs: 10_000 });

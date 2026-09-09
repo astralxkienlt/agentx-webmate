@@ -9,7 +9,12 @@
  * up, deletes it, runs the action over the bridge, and records the outcome as
  * `lastCommand` in state.json for Workmate to correlate by id.
  *
- *   { "id": "<uuid>", "action": "prepare_update" | "reload" | "resume" }
+ *   { "id": "<uuid>", "action": "prepare_update" | "reload" | "resume"
+ *                    | "auth_hint" | "auth_open", "payload"?: { ... } }
+ *
+ * The two sign-in actions (phase 4) carry `payload.loginHint` (the account
+ * email Workmate is signed in as) and optionally `payload.instanceId` to
+ * address one attached browser; see index.ts handleWorkmateCommand.
  *
  * fs.watch is the fast path; a slow poll backs it up because directory
  * watching is best-effort on every platform this ships to.
@@ -19,7 +24,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, unlink, watch as fsWatch } from "node:fs/promises";
 import path from "node:path";
 
-export const COMMAND_ACTIONS = ["prepare_update", "reload", "resume"] as const;
+export const COMMAND_ACTIONS = ["prepare_update", "reload", "resume", "auth_hint", "auth_open"] as const;
 export type CommandAction = (typeof COMMAND_ACTIONS)[number];
 
 export interface WorkmateCommand {

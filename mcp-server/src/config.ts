@@ -229,6 +229,13 @@ export const config = {
    * reporting that the browser is still busy.
    */
   prepareUpdateTimeoutMs: durationFromEnv("PREPARE_UPDATE_TIMEOUT_MS", 60_000),
+
+  /**
+   * How long an `auth_hint` command waits for the extension's silent sign-in
+   * (a hidden prompt=none authorize plus key provisioning — several network
+   * round trips, each timeout-capped by the extension itself).
+   */
+  authCommandTimeoutMs: durationFromEnv("AUTH_TIMEOUT_MS", 90_000),
 } as const;
 
 /** The URL the user must paste into Settings → General → Advanced → Cloud bridge. */

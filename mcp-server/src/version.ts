@@ -6,12 +6,14 @@
  * `workmate.json` `minServerVersion` is compared against on the extension
  * side.
  */
-export const SERVER_VERSION = "1.1.0";
+export const SERVER_VERSION = "1.2.0";
 
 /**
  * Bridge protocol this server speaks. The extension announces its own number
  * in `hello`; v3 added the Workmate fields (version, browser, installType,
- * token, signedIn) and the `hello_ack` reply.
+ * token, signedIn) and the `hello_ack` reply. Server 1.2.0 keeps v3 and adds
+ * only optional pieces: `hello.instanceId`, the `session` frame, and the
+ * `auth_hint` / `auth_open` actions — an extension without them still pairs.
  */
 export const BRIDGE_PROTOCOL_VERSION = 3;
 

@@ -9,8 +9,9 @@
  * Wire protocol:
  *   extension -> us   {type:'hello', client, protocolVersion, capabilities, status,
  *                      // v3 adds:
- *                      version, browser, installType, token?, signedIn}
+ *                      version, browser, installType, token?, signedIn, instanceId?}
  *   us -> extension   {type:'hello_ack', serverVersion, token|null, minExtensionVersion, minProtocol}
+ *   extension -> us   {type:'session', signedIn}          (sign-in changed after the hello)
  *   us -> extension   {id, action, payload}
  *   extension -> us   {id, ok:true,  result}
  *                     {id, ok:false, error, status?}
@@ -24,6 +25,15 @@
  * so the extension can tell us apart from any other local process on the
  * port. Without the file, v2 hellos are accepted exactly as before — that is
  * the developer checkout and the store build.
+ *
+ * Several extensions at once (phase 4): every socket that completes a valid
+ * hello is kept, keyed by `hello.instanceId` (a per-profile id; a per-socket
+ * id when an older extension sends none). The person's own browser and the
+ * Workmate browser window therefore attach side by side instead of knocking
+ * each other off every few seconds. Commands go to the connection that owns
+ * the run they name, else to the "active" one — signed in first, then the
+ * most recent hello — and `webmate_connection` lists them all. A reconnect
+ * from the same instance replaces only its own previous socket.
  */
 
 import { existsSync } from "node:fs";
@@ -55,7 +65,9 @@ export type BridgeAction =
   | "cloud_respond"
   | "cloud_abort"
   | "workmate_prepare_update"
-  | "workmate_reload";
+  | "workmate_reload"
+  | "auth_hint"
+  | "auth_open";
 
 export interface CloudSnapshot {
   runId: string;
@@ -93,6 +105,8 @@ export interface ExtensionInfo {
   protocolVersion: number | null;
   lastHelloAt: string | null;
   capabilities: string[];
+  /** `hello.instanceId`, or the per-socket stand-in; null when nothing is attached. */
+  instanceId: string | null;
 }
 
 const NO_EXTENSION: ExtensionInfo = {
@@ -103,7 +117,17 @@ const NO_EXTENSION: ExtensionInfo = {
   protocolVersion: null,
   lastHelloAt: null,
   capabilities: [],
+  instanceId: null,
 };
+
+/** One attached extension, as listed by `connections()` and state.json. */
+export interface ConnectionSummary extends ExtensionInfo {
+  instanceId: string;
+  paired: boolean;
+  /** The connection commands go to when nothing names one. */
+  active: boolean;
+  acceptedAt: string;
+}
 
 /** Everything state.json needs, read after any `onChange` notification. */
 export interface BridgeSnapshot extends ExtensionInfo {
@@ -111,14 +135,36 @@ export interface BridgeSnapshot extends ExtensionInfo {
   connected: boolean;
   pairingRequired: boolean;
   error: string | null;
+  connections: ConnectionSummary[];
 }
 
 export const TERMINAL_STATUSES = new Set(["completed", "failed", "aborted"]);
+
+interface Connection {
+  key: string;
+  socket: WebSocket;
+  info: ExtensionInfo;
+  paired: boolean;
+  acceptedAt: number;
+  missedPongs: number;
+}
 
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: NodeJS.Timeout;
+  connection: Connection;
+}
+
+/** Where a command goes; see `request()`. */
+export interface RequestTarget {
+  /** A specific attached extension (`ConnectionSummary.instanceId`). */
+  instanceId?: string;
+  /**
+   * Let the call wait longer than `commandTimeoutMs`. Only for actions the
+   * extension is known to answer slowly on purpose (a silent sign-in).
+   */
+  unclamped?: boolean;
 }
 
 export class BridgeError extends Error {
@@ -242,8 +288,11 @@ export function extensionFolderPresent(installDir: string = config.installDir): 
   return existsSync(path.join(installDir, "manifest.json"));
 }
 
-/** A second connection must say hello within this long or it is dropped (the attached one is untouched). */
+/** A connection must say hello within this long or it is dropped (attached ones are untouched). */
 const CANDIDATE_HELLO_TIMEOUT_MS = 10_000;
+
+/** Run ids learned from replies, so a later status/respond/abort goes back to the same browser. */
+const MAX_REMEMBERED_RUNS = 500;
 
 export interface BridgeOptions {
   /** Injected for tests; defaults to reading config.pairingFile. */
@@ -251,27 +300,44 @@ export interface BridgeOptions {
   installDir?: string;
 }
 
+/**
+ * The connection commands go to when nothing names one: a signed-in
+ * extension beats one nobody is signed in to (a run there would only fail
+ * with "no model"), and among equals the most recent hello wins — the
+ * browser the person just opened or reloaded.
+ */
+export function pickActive(connections: Iterable<Connection>): Connection | null {
+  let best: Connection | null = null;
+  for (const candidate of connections) {
+    if (!best) {
+      best = candidate;
+      continue;
+    }
+    const bestSigned = best.info.signedIn === true ? 1 : 0;
+    const candidateSigned = candidate.info.signedIn === true ? 1 : 0;
+    if (candidateSigned > bestSigned) best = candidate;
+    else if (candidateSigned === bestSigned && candidate.acceptedAt > best.acceptedAt) best = candidate;
+  }
+  return best;
+}
+
 export class WebMateBridge {
   private wss: WebSocketServer | null = null;
-  private socket: WebSocket | null = null;
+  /** Every socket whose hello was accepted, by socket. */
+  private attached = new Map<WebSocket, Connection>();
+  /** The same connections by instance key, for `request({ instanceId })` and reconnects. */
+  private byKey = new Map<string, Connection>();
+  /** Sockets that have connected but not yet said a valid hello. */
+  private candidates = new Set<WebSocket>();
   private pending = new Map<number, Pending>();
   private nextId = 1;
-  private extension: ExtensionInfo = { ...NO_EXTENSION };
-  private handshakenSocket: WebSocket | null = null;
+  private anonymousSeq = 0;
+  private runOwners = new Map<string, string>();
   private waiters: Array<() => void> = [];
   private heartbeat: NodeJS.Timeout | null = null;
-  private missedPongs = 0;
   private unavailableReason: string | null = null;
   private lastError: string | null = null;
   private pairingRequired = false;
-  /**
-   * Connections that arrived while an accepted extension is attached. They
-   * stay here until their hello passes; only then do they take over. A second
-   * copy of the extension dialling this port (a developer checkout, a store
-   * build, the person's own browser once a Workmate window exists) can thus
-   * never knock the paired one off by merely connecting.
-   */
-  private candidates = new Set<WebSocket>();
   private listeners: Array<() => void> = [];
   private readonly readPairing: () => Promise<Pairing | null>;
   private readonly installDir: string;
@@ -301,21 +367,49 @@ export class WebMateBridge {
     }
   }
 
+  /** The connection commands default to, or null. */
+  private active(): Connection | null {
+    if (this.unavailableReason !== null) return null;
+    return pickActive(this.attached.values());
+  }
+
+  private summarize(connection: Connection, active: Connection | null): ConnectionSummary {
+    return {
+      ...connection.info,
+      capabilities: [...connection.info.capabilities],
+      instanceId: connection.key,
+      paired: connection.paired,
+      active: connection === active,
+      acceptedAt: new Date(connection.acceptedAt).toISOString(),
+    };
+  }
+
+  /** Every attached extension, the active one first. */
+  connections(): ConnectionSummary[] {
+    const active = this.active();
+    const all = [...this.attached.values()]
+      .map((connection) => this.summarize(connection, active))
+      .sort((a, b) => Number(b.active) - Number(a.active) || b.acceptedAt.localeCompare(a.acceptedAt));
+    return all;
+  }
+
   /** What state.json publishes. */
   snapshot(): BridgeSnapshot {
     return {
-      ...this.extension,
-      capabilities: [...this.extension.capabilities],
+      ...this.info(),
       listening: this.wss !== null,
       connected: this.isConnected(),
       pairingRequired: this.pairingRequired,
       error: this.unavailableReason ?? this.lastError,
+      connections: this.connections(),
     };
   }
 
-  /** Facts from the current extension's hello (empty when nothing is attached). */
+  /** Facts from the active extension's hello (empty when nothing is attached). */
   info(): ExtensionInfo {
-    return { ...this.extension, capabilities: [...this.extension.capabilities] };
+    const active = this.active();
+    if (!active) return { ...NO_EXTENSION };
+    return { ...active.info, capabilities: [...active.info.capabilities], instanceId: active.key };
   }
 
   /**
@@ -376,19 +470,10 @@ export class WebMateBridge {
         return;
       }
 
-      // An accepted extension is attached: the newcomer must earn its place
-      // with a valid hello before it can supersede it (see `candidates`).
-      if (this.socket && this.handshakenSocket === this.socket) {
-        this.adoptCandidate(socket);
-        return;
-      }
-
-      // Latest connection wins while nothing has completed a handshake. The
-      // extension reconnects with backoff after a browser restart or an
-      // offscreen-document teardown, and the stale socket is never reused.
-      this.supersedeWith(socket);
-      log(`extension connected on ${config.bridgePath}`);
-      this.wireSocket(socket);
+      // Nothing is trusted before its hello passes: a connection earns its
+      // place, and attached extensions are untouched by whatever it turns
+      // out to be (see `candidates`).
+      this.adoptCandidate(socket);
     });
 
     this.startHeartbeat();
@@ -408,7 +493,7 @@ export class WebMateBridge {
   }
 
   /**
-   * Ping the attached extension and hang up on one that stops answering.
+   * Ping every attached extension and hang up on one that stops answering.
    *
    * Without this, a browser that vanishes without closing its TCP connection
    * (killed process, crashed renderer, suspended VM) leaves `isConnected()`
@@ -422,23 +507,25 @@ export class WebMateBridge {
   private startHeartbeat(): void {
     if (this.heartbeat || config.heartbeatIntervalMs <= 0) return;
     this.heartbeat = setInterval(() => {
-      const socket = this.socket;
-      if (!socket || socket.readyState !== 1) return;
-      if (this.missedPongs >= 2) {
-        log("extension missed two heartbeats — dropping the socket");
-        this.missedPongs = 0;
-        try {
-          socket.terminate();
-        } catch {
-          /* already gone */
+      for (const connection of [...this.attached.values()]) {
+        const socket = connection.socket;
+        if (socket.readyState !== 1) continue;
+        if (connection.missedPongs >= 2) {
+          log(`${connection.info.browser ?? "an extension"} missed two heartbeats — dropping the socket`);
+          connection.missedPongs = 0;
+          try {
+            socket.terminate();
+          } catch {
+            /* already gone */
+          }
+          continue;
         }
-        return;
-      }
-      this.missedPongs += 1;
-      try {
-        socket.ping();
-      } catch {
-        /* the close handler will clean up */
+        connection.missedPongs += 1;
+        try {
+          socket.ping();
+        } catch {
+          /* the close handler will clean up */
+        }
       }
     }, config.heartbeatIntervalMs);
     // Never hold the process open on the heartbeat alone: an MCP host stops
@@ -447,8 +534,8 @@ export class WebMateBridge {
     this.heartbeat.unref?.();
   }
 
-  private handleMessage(socket: WebSocket, data: string): void {
-    if (this.socket !== socket) return;
+  private handleMessage(connection: Connection, data: string): void {
+    if (this.attached.get(connection.socket) !== connection) return;
 
     let msg: Record<string, unknown>;
     try {
@@ -458,9 +545,15 @@ export class WebMateBridge {
       return;
     }
 
-    // Handshake frame — no id, nothing to correlate.
-    if (msg.type === "hello") {
-      void this.handleHello(socket, msg);
+    // A hello on an already-accepted socket carries nothing new (the
+    // extension sends exactly one per socket); a `session` frame does.
+    if (msg.type === "hello") return;
+    if (msg.type === "session") {
+      if (typeof msg.signedIn === "boolean" && connection.info.signedIn !== msg.signedIn) {
+        connection.info.signedIn = msg.signedIn;
+        log(`${connection.info.browser ?? "extension"} is now ${msg.signedIn ? "signed in" : "signed out"}`);
+        this.changed();
+      }
       return;
     }
 
@@ -468,7 +561,7 @@ export class WebMateBridge {
     if (id == null) return;
 
     const entry = this.pending.get(id);
-    if (!entry) return;
+    if (!entry || entry.connection !== connection) return;
     this.pending.delete(id);
     clearTimeout(entry.timer);
 
@@ -480,31 +573,22 @@ export class WebMateBridge {
     entry.resolve(msg.result);
   }
 
-  /** Listeners for a socket that is (now) the current one. */
-  private wireSocket(socket: WebSocket): void {
+  /** Listeners for a socket that has (now) been accepted. */
+  private wireSocket(connection: Connection): void {
+    const socket = connection.socket;
+
     socket.on("pong", () => {
-      if (this.socket !== socket) return;
-      this.missedPongs = 0;
+      if (this.attached.get(socket) !== connection) return;
+      connection.missedPongs = 0;
     });
 
-    socket.on("message", (raw) => this.handleMessage(socket, raw.toString()));
+    socket.on("message", (raw) => this.handleMessage(connection, raw.toString()));
 
     socket.on("close", () => {
-      if (this.socket !== socket) return;
-      const wasHandshaken = this.handshakenSocket === socket;
-      this.socket = null;
-      this.handshakenSocket = null;
-      this.extension = { ...NO_EXTENSION };
-      this.missedPongs = 0;
-      log("extension disconnected");
-      this.failAllPending(
-        new BridgeError(
-          `${BRAND.extensionName} disconnected mid-command.`,
-          undefined,
-          "COMMAND_INTERRUPTED",
-        ),
-      );
-      if (wasHandshaken) this.changed();
+      if (this.attached.get(socket) !== connection) return;
+      this.dropConnection(connection, `${BRAND.extensionName} disconnected mid-command.`);
+      log(`extension disconnected (${connection.info.browser ?? connection.key})`);
+      this.changed();
     });
 
     socket.on("error", (error) => {
@@ -512,40 +596,31 @@ export class WebMateBridge {
     });
   }
 
-  /** Drop whatever socket is current (if any) and make `socket` the one we talk to. */
-  private supersedeWith(socket: WebSocket): void {
-    if (this.socket && this.socket !== socket) {
-      this.failAllPending(
-        new BridgeError(
-          `${BRAND.extensionName} connection was superseded mid-command.`,
-          undefined,
-          "COMMAND_INTERRUPTED",
-        ),
-      );
-      try {
-        this.socket.close(1000, "Superseded by a newer extension connection");
-      } catch {
-        /* already gone */
-      }
+  /** Forget a connection and fail the commands that were waiting on it. */
+  private dropConnection(connection: Connection, reason: string): void {
+    this.attached.delete(connection.socket);
+    if (this.byKey.get(connection.key) === connection) this.byKey.delete(connection.key);
+    for (const [runId, owner] of this.runOwners) {
+      if (owner === connection.key) this.runOwners.delete(runId);
     }
-    this.socket = socket;
-    this.handshakenSocket = null;
-    this.extension = { ...NO_EXTENSION };
-    this.missedPongs = 0;
+    for (const [id, entry] of this.pending) {
+      if (entry.connection !== connection) continue;
+      this.pending.delete(id);
+      clearTimeout(entry.timer);
+      entry.reject(new BridgeError(reason, undefined, "COMMAND_INTERRUPTED"));
+    }
   }
 
   /**
-   * Park a connection that arrived while an accepted extension is attached.
-   * Its first frame must be a hello that passes the same checks; then it
-   * supersedes the current socket. Anything else — a rejected hello, silence
-   * for ten seconds, a close — ends only the newcomer.
+   * Park a fresh connection until its first frame — which must be a hello that
+   * passes the same checks as everyone else's. A rejected hello, silence for
+   * ten seconds, or a close ends only the newcomer.
    */
   private adoptCandidate(socket: WebSocket): void {
     this.candidates.add(socket);
-    log(`another extension connected while one is attached — waiting for its hello`);
     const timer = setTimeout(() => {
       if (!this.candidates.has(socket)) return;
-      log("candidate connection sent no hello in time — closing it");
+      log("connection sent no hello in time — closing it");
       this.candidates.delete(socket);
       try {
         socket.close(1008, "No hello");
@@ -581,18 +656,9 @@ export class WebMateBridge {
     if (!this.candidates.has(socket) || socket.readyState !== 1) return;
     this.candidates.delete(socket);
     if (!verdict.ok) {
-      // The attached extension stays exactly as it is; only the newcomer hears no.
-      log(`rejecting a second extension's handshake: ${verdict.reason}`);
-      try {
-        socket.close(1008, verdict.reason.slice(0, 120));
-      } catch {
-        /* already gone */
-      }
+      this.rejectHandshake(socket, verdict.reason);
       return;
     }
-    log("a second extension completed a valid handshake — it takes over");
-    this.supersedeWith(socket);
-    this.wireSocket(socket);
     this.acceptHello(socket, msg, verdict.pairing, verdict.protocolVersion);
   }
 
@@ -600,11 +666,10 @@ export class WebMateBridge {
     log(`rejecting handshake: ${reason}`);
     this.lastError = reason;
     // 1008 = policy violation. The extension backs off for a minute on it.
-    socket.close(1008, reason.slice(0, 120));
-    if (this.socket === socket) {
-      this.socket = null;
-      this.handshakenSocket = null;
-      this.extension = { ...NO_EXTENSION };
+    try {
+      socket.close(1008, reason.slice(0, 120));
+    } catch {
+      /* already gone */
     }
     this.changed();
   }
@@ -656,17 +721,6 @@ export class WebMateBridge {
     return { ok: true, pairing, protocolVersion };
   }
 
-  private async handleHello(socket: WebSocket, msg: Record<string, unknown>): Promise<void> {
-    const verdict = await this.checkHello(msg);
-    // The socket may have been superseded while the file was read.
-    if (this.socket !== socket || socket.readyState !== 1) return;
-    if (!verdict.ok) {
-      this.rejectHandshake(socket, verdict.reason);
-      return;
-    }
-    this.acceptHello(socket, msg, verdict.pairing, verdict.protocolVersion);
-  }
-
   /** Record the accepted extension, answer with hello_ack, wake anyone waiting. */
   private acceptHello(
     socket: WebSocket,
@@ -674,9 +728,9 @@ export class WebMateBridge {
     pairing: Pairing | null,
     protocolVersion: number | null,
   ): void {
-    this.handshakenSocket = socket;
-    this.lastError = null;
-    this.extension = {
+    const instanceId = typeof msg.instanceId === "string" && msg.instanceId.trim() ? msg.instanceId.trim() : "";
+    const key = instanceId || `socket:${++this.anonymousSeq}`;
+    const info: ExtensionInfo = {
       version: typeof msg.version === "string" && msg.version ? msg.version : null,
       browser: typeof msg.browser === "string" && msg.browser ? msg.browser : null,
       installType:
@@ -685,12 +739,40 @@ export class WebMateBridge {
       protocolVersion,
       lastHelloAt: new Date().toISOString(),
       capabilities: Array.isArray(msg.capabilities) ? (msg.capabilities as string[]) : [],
+      instanceId: key,
     };
+
+    // The same profile dialling again (a reload, a browser restart whose old
+    // socket has not been reaped yet): only its own previous socket goes.
+    const previous = this.byKey.get(key);
+    if (previous && previous.socket !== socket) {
+      log(`${info.browser ?? key} reconnected — replacing its previous socket`);
+      this.dropConnection(previous, `${BRAND.extensionName} reconnected mid-command.`);
+      try {
+        previous.socket.close(1000, "Superseded by a reconnect of the same extension");
+      } catch {
+        /* already gone */
+      }
+    }
+
+    const connection: Connection = {
+      key,
+      socket,
+      info,
+      paired: pairing !== null,
+      acceptedAt: Date.now(),
+      missedPongs: 0,
+    };
+    this.attached.set(socket, connection);
+    this.byKey.set(key, connection);
+    this.lastError = null;
+    this.wireSocket(connection);
+
     log(
       `handshake ok — protocol v${protocolVersion}, ` +
-        `${BRAND.productName} ${this.extension.version ?? "?"} on ${this.extension.browser ?? "unknown browser"} ` +
-        `(${this.extension.installType ?? "unknown install"}${pairing ? ", paired" : ""}), capabilities: ` +
-        (this.extension.capabilities.join(", ") || "none"),
+        `${BRAND.productName} ${info.version ?? "?"} on ${info.browser ?? "unknown browser"} ` +
+        `(${info.installType ?? "unknown install"}${pairing ? ", paired" : ""}, ${instanceId ? `instance ${instanceId}` : "no instance id"}), ` +
+        `capabilities: ${info.capabilities.join(", ") || "none"}; ${this.attached.size} attached`,
     );
 
     try {
@@ -724,22 +806,40 @@ export class WebMateBridge {
     this.pending.clear();
   }
 
+  /** Whether any extension is attached (and the listener is up). */
   isConnected(): boolean {
     if (this.unavailableReason !== null) return false;
-    return (
-      this.socket !== null &&
-      this.socket.readyState === 1 &&
-      this.handshakenSocket === this.socket
-    );
+    for (const connection of this.attached.values()) {
+      if (connection.socket.readyState === 1) return true;
+    }
+    return false;
+  }
+
+  /** Whether the named instance is attached. */
+  hasConnection(instanceId: string): boolean {
+    const connection = this.byKey.get(instanceId);
+    return Boolean(connection && connection.socket.readyState === 1);
   }
 
   capabilities(): string[] {
-    return [...this.extension.capabilities];
+    return [...this.info().capabilities];
   }
 
   /** Whether a Workmate pairing file is in force (as of the last check). */
   isPaired(): boolean {
     return this.pairingRequired;
+  }
+
+  /**
+   * Record a sign-in fact learned outside a hello (the answer to `auth_hint`).
+   * The extension also relays it as a `session` frame; this only makes the
+   * next status read consistent with the command outcome at once.
+   */
+  markSignedIn(instanceId: string, signedIn: boolean): void {
+    const connection = this.byKey.get(instanceId);
+    if (!connection || connection.info.signedIn === signedIn) return;
+    connection.info.signedIn = signedIn;
+    this.changed();
   }
 
   /**
@@ -784,7 +884,7 @@ export class WebMateBridge {
     );
   }
 
-  /** Resolve once the extension has connected and completed its handshake. */
+  /** Resolve once an extension has connected and completed its handshake. */
   waitForExtension(timeoutMs: number): Promise<boolean> {
     // No listener means nothing can ever dial in — don't burn the grace period.
     if (this.unavailableReason !== null) return Promise.resolve(false);
@@ -802,11 +902,50 @@ export class WebMateBridge {
     });
   }
 
+  /** The connection a command should go to, or null. */
+  private resolveTarget(payload: Record<string, unknown>, target: RequestTarget): Connection | null {
+    if (target.instanceId) {
+      const named = this.byKey.get(target.instanceId);
+      return named && named.socket.readyState === 1 ? named : null;
+    }
+    const runId = typeof payload.runId === "string" ? payload.runId : typeof payload.run_id === "string" ? payload.run_id : "";
+    if (runId) {
+      const owner = this.runOwners.get(runId);
+      const named = owner ? this.byKey.get(owner) : undefined;
+      if (named && named.socket.readyState === 1) return named;
+    }
+    return this.active();
+  }
+
+  /** Remember which browser a run lives in, from the frames that name runs. */
+  private learnRunOwners(action: BridgeAction, connection: Connection, result: unknown): void {
+    const record = (runId: unknown) => {
+      if (typeof runId !== "string" || !runId) return;
+      this.runOwners.delete(runId);
+      this.runOwners.set(runId, connection.key);
+      if (this.runOwners.size > MAX_REMEMBERED_RUNS) {
+        const oldest = this.runOwners.keys().next().value;
+        if (oldest !== undefined) this.runOwners.delete(oldest);
+      }
+    };
+    if (!result || typeof result !== "object") return;
+    const body = result as Record<string, unknown>;
+    if (action === "cloud_run" || action === "cloud_status" || action === "cloud_respond" || action === "cloud_abort") {
+      record(body.runId ?? body.run_id);
+    }
+    if (Array.isArray(body.runs)) {
+      for (const run of body.runs) {
+        if (run && typeof run === "object") record((run as Record<string, unknown>).runId ?? (run as Record<string, unknown>).run_id);
+      }
+    }
+  }
+
   /** Send one command and await the extension's reply. */
   async request<T = unknown>(
     action: BridgeAction,
     payload: Record<string, unknown> = {},
     timeoutMs = config.commandTimeoutMs,
+    target: RequestTarget = {},
   ): Promise<T> {
     // A bridge that never opened its listener fails with the reason why, not
     // with "no extension is connected" — that wording sends the user off to
@@ -819,17 +958,27 @@ export class WebMateBridge {
     // binds the port arrives while the browser is still inside its reconnect
     // backoff. Failing instantly there turns an ordinary cold start into a
     // spurious "no extension is connected" on the first tool call.
-    if (!this.isConnected() && config.connectGraceMs > 0) {
+    if (!target.instanceId && !this.isConnected() && config.connectGraceMs > 0) {
       await this.waitForExtension(config.connectGraceMs);
     }
-    const socket = this.socket;
-    if (!socket || !this.isConnected()) {
+    const connection = this.resolveTarget(payload, target);
+    if (!connection) {
+      if (target.instanceId) {
+        throw new BridgeError(
+          `No ${BRAND.extensionName} with instance id ${target.instanceId} is connected.`,
+          undefined,
+          undefined,
+          "WEBMATE_NOT_CONNECTED",
+        );
+      }
       throw await this.describeNotConnected();
     }
 
     const id = this.nextId++;
     const frame = JSON.stringify({ id, action, payload });
-    const responseTimeoutMs = Math.max(1, Math.min(config.commandTimeoutMs, timeoutMs));
+    const responseTimeoutMs = target.unclamped
+      ? Math.max(1, timeoutMs)
+      : Math.max(1, Math.min(config.commandTimeoutMs, timeoutMs));
 
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -843,10 +992,18 @@ export class WebMateBridge {
         );
       }, responseTimeoutMs);
 
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
+      this.pending.set(id, {
+        resolve: (value) => {
+          this.learnRunOwners(action, connection, value);
+          resolve(value as T);
+        },
+        reject,
+        timer,
+        connection,
+      });
 
       try {
-        socket.send(frame);
+        connection.socket.send(frame);
       } catch (error) {
         this.pending.delete(id);
         clearTimeout(timer);
@@ -862,7 +1019,6 @@ export class WebMateBridge {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
-    this.missedPongs = 0;
     this.failAllPending(new BridgeError("Bridge shutting down."));
     for (const candidate of this.candidates) {
       try {
@@ -872,16 +1028,16 @@ export class WebMateBridge {
       }
     }
     this.candidates.clear();
-    if (this.socket) {
+    for (const connection of [...this.attached.values()]) {
       try {
-        this.socket.close(1001, "Server shutting down");
+        connection.socket.close(1001, "Server shutting down");
       } catch {
         /* ignore */
       }
-      this.socket = null;
-      this.handshakenSocket = null;
-      this.extension = { ...NO_EXTENSION };
     }
+    this.attached.clear();
+    this.byKey.clear();
+    this.runOwners.clear();
     if (this.wss) {
       await new Promise<void>((resolve) => this.wss!.close(() => resolve()));
       this.wss = null;

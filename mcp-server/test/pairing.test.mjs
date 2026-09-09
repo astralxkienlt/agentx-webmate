@@ -339,20 +339,23 @@ test("a second connection cannot knock the paired extension off until its own he
   assert.equal(bridge.isConnected(), true);
   assert.equal(paired.events.closes.length, 0);
 
-  // A valid second extension takes over, and the first one is told so.
+  // A valid second extension joins alongside the first (phase 4: several
+  // browsers at once); nothing is superseded, the newest hello is active.
   const successor = dial({
     protocolVersion: 3,
     token: TOKEN,
-    extra: { version: "1.0.5", browser: "Microsoft Edge 152", installType: "workmate" },
+    extra: { version: "1.0.5", browser: "Microsoft Edge 152", installType: "workmate", instanceId: "inst-edge" },
   });
   const ack = await successor.acked;
   assert.equal(ack.token, TOKEN);
-  await paired.closed;
-  assert.equal(paired.events.closes[0].code, 1000);
-  assert.match(paired.events.closes[0].reason, /Superseded/);
+  await sleep(30);
+  assert.equal(paired.events.closes.length, 0, "a valid second extension no longer knocks the first off");
   assert.equal(bridge.info().browser, "Microsoft Edge 152");
+  assert.equal(bridge.connections().length, 2);
   assert.equal(bridge.isConnected(), true);
 
+  paired.socket.close();
+  await paired.closed;
   successor.socket.close();
   await successor.closed;
   await bridge.stop();

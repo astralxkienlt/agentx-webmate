@@ -22,8 +22,27 @@ export interface LastCommand {
   ok: boolean;
   busy?: number;
   error?: string | null;
+  /** auth_hint / auth_open: one entry per browser asked (see index.ts handleAuthCommand). */
+  results?: unknown[];
+  /** auth_hint / auth_open: whether at least one browser ended up signed in. */
+  signedIn?: boolean;
   startedAt: string;
   finishedAt: string;
+}
+
+/** One attached extension, as state.json lists it under `connections`. */
+export interface ConnectionState {
+  /** `hello.instanceId` (per browser profile), or a per-socket id when the extension sent none. */
+  instanceId: string;
+  browser: string | null;
+  extensionVersion: string | null;
+  installType: "workmate" | "dev" | null;
+  signedIn: boolean | null;
+  protocolVersion: number | null;
+  lastHelloAt: string | null;
+  paired: boolean;
+  /** The connection commands go to when nothing names one (signed-in first, then newest). */
+  active: boolean;
 }
 
 export interface BridgeStateFields {
@@ -33,12 +52,16 @@ export interface BridgeStateFields {
   listening: boolean;
   connected: boolean;
   pairingRequired: boolean;
+  // The fields below describe the active connection, for readers that know
+  // one extension; `connections` lists every attached one (phase 4).
   browser: string | null;
   extensionVersion: string | null;
   installType: "workmate" | "dev" | null;
   signedIn: boolean | null;
   protocolVersion: number | null;
   lastHelloAt: string | null;
+  instanceId: string | null;
+  connections: ConnectionState[];
   error: string | null;
   lastCommand: LastCommand | null;
 }
@@ -58,6 +81,8 @@ export const EMPTY_STATE: Omit<BridgeStateFields, "pid" | "port" | "serverVersio
   signedIn: null,
   protocolVersion: null,
   lastHelloAt: null,
+  instanceId: null,
+  connections: [],
   error: null,
   lastCommand: null,
 };
