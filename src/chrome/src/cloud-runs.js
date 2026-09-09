@@ -8,8 +8,11 @@ import {
   CLOUD_BRIDGE_ENABLED_KEY,
   CLOUD_BRIDGE_URL_KEY,
   DEFAULT_CLOUD_BRIDGE_URL,
+  WORKMATE_CONFIG_PATH,
+  WORKMATE_SESSION_STORAGE_KEY,
   cloudBridgeUrlFrom,
   isCloudBridgeEnabled,
+  parseWorkmateConfig,
 } from './cloud-bridge-config.js';
 const CLOUD_RUN_STORAGE_KEY = 'webbrainCloudRunSnapshots';
 const CLOUD_UPDATE_LIMIT = 200;
@@ -785,10 +788,17 @@ export function createCloudRunController({
   workflowTrace = null,
   now = () => new Date(),
   makeRunId = () => `run_${globalThis.crypto.randomUUID()}`,
+  fetchImpl = (...args) => globalThis.fetch(...args),
 } = {}) {
   const api = chromeApi;
   const runs = new Map();
   const startingTabs = new Set();
+  // Workmate update drain. While armed, new runs are refused so the extension
+  // folder can be swapped and the runtime reloaded without cutting a task off
+  // halfway through a form. It self-clears: a Workmate that dies between
+  // "prepare" and "reload" must not leave the browser refusing work forever.
+  const UPDATE_DRAIN_TIMEOUT_MS = 5 * 60_000;
+  let updateDrain = null;
   let hydratePromise = null;
   let persistQueue = Promise.resolve();
   let persistTimer = null;
@@ -1090,6 +1100,12 @@ export function createCloudRunController({
 
   async function startRun(msg = {}) {
     await hydrate();
+    if (updateDrain) {
+      throw cloudRunError(
+        'WebBrain is about to update itself and is not taking new runs; retry in a moment.',
+        503,
+      );
+    }
     const suppliedRunId = msg.runId ?? msg.run_id;
     const requestedRunId = suppliedRunId == null ? '' : String(suppliedRunId).trim();
     const parentRunId = String(msg.parentRunId || msg.parent_run_id || '').trim() || null;
@@ -1473,6 +1489,83 @@ export function createCloudRunController({
     return cloudSnapshot(run);
   }
 
+  /** Runs that would be cut off by a runtime reload right now. */
+  function busyRunCount() {
+    let busy = startingTabs.size;
+    for (const run of runs.values()) {
+      if (!TERMINAL_STATUSES.has(run.status)) busy += 1;
+    }
+    return busy;
+  }
+
+  function clearUpdateDrain() {
+    if (updateDrain?.timer) clearTimeout(updateDrain.timer);
+    updateDrain = null;
+  }
+
+  // `workmate_prepare_update` from the bridge. Idempotent: Workmate re-sends it
+  // while polling for `busy` to reach 0, then follows with `workmate_reload`.
+  // `{ resume: true }` cancels the drain when the update is called off.
+  async function prepareUpdate(msg = {}) {
+    await hydrate();
+    if (msg.resume === true || msg.cancel === true) {
+      clearUpdateDrain();
+      return { ok: true, draining: false, busy: busyRunCount() };
+    }
+    if (!updateDrain) {
+      updateDrain = {
+        requestedAt: isoNow(),
+        timer: setTimeout(clearUpdateDrain, UPDATE_DRAIN_TIMEOUT_MS),
+      };
+    }
+    return { ok: true, draining: true, busy: busyRunCount() };
+  }
+
+  /**
+   * The packaged workmate.json, or null for a developer/store install. A
+   * missing file is the normal dev case; a present but broken one is reported
+   * so the bridge status line can show it.
+   */
+  async function readWorkmateConfig() {
+    let response;
+    try {
+      response = await fetchImpl(api.runtime.getURL(WORKMATE_CONFIG_PATH), { cache: 'no-store' });
+    } catch {
+      return { workmate: null, workmateError: '' };
+    }
+    if (!response?.ok) return { workmate: null, workmateError: '' };
+    let text;
+    try {
+      text = await response.text();
+    } catch (error) {
+      return { workmate: null, workmateError: `workmate.json could not be read: ${error?.message || error}` };
+    }
+    const { config, error } = parseWorkmateConfig(text);
+    return { workmate: config, workmateError: error };
+  }
+
+  /**
+   * `cloud_bridge_identity` — what the offscreen bridge needs to introduce
+   * itself in `hello`, gathered here because an offscreen document has no
+   * chrome.* API beyond runtime messaging: manifest version, whether an AgentX
+   * session is signed in (null when storage cannot answer — never guessed),
+   * and the parsed workmate.json.
+   */
+  async function bridgeIdentity() {
+    let version = '';
+    try {
+      version = String(api.runtime.getManifest?.()?.version || '');
+    } catch { /* not available in this context */ }
+    let signedIn = null;
+    try {
+      const stored = await api.storage.local.get([WORKMATE_SESSION_STORAGE_KEY]);
+      const session = stored?.[WORKMATE_SESSION_STORAGE_KEY];
+      signedIn = Boolean(session && typeof session === 'object' && session.idToken && session.user?.subject);
+    } catch { /* storage unavailable */ }
+    const { workmate, workmateError } = await readWorkmateConfig();
+    return { version, signedIn, workmate, workmateError };
+  }
+
   async function startBridge(url = DEFAULT_CLOUD_BRIDGE_URL) {
     await ensureOffscreen();
     return api.runtime.sendMessage({ type: 'cloud-bridge-start', url: normalizeCloudBridgeUrl(url) });
@@ -1513,6 +1606,9 @@ export function createCloudRunController({
     stopBridge,
     bridgeStatus,
     syncBridge,
+    bridgeIdentity,
+    prepareUpdate,
+    isDraining: () => updateDrain !== null,
     hydrate,
   };
 }

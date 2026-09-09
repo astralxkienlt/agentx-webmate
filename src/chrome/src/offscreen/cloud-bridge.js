@@ -4,14 +4,35 @@
  * The droplet sidecar listens on localhost. The extension connects outbound
  * from this offscreen page, receives command messages, forwards them to the
  * background service worker, then returns the response over the socket.
+ *
+ * Two ways this extension can be installed, and the bridge tells them apart
+ * by one packaged file:
+ *
+ *   • Workmate-managed ("workmate"): AgentX Workmate unpacked this folder and
+ *     dropped a `workmate.json` next to the manifest carrying the socket URL
+ *     and a pairing token. The file is re-read before every dial (Workmate may
+ *     move the port), the URL still has to pass the loopback check below, and
+ *     the server has to echo the token back in `hello_ack` or the socket is
+ *     dropped — a stray local process on the same port must not be able to
+ *     drive the browser just because it speaks the frame format.
+ *   • Developer / store ("dev"): no `workmate.json`. Everything behaves as it
+ *     always did — Settings URL, no token, protocol v3 hello that a v2 server
+ *     simply ignores the extra fields of.
+ *
+ * An offscreen document has no chrome.* API beyond runtime messaging, so the
+ * facts the hello needs — manifest version, sign-in state, the parsed
+ * workmate.json — come from the background (`cloud_bridge_identity`,
+ * cloud-runs.js) before every dial. Only the loopback check on the URL and the
+ * hello_ack token comparison live here, at the socket.
  */
 
 (() => {
   // Provisioning seeds Settings from a privileged extension page before this
   // bridge starts. Keep configuration mutations out of the WebSocket command
-  // surface; the bridge is intentionally limited to managed run operations.
-  const BRIDGE_PROTOCOL_VERSION = 2;
-  const BRIDGE_CAPABILITIES = ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1'];
+  // surface; the bridge is intentionally limited to managed run operations
+  // plus the two Workmate update hooks (drain, reload).
+  const BRIDGE_PROTOCOL_VERSION = 3;
+  const BRIDGE_CAPABILITIES = ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1', 'workmate_update_v1'];
   const ALLOWED_BRIDGE_ACTIONS = new Set([
     'cloud_run',
     'cloud_workflow_compile',
@@ -20,6 +41,8 @@
     'cloud_scheduled_jobs',
     'cloud_respond',
     'cloud_abort',
+    'workmate_prepare_update',
+    'workmate_reload',
   ]);
   // Ceiling on the reconnect backoff. This dials loopback, so a refused attempt
   // costs a syscall pair and no network traffic — a long ceiling buys nothing
@@ -30,6 +53,10 @@
   // connect() short-circuits on CONNECTING — so without this the bridge wedges
   // permanently against anything that accepts TCP and then goes quiet.
   const CONNECT_TIMEOUT_MS = 10000;
+  // A server that rejects the pairing handshake (wrong token, protocol too old)
+  // will reject the next attempt too. Retrying on the normal backoff would hit
+  // it twice a second for nothing; hold off for a minute instead.
+  const HANDSHAKE_REJECTED_HOLDOFF_MS = 60000;
   let socket = null;
   let bridgeUrl = null;
   let enabled = false;
@@ -38,6 +65,15 @@
   let reconnectAttempt = 0;
   let lastError = '';
   let connectedAt = null;
+  let dialing = false;
+  let holdoffUntil = 0;
+  // Snapshot of workmate.json from the most recent dial, or null in dev mode.
+  let workmate = null;
+  let workmateError = '';
+  // From the background's identity answer at the most recent dial.
+  let extensionVersion = '';
+  // What the server told us in hello_ack on the current socket.
+  let server = null;
 
   function normalizeBridgeUrl(value) {
     const url = new URL(String(value || 'ws://127.0.0.1:17374/extension'));
@@ -50,6 +86,85 @@
     return url.href;
   }
 
+  /**
+   * "Chrome 152", "Edge 152", … from the UA-CH brand list. The generic
+   * "Chromium" entry is present in every Chromium browser, so it is only the
+   * fallback; the legacy UA string covers browsers without userAgentData.
+   */
+  function describeBrowser() {
+    const brands = globalThis.navigator?.userAgentData?.brands;
+    if (Array.isArray(brands)) {
+      const KNOWN = [
+        ['Microsoft Edge', 'Edge'],
+        ['Google Chrome', 'Chrome'],
+        ['Brave', 'Brave'],
+        ['Opera', 'Opera'],
+        ['Vivaldi', 'Vivaldi'],
+        ['Arc', 'Arc'],
+      ];
+      for (const [brand, label] of KNOWN) {
+        const hit = brands.find(entry => entry?.brand === brand);
+        if (hit) return `${label} ${String(hit.version || '').trim()}`.trim();
+      }
+      const chromium = brands.find(entry => entry?.brand === 'Chromium');
+      if (chromium) return `Chromium ${String(chromium.version || '').trim()}`.trim();
+    }
+    const ua = String(globalThis.navigator?.userAgent || '');
+    const edge = /Edg\/(\d+)/.exec(ua);
+    if (edge) return `Edge ${edge[1]}`;
+    const chrome = /Chrome\/(\d+)/.exec(ua);
+    if (chrome) return `Chrome ${chrome[1]}`;
+    return ua ? 'Chromium' : null;
+  }
+
+  /**
+   * Ask the background who we are before dialling: manifest version, whether
+   * an AgentX session is signed in (null when it cannot tell — never guessed),
+   * and the parsed workmate.json (null in a dev checkout). A background that
+   * cannot answer leaves us in dev mode with the Settings URL, which is the
+   * behaviour this bridge always had.
+   */
+  async function requestIdentity() {
+    try {
+      const identity = await chrome.runtime.sendMessage({ target: 'background', action: 'cloud_bridge_identity' });
+      if (identity && typeof identity === 'object' && !identity.error) return identity;
+      return { version: '', signedIn: null, workmate: null, workmateError: identity?.error || '' };
+    } catch (error) {
+      return { version: '', signedIn: null, workmate: null, workmateError: error?.message || String(error) };
+    }
+  }
+
+  /**
+   * Adopt an identity answer. The one check that belongs at the socket is the
+   * loopback rule on `wsUrl`: a workmate.json pointing anywhere but this
+   * machine is never dialled, and the Settings URL is used instead.
+   */
+  function applyIdentity(identity) {
+    extensionVersion = typeof identity.version === 'string' ? identity.version : '';
+    workmateError = typeof identity.workmateError === 'string' ? identity.workmateError : '';
+    const raw = identity.workmate && typeof identity.workmate === 'object' ? identity.workmate : null;
+    if (!raw) {
+      workmate = null;
+      return typeof identity.signedIn === 'boolean' ? identity.signedIn : null;
+    }
+    let wsUrl = null;
+    if (raw.wsUrl != null && raw.wsUrl !== '') {
+      try {
+        wsUrl = normalizeBridgeUrl(raw.wsUrl);
+      } catch (error) {
+        workmateError = `workmate.json wsUrl rejected: ${error.message || error}`;
+      }
+    }
+    workmate = {
+      wsUrl,
+      token: typeof raw.token === 'string' ? raw.token.trim() : '',
+      installId: typeof raw.installId === 'string' ? raw.installId : '',
+      workmateVersion: typeof raw.workmateVersion === 'string' ? raw.workmateVersion : '',
+      minServerVersion: typeof raw.minServerVersion === 'string' ? raw.minServerVersion : '',
+    };
+    return typeof identity.signedIn === 'boolean' ? identity.signedIn : null;
+  }
+
   function status() {
     return {
       enabled,
@@ -59,6 +174,21 @@
       reconnectAttempt,
       connectedAt,
       lastError,
+      installType: workmate ? 'workmate' : 'dev',
+      version: extensionVersion,
+      browser: describeBrowser(),
+      workmate: workmate
+        ? {
+            wsUrl: workmate.wsUrl,
+            hasToken: Boolean(workmate.token),
+            installId: workmate.installId,
+            workmateVersion: workmate.workmateVersion,
+            minServerVersion: workmate.minServerVersion,
+            error: workmateError,
+          }
+        : (workmateError ? { error: workmateError } : null),
+      server,
+      holdoffUntil: holdoffUntil > Date.now() ? holdoffUntil : null,
     };
   }
 
@@ -72,13 +202,20 @@
     reconnectTimer = null;
   }
 
-  function dropSocket() {
+  function dropSocket(code, reason) {
     clearConnectTimer();
     if (!socket) return;
     const previousSocket = socket;
     socket = null;
     connectedAt = null;
-    try { previousSocket.close(); } catch {}
+    server = null;
+    try {
+      // Browsers only accept 1000 or 3000–4999 from the closing side.
+      if (code) previousSocket.close(code, reason);
+      else previousSocket.close();
+    } catch {
+      try { previousSocket.close(); } catch {}
+    }
   }
 
   function sendJson(obj, target = socket) {
@@ -92,19 +229,62 @@
 
   function scheduleReconnect() {
     if (!enabled || !bridgeUrl || reconnectTimer) return;
-    const delay = Math.min(MAX_RECONNECT_DELAY_MS, 500 * Math.pow(2, reconnectAttempt++));
+    const backoff = Math.min(MAX_RECONNECT_DELAY_MS, 500 * Math.pow(2, reconnectAttempt++));
+    const delay = Math.max(backoff, holdoffUntil - Date.now());
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connect();
     }, delay);
   }
 
-  function connect() {
-    if (!enabled || !bridgeUrl) return;
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+  function rejectHandshake(message, closeCode) {
+    lastError = message;
+    holdoffUntil = Date.now() + HANDSHAKE_REJECTED_HOLDOFF_MS;
+    dropSocket(closeCode, message.slice(0, 120));
+    scheduleReconnect();
+  }
+
+  function helloFrame(signedIn) {
+    const hello = {
+      type: 'hello',
+      client: 'webbrain-extension',
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      version: extensionVersion,
+      browser: describeBrowser(),
+      installType: workmate ? 'workmate' : 'dev',
+      signedIn,
+      capabilities: BRIDGE_CAPABILITIES,
+      status: status(),
+    };
+    if (workmate?.token) hello.token = workmate.token;
+    return hello;
+  }
+
+  function handleHelloAck(msg, nextSocket) {
+    server = {
+      version: typeof msg.serverVersion === 'string' ? msg.serverVersion : '',
+      minExtensionVersion: typeof msg.minExtensionVersion === 'string' ? msg.minExtensionVersion : '',
+      minProtocol: Number.isFinite(msg.minProtocol) ? msg.minProtocol : null,
+      tokenEchoed: typeof msg.token === 'string' && msg.token.length > 0,
+    };
+    if (workmate?.token && msg.token !== workmate.token) {
+      if (socket !== nextSocket) return;
+      rejectHandshake(
+        'The bridge server did not present this installation\'s pairing token; refusing to be driven by it.',
+        4008,
+      );
+      return;
+    }
+    if (server.minProtocol != null && server.minProtocol > BRIDGE_PROTOCOL_VERSION) {
+      lastError = `The bridge server needs bridge protocol v${server.minProtocol}; this extension speaks v${BRIDGE_PROTOCOL_VERSION}. Update the extension.`;
+    }
+  }
+
+  function openSocket(url, signedIn) {
     try {
-      const nextSocket = new WebSocket(bridgeUrl);
+      const nextSocket = new WebSocket(url);
       socket = nextSocket;
+      server = null;
       clearConnectTimer();
       connectTimer = setTimeout(() => {
         connectTimer = null;
@@ -120,13 +300,7 @@
         reconnectAttempt = 0;
         connectedAt = Date.now();
         lastError = '';
-        sendJson({
-          type: 'hello',
-          client: 'webbrain-extension',
-          protocolVersion: BRIDGE_PROTOCOL_VERSION,
-          capabilities: BRIDGE_CAPABILITIES,
-          status: status(),
-        }, nextSocket);
+        sendJson(helloFrame(signedIn), nextSocket);
       });
       nextSocket.addEventListener('message', async (event) => {
         if (socket !== nextSocket) return;
@@ -135,6 +309,11 @@
           msg = JSON.parse(event.data);
         } catch (e) {
           sendJson({ ok: false, error: `Invalid JSON message: ${e.message}` }, nextSocket);
+          return;
+        }
+
+        if (msg && msg.type === 'hello_ack') {
+          handleHelloAck(msg, nextSocket);
           return;
         }
 
@@ -168,11 +347,19 @@
           sendJson({ id, ok: false, error: e.message || String(e) }, nextSocket);
         }
       });
-      nextSocket.addEventListener('close', () => {
+      nextSocket.addEventListener('close', (event) => {
         if (socket !== nextSocket) return;
         clearConnectTimer();
         socket = null;
         connectedAt = null;
+        server = null;
+        // 1008 is the server saying the handshake itself was unacceptable —
+        // wrong pairing token, protocol too old. Same answer next time, so
+        // stop hammering it.
+        if (event && event.code === 1008) {
+          lastError = `The bridge server rejected the handshake${event.reason ? `: ${event.reason}` : '.'}`;
+          holdoffUntil = Date.now() + HANDSHAKE_REJECTED_HOLDOFF_MS;
+        }
         scheduleReconnect();
       });
       nextSocket.addEventListener('error', () => {
@@ -184,6 +371,33 @@
       socket = null;
       scheduleReconnect();
     }
+  }
+
+  function connect() {
+    if (!enabled || !bridgeUrl || dialing) return;
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+    if (Date.now() < holdoffUntil) {
+      scheduleReconnect();
+      return;
+    }
+    // Re-read the identity (and with it workmate.json) on every dial: Workmate
+    // rewrites the file when its port or token changes and then asks for a
+    // reload, and a stale copy here would send the old token to the new server.
+    dialing = true;
+    requestIdentity().then(
+      (identity) => {
+        dialing = false;
+        const signedIn = applyIdentity(identity);
+        if (!enabled || !bridgeUrl) return;
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+        openSocket(workmate?.wsUrl || bridgeUrl, signedIn);
+      },
+      (error) => {
+        dialing = false;
+        lastError = error?.message || String(error);
+        scheduleReconnect();
+      },
+    );
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -199,11 +413,15 @@
       const changed = bridgeUrl && bridgeUrl !== nextUrl;
       enabled = true;
       bridgeUrl = nextUrl;
-      if (changed) dropSocket();
+      // Only a dev-mode socket follows the Settings URL. A Workmate-managed
+      // socket is on workmate.json's URL, which this message does not change.
+      if (changed && !workmate?.wsUrl) dropSocket();
       // An explicit start is a fresh intent — from the user, from a cold
       // service worker, or from the watchdog alarm. Waiting out a backoff that
       // may already have grown to its ceiling would make "the controller is up
       // now" take up to MAX_RECONNECT_DELAY_MS to notice, so retry at once.
+      // The handshake-rejected holdoff is the one wait an explicit start does
+      // not skip: the server's answer will not have changed in the meantime.
       if (!socket) {
         clearReconnectTimer();
         reconnectAttempt = 0;
@@ -216,6 +434,7 @@
       enabled = false;
       clearReconnectTimer();
       reconnectAttempt = 0;
+      holdoffUntil = 0;
       dropSocket();
       sendResponse(status());
       return false;

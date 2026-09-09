@@ -2310,6 +2310,9 @@ async function handleMessage(msg, sender) {
     'clear_tab_chat',
     'release_context_menu_prompt_claim',
     'capture_screenshot_redaction_snapshot',
+    // Answered from manifest/storage/packaged files only; the offscreen bridge
+    // asks before every dial and must not wait on provider hydration.
+    'cloud_bridge_identity',
   ].includes(msg.action);
   if (!lightweightAction) {
     // Ensure providers are loaded
@@ -2361,6 +2364,16 @@ async function handleMessage(msg, sender) {
       return await cloudRunController.stopBridge();
     case 'cloud_bridge_status':
       return await cloudRunController.bridgeStatus();
+    case 'cloud_bridge_identity':
+      return await cloudRunController.bridgeIdentity();
+    // Workmate update hooks, relayed by the offscreen bridge. Prepare drains
+    // new runs; reload answers first so the ack crosses the socket before the
+    // runtime (offscreen document included) is torn down.
+    case 'workmate_prepare_update':
+      return await cloudRunController.prepareUpdate(msg);
+    case 'workmate_reload':
+      setTimeout(() => chrome.runtime.reload(), 250);
+      return { ok: true, reloadInMs: 250 };
     case 'prepare_recording_host':
       return await prepareRecordingHost();
     case 'start_tab_recording': {

@@ -427,6 +427,8 @@ const {
   DEFAULT_CLOUD_BRIDGE_URL,
   cloudBridgeUrlFrom,
   isCloudBridgeEnabled,
+  parseWorkmateConfig,
+  WORKMATE_SESSION_STORAGE_KEY,
 } = await import(
   'file://' + path.join(ROOT, 'src/chrome/src/cloud-bridge-config.js').replace(/\\/g, '/')
 );
@@ -18792,11 +18794,22 @@ test('cloud bridge accepts only loopback WebSocket URLs', () => {
   assert.throws(() => normalizeCloudBridgeUrl('ws://192.168.1.10/extension'), /localhost/);
 });
 
-function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), closeSynchronously = true } = {}) {
+function createOffscreenCloudBridgeHarness({
+  sendMessage = async () => ({}),
+  closeSynchronously = true,
+  // `undefined` = no packaged workmate.json (fetch rejects, the dev case);
+  // `null` = a 404 response; an object or string = the file's contents.
+  workmateJson,
+  signedIn = false,
+  storageAvailable = true,
+  brands = [{ brand: 'Chromium', version: '152' }, { brand: 'Google Chrome', version: '152' }, { brand: 'Not?A_Brand', version: '99' }],
+  manifestVersion = '1.0.3',
+} = {}) {
   const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/offscreen/cloud-bridge.js'), 'utf8');
   const sockets = [];
   const timers = [];
   const runtimeCalls = [];
+  const fetchCalls = [];
   let listener = null;
   class FakeWebSocket {
     static CONNECTING = 0;
@@ -18808,13 +18821,15 @@ function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), clo
       this.readyState = FakeWebSocket.CONNECTING;
       this.listeners = new Map();
       this.sent = [];
+      this.closeCalls = [];
       sockets.push(this);
     }
     addEventListener(type, callback) { this.listeners.set(type, callback); }
     send(value) { this.sent.push(JSON.parse(value)); }
-    close() {
+    close(code, reason) {
+      this.closeCalls.push({ code, reason });
       this.readyState = FakeWebSocket.CLOSING;
-      if (closeSynchronously) this.emit('close');
+      if (closeSynchronously) this.emit('close', { code: code || 1005, reason: reason || '' });
     }
     emit(type, value = {}) {
       if (type === 'open') this.readyState = FakeWebSocket.OPEN;
@@ -18822,14 +18837,32 @@ function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), clo
       this.listeners.get(type)?.(value);
     }
   }
+  // The background's answer to `cloud_bridge_identity`, built the way
+  // cloud-runs.js builds it: the packaged workmate.json goes through the real
+  // parser, and an unavailable storage reports signedIn as unknown (null).
+  const identity = () => {
+    let workmate = null;
+    let workmateError = '';
+    if (workmateJson !== undefined && workmateJson !== null) {
+      const parsed = parseWorkmateConfig(typeof workmateJson === 'string' ? workmateJson : JSON.stringify(workmateJson));
+      workmate = parsed.config;
+      workmateError = parsed.error;
+    }
+    return { version: manifestVersion, signedIn: storageAvailable ? signedIn : null, workmate, workmateError };
+  };
   vm.runInNewContext(source, {
     URL,
     WebSocket: FakeWebSocket,
+    navigator: { userAgentData: brands ? { brands } : undefined, userAgent: 'Mozilla/5.0 Chrome/152.0.0.0' },
     chrome: {
       runtime: {
         onMessage: { addListener: callback => { listener = callback; } },
         sendMessage: async message => {
           runtimeCalls.push(message);
+          if (message.action === 'cloud_bridge_identity') {
+            fetchCalls.push(message);
+            return identity();
+          }
           return await sendMessage(message);
         },
       },
@@ -18849,39 +18882,60 @@ function createOffscreenCloudBridgeHarness({ sendMessage = async () => ({}), clo
 
   const pendingTimers = () => timers.filter(entry => !entry.cleared && !entry.fired);
   const runTimer = (entry) => { entry.fired = true; entry.callback(); };
+  // connect() asks the background for its identity (workmate.json, sign-in
+  // state) before it dials, so a start (or a backoff firing) opens its socket
+  // only after the microtasks behind that answer have run.
+  const settle = async () => { for (let i = 0; i < 4; i += 1) await new Promise(resolve => setImmediate(resolve)); };
+  const start = async (url = 'ws://127.0.0.1:17374/extension') => {
+    let reply;
+    listener({ type: 'cloud-bridge-start', url }, null, value => { reply = value; });
+    await settle();
+    return reply;
+  };
+  const statusOf = () => {
+    let value;
+    listener({ type: 'cloud-bridge-status' }, null, reply => { value = reply; });
+    return value;
+  };
   return {
     listener: (...args) => listener(...args),
     runtimeCalls,
+    // Identity requests, one per dial (kept under the old name for the assertions below).
+    fetchCalls,
     sockets,
     timers,
     pendingTimers,
     runTimer,
+    settle,
+    start,
+    statusOf,
   };
 }
 
-test('offscreen cloud bridge reconnects with backoff and rejects remote control URLs', () => {
-  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
+test('offscreen cloud bridge reconnects with backoff and rejects remote control URLs', async () => {
+  const { listener, sockets, pendingTimers, runTimer, settle, start } = createOffscreenCloudBridgeHarness();
 
-  let started;
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, value => { started = value; });
+  const started = await start('ws://127.0.0.1:17373/extension');
   assert.equal(started.enabled, true);
   assert.equal(sockets.length, 1);
   sockets[0].emit('open');
   assert.equal(sockets[0].sent[0].type, 'hello');
-  assert.equal(sockets[0].sent[0].protocolVersion, 2);
+  assert.equal(sockets[0].sent[0].protocolVersion, 3);
   assert.deepEqual(
     JSON.parse(JSON.stringify(sockets[0].sent[0].capabilities)),
-    ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1'],
+    ['saved_workflows_v1', 'run_modes_v1', 'scheduled_jobs_v1', 'workmate_update_v1'],
   );
   sockets[0].close();
   const [backoff, ...extraTimers] = pendingTimers();
   assert.equal(extraTimers.length, 0, 'the connect-timeout must be cleared once the socket closes');
   assert.equal(backoff.delay, 500);
   runTimer(backoff);
+  await settle();
   assert.equal(sockets.length, 2);
 
   let rejected;
   listener({ type: 'cloud-bridge-start', url: 'wss://attacker.example/extension' }, null, value => { rejected = value; });
+  await settle();
   assert.match(rejected.error, /localhost/);
   assert.equal(sockets.length, 2);
 });
@@ -18889,7 +18943,7 @@ test('offscreen cloud bridge reconnects with backoff and rejects remote control 
 test('offscreen cloud bridge preserves failed run envelopes and rejects unauthorized actions', async () => {
   const failed = { runId: 'run_failed', status: 'failed', error: 'Agent failed.' };
   const aborting = { runId: 'run_abort', status: 'aborting', error: 'Abort requested.' };
-  const { listener, runtimeCalls, sockets } = createOffscreenCloudBridgeHarness({
+  const { runtimeCalls, sockets, start } = createOffscreenCloudBridgeHarness({
     sendMessage: async message => {
       if (message.action === 'cloud_status' && message.runId === 'run_failed') return failed;
       if (message.action === 'cloud_status') return { error: 'Unknown cloud run.' };
@@ -18897,7 +18951,7 @@ test('offscreen cloud bridge preserves failed run envelopes and rejects unauthor
       return {};
     },
   });
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
+  await start('ws://127.0.0.1:17373/extension');
   const socket = sockets[0];
   socket.emit('open');
 
@@ -18939,12 +18993,14 @@ test('offscreen cloud bridge preserves failed run envelopes and rejects unauthor
     ['workflow-compile', 'cloud_workflow_compile'],
     ['workflow-run', 'cloud_workflow_run'],
     ['scheduled-jobs', 'cloud_scheduled_jobs'],
+    ['prepare-update', 'workmate_prepare_update'],
+    ['reload', 'workmate_reload'],
   ]) {
     socket.emit('message', {
       data: JSON.stringify({ id, action, payload: { runId: 'run_source' } }),
     });
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(runtimeCalls.some(message => message.action === action), true);
+    assert.equal(runtimeCalls.some(message => message.action === action), true, `${action} must reach the background`);
   }
 
   socket.emit('message', {
@@ -18975,9 +19031,9 @@ test('offscreen cloud bridge preserves failed run envelopes and rejects unauthor
   );
 });
 
-test('offscreen cloud bridge retries at once when an explicit start lands mid-backoff', () => {
-  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+test('offscreen cloud bridge retries at once when an explicit start lands mid-backoff', async () => {
+  const { sockets, pendingTimers, runTimer, settle, start } = createOffscreenCloudBridgeHarness();
+  await start();
 
   // Walk the backoff up to its ceiling the way a controller that is down for a
   // while would: every failed attempt doubles the wait.
@@ -18987,6 +19043,7 @@ test('offscreen cloud bridge retries at once when an explicit start lands mid-ba
     const backoff = pendingTimers().find(entry => entry.delay > 0);
     delays.push(backoff.delay);
     runTimer(backoff);
+    await settle();
   }
   assert.deepEqual(delays, [500, 1000, 2000, 4000, 8000, 10000, 10000, 10000], 'backoff must double and then hold at its ceiling');
 
@@ -18997,8 +19054,7 @@ test('offscreen cloud bridge retries at once when an explicit start lands mid-ba
   assert.ok(armed, 'a ceiling-length backoff should be pending');
   const socketsBefore = sockets.length;
 
-  let restarted;
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, value => { restarted = value; });
+  const restarted = await start();
   assert.equal(sockets.length, socketsBefore + 1, 'an explicit start must dial immediately');
   assert.equal(armed.cleared, true, 'the superseded backoff timer must be cancelled, not left to double-dial');
   assert.equal(restarted.reconnectAttempt, 0, 'an explicit start resets the backoff');
@@ -19007,26 +19063,29 @@ test('offscreen cloud bridge retries at once when an explicit start lands mid-ba
   assert.equal(sockets.length, socketsBefore + 1, 'no duplicate socket after the immediate retry');
 });
 
-test('offscreen cloud bridge does not start a second socket while one is already dialling', () => {
-  const { listener, sockets, pendingTimers } = createOffscreenCloudBridgeHarness();
+test('offscreen cloud bridge does not start a second socket while one is already dialling', async () => {
+  const { listener, sockets, pendingTimers, settle, start } = createOffscreenCloudBridgeHarness();
+  // Two starts before the pre-dial reads finish: the second must not open a
+  // competing socket once both settle.
   listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
-  assert.equal(sockets.length, 1);
+  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  await settle();
+  assert.equal(sockets.length, 1, 'a start while the pre-dial reads are in flight must not open a competing socket');
 
   // The watchdog fires while the first dial is still CONNECTING.
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  await start();
   assert.equal(sockets.length, 1, 'a start during CONNECTING must not open a competing socket');
 
   sockets[0].emit('open');
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+  await start();
   assert.equal(sockets.length, 1, 'a start on an open socket must be a no-op');
   assert.equal(sockets[0].sent.filter(message => message.type === 'hello').length, 1);
   assert.equal(pendingTimers().length, 0, 'an open socket leaves no timers armed');
 });
 
-test('offscreen cloud bridge abandons a handshake that never completes', () => {
-  const { listener, sockets, pendingTimers, runTimer } = createOffscreenCloudBridgeHarness();
-  let status;
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
+test('offscreen cloud bridge abandons a handshake that never completes', async () => {
+  const { sockets, pendingTimers, runTimer, settle, start, statusOf } = createOffscreenCloudBridgeHarness();
+  await start();
   const stalled = sockets[0];
 
   // Something accepted the TCP connection and then went silent, so the socket
@@ -19036,49 +19095,329 @@ test('offscreen cloud bridge abandons a handshake that never completes', () => {
   assert.ok(connectTimeout, 'a connect-timeout must be armed alongside every dial');
   runTimer(connectTimeout);
 
-  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
+  const status = statusOf();
   assert.equal(status.connected, false);
   assert.match(status.lastError, /handshake did not complete/i);
 
   const backoff = pendingTimers().find(entry => entry.delay === 500);
   assert.ok(backoff, 'abandoning a stalled dial must schedule a retry');
   runTimer(backoff);
+  await settle();
   assert.equal(sockets.length, 2, 'the retry must open a fresh socket');
   assert.notEqual(sockets[1], stalled);
 });
 
-test('offscreen cloud bridge reports when it connected', () => {
-  const { listener, sockets } = createOffscreenCloudBridgeHarness();
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17374/extension' }, null, () => {});
-  let status;
-  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
-  assert.equal(status.connectedAt, null);
+test('offscreen cloud bridge reports when it connected', async () => {
+  const { sockets, start, statusOf } = createOffscreenCloudBridgeHarness();
+  await start();
+  assert.equal(statusOf().connectedAt, null);
 
   sockets[0].emit('open');
-  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
-  assert.equal(typeof status.connectedAt, 'number');
+  assert.equal(typeof statusOf().connectedAt, 'number');
 
   sockets[0].close();
-  listener({ type: 'cloud-bridge-status' }, null, value => { status = value; });
-  assert.equal(status.connectedAt, null, 'a dropped socket must not keep advertising a connection time');
+  assert.equal(statusOf().connectedAt, null, 'a dropped socket must not keep advertising a connection time');
 });
 
-test('offscreen cloud bridge ignores asynchronous close events from replaced sockets', () => {
-  const { listener, sockets, pendingTimers } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
-  listener({ type: 'cloud-bridge-start', url: 'ws://127.0.0.1:17373/extension' }, null, () => {});
+test('offscreen cloud bridge ignores asynchronous close events from replaced sockets', async () => {
+  const { sockets, pendingTimers, start } = createOffscreenCloudBridgeHarness({ closeSynchronously: false });
+  await start('ws://127.0.0.1:17373/extension');
   const first = sockets[0];
   first.emit('open');
 
-  listener({ type: 'cloud-bridge-start', url: 'ws://localhost:17374/extension' }, null, () => {});
+  await start('ws://localhost:17374/extension');
   const replacement = sockets[1];
   assert.ok(replacement, 'URL change should create a replacement WebSocket');
 
-  first.emit('close');
+  first.emit('close', { code: 1000, reason: '' });
   replacement.emit('open');
 
   assert.equal(sockets.length, 2, 'stale close must not create a duplicate connection');
   assert.equal(pendingTimers().length, 0, 'stale close must not schedule reconnect for the replacement');
   assert.equal(replacement.sent.filter(message => message.type === 'hello').length, 1, 'replacement socket should remain current and announce itself');
+});
+
+test('offscreen cloud bridge dials the Settings URL in dev mode and announces a v3 hello', async () => {
+  const { sockets, fetchCalls, start, statusOf } = createOffscreenCloudBridgeHarness();
+  await start('ws://127.0.0.1:17374/extension');
+  assert.equal(fetchCalls.length, 1, 'the background is asked for the identity (workmate.json, sign-in) before dialling');
+  assert.deepEqual(JSON.parse(JSON.stringify(fetchCalls[0])), { target: 'background', action: 'cloud_bridge_identity' });
+  assert.equal(sockets[0].url, 'ws://127.0.0.1:17374/extension');
+  sockets[0].emit('open');
+  const hello = sockets[0].sent[0];
+  assert.equal(hello.type, 'hello');
+  assert.equal(hello.client, 'webbrain-extension', 'the wire identifier the server checks must not change');
+  assert.equal(hello.protocolVersion, 3);
+  assert.equal(hello.version, '1.0.3');
+  assert.equal(hello.browser, 'Chrome 152');
+  assert.equal(hello.installType, 'dev');
+  assert.equal(hello.signedIn, false);
+  assert.equal('token' in hello, false, 'a dev install has no token to send');
+  assert.equal(statusOf().installType, 'dev');
+  assert.equal(statusOf().workmate, null);
+
+  // A server that only speaks v2 never sends hello_ack; the socket stays up.
+  sockets[0].emit('message', { data: JSON.stringify({ id: 'x', action: 'cloud_status', payload: {} }) });
+  assert.equal(sockets[0].readyState, 1);
+});
+
+test('offscreen cloud bridge follows workmate.json: its socket URL, token and install type', async () => {
+  const TOKEN = 'dG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZQ==';
+  const { sockets, fetchCalls, pendingTimers, runTimer, settle, start, statusOf } = createOffscreenCloudBridgeHarness({
+    workmateJson: { schema: 1, wsUrl: 'ws://127.0.0.1:17390/extension', token: TOKEN, installId: 'inst-1', workmateVersion: '0.21.0', minServerVersion: '1.1.0' },
+    signedIn: true,
+    brands: [{ brand: 'Chromium', version: '152' }, { brand: 'Microsoft Edge', version: '152' }],
+  });
+  await start('ws://127.0.0.1:17374/extension');
+  assert.equal(sockets[0].url, 'ws://127.0.0.1:17390/extension', 'workmate.json wins over the Settings URL');
+  sockets[0].emit('open');
+  const hello = sockets[0].sent[0];
+  assert.equal(hello.protocolVersion, 3);
+  assert.equal(hello.token, TOKEN);
+  assert.equal(hello.installType, 'workmate');
+  assert.equal(hello.browser, 'Edge 152');
+  assert.equal(hello.signedIn, true);
+
+  // The server echoes the token: the socket is trusted and stays open.
+  sockets[0].emit('message', { data: JSON.stringify({ type: 'hello_ack', serverVersion: '1.1.0', token: TOKEN, minExtensionVersion: '1.0.4', minProtocol: 3 }) });
+  assert.equal(sockets[0].readyState, 1);
+  const status = statusOf();
+  assert.equal(status.installType, 'workmate');
+  assert.equal(status.workmate.hasToken, true);
+  assert.equal(status.workmate.wsUrl, 'ws://127.0.0.1:17390/extension');
+  assert.equal(status.server.version, '1.1.0');
+  assert.equal(status.server.tokenEchoed, true);
+  assert.equal(status.holdoffUntil, null);
+
+  // A Settings URL change does not move a Workmate-managed socket.
+  await start('ws://127.0.0.1:17373/extension');
+  assert.equal(sockets.length, 1, 'the Settings URL no longer decides where a Workmate install dials');
+  assert.equal(sockets[0].readyState, 1);
+
+  // The identity (and with it workmate.json) is re-read on every dial, so
+  // Workmate can move the port or rotate the token.
+  sockets[0].close();
+  const backoff = pendingTimers().find(entry => entry.delay === 500);
+  runTimer(backoff);
+  await settle();
+  assert.equal(fetchCalls.length, 2, 'each dial asks the background again');
+  assert.equal(sockets.length, 2);
+});
+
+test('offscreen cloud bridge drops a server that does not echo the pairing token and holds off for a minute', async () => {
+  const TOKEN = 'dG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZQ==';
+  const { sockets, pendingTimers, start, statusOf } = createOffscreenCloudBridgeHarness({
+    workmateJson: { schema: 1, wsUrl: 'ws://127.0.0.1:17374/extension', token: TOKEN },
+  });
+  await start();
+  sockets[0].emit('open');
+  assert.equal(sockets[0].sent[0].token, TOKEN);
+
+  // A server without the pairing file answers token:null — could be anyone on the port.
+  sockets[0].emit('message', { data: JSON.stringify({ type: 'hello_ack', serverVersion: '1.1.0', token: null }) });
+  assert.equal(sockets[0].closeCalls.length, 1, 'the socket must be closed by the extension');
+  assert.equal(sockets[0].closeCalls[0].code, 4008, 'a browser-permitted close code');
+  const status = statusOf();
+  assert.equal(status.connected, false);
+  assert.match(status.lastError, /pairing token/i);
+  assert.ok(status.holdoffUntil > Date.now() + 50000, 'a minute-long holdoff must be recorded');
+  const retry = pendingTimers().find(entry => entry.delay >= 59000);
+  assert.ok(retry, `the retry must wait out the holdoff, timers: ${JSON.stringify(pendingTimers().map(t => t.delay))}`);
+
+  // An explicit start (watchdog alarm) during the holdoff must not dial early.
+  const before = sockets.length;
+  await start();
+  assert.equal(sockets.length, before, 'a start during the holdoff does not dial');
+
+  // A different token from the server is a mismatch too.
+  const other = createOffscreenCloudBridgeHarness({ workmateJson: { schema: 1, wsUrl: 'ws://127.0.0.1:17374/extension', token: TOKEN } });
+  await other.start();
+  other.sockets[0].emit('open');
+  other.sockets[0].emit('message', { data: JSON.stringify({ type: 'hello_ack', serverVersion: '1.1.0', token: 'someone-else' }) });
+  assert.equal(other.sockets[0].closeCalls.length, 1);
+
+  // And a server that rejects the hello outright (1008) is not hammered either.
+  const rejected = createOffscreenCloudBridgeHarness({ workmateJson: { schema: 1, wsUrl: 'ws://127.0.0.1:17374/extension', token: TOKEN } });
+  await rejected.start();
+  rejected.sockets[0].emit('open');
+  rejected.sockets[0].emit('close', { code: 1008, reason: 'Pairing token mismatch' });
+  assert.match(rejected.statusOf().lastError, /rejected the handshake: Pairing token mismatch/);
+  assert.ok(rejected.pendingTimers().some(entry => entry.delay >= 59000), 'a 1008 close schedules the retry after the holdoff');
+});
+
+test('offscreen cloud bridge falls back to the Settings URL when workmate.json is unusable', async () => {
+  const remote = createOffscreenCloudBridgeHarness({
+    workmateJson: { schema: 1, wsUrl: 'wss://attacker.example/extension', token: 'dG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZW4tdG9rZQ==' },
+  });
+  await remote.start('ws://127.0.0.1:17374/extension');
+  assert.equal(remote.sockets[0].url, 'ws://127.0.0.1:17374/extension', 'a non-loopback wsUrl is never dialled');
+  assert.match(remote.statusOf().workmate.error, /wsUrl rejected/);
+  remote.sockets[0].emit('open');
+  assert.equal(remote.sockets[0].sent[0].installType, 'workmate', 'the token still identifies a Workmate install');
+
+  const broken = createOffscreenCloudBridgeHarness({ workmateJson: '{ not json' });
+  await broken.start();
+  assert.equal(broken.sockets[0].url, 'ws://127.0.0.1:17374/extension');
+  assert.match(broken.statusOf().workmate.error, /not valid JSON/);
+  assert.equal(broken.statusOf().installType, 'dev');
+
+  const wrongSchema = createOffscreenCloudBridgeHarness({ workmateJson: { schema: 2, wsUrl: 'ws://127.0.0.1:17374/extension' } });
+  await wrongSchema.start();
+  assert.match(wrongSchema.statusOf().workmate.error, /unsupported schema/);
+
+  const missing404 = createOffscreenCloudBridgeHarness({ workmateJson: null });
+  await missing404.start();
+  assert.equal(missing404.sockets.length, 1);
+  assert.equal(missing404.statusOf().workmate, null);
+
+  const noStorage = createOffscreenCloudBridgeHarness({ storageAvailable: false });
+  await noStorage.start();
+  noStorage.sockets[0].emit('open');
+  assert.equal(noStorage.sockets[0].sent[0].signedIn, null, 'an unanswerable sign-in check is reported as unknown, never guessed');
+});
+
+test('offscreen cloud bridge names the browser from UA-CH brands and falls back to the UA string', async () => {
+  const brave = createOffscreenCloudBridgeHarness({ brands: [{ brand: 'Chromium', version: '152' }, { brand: 'Brave', version: '152' }] });
+  await brave.start();
+  brave.sockets[0].emit('open');
+  assert.equal(brave.sockets[0].sent[0].browser, 'Brave 152');
+
+  const bare = createOffscreenCloudBridgeHarness({ brands: [{ brand: 'Chromium', version: '150' }] });
+  await bare.start();
+  bare.sockets[0].emit('open');
+  assert.equal(bare.sockets[0].sent[0].browser, 'Chromium 150');
+
+  const legacy = createOffscreenCloudBridgeHarness({ brands: null });
+  await legacy.start();
+  legacy.sockets[0].emit('open');
+  assert.equal(legacy.sockets[0].sent[0].browser, 'Chrome 152');
+});
+
+test('cloud run controller refuses new runs while a Workmate update drains, and resumes on request', async () => {
+  const controller = createCloudRunController({
+    chromeApi: {
+      storage: {
+        local: { get: async () => ({}) },
+        session: { get: async () => ({}), set: async () => {} },
+      },
+      runtime: { sendMessage: async () => ({}) },
+      tabs: { query: async () => [], get: async () => { throw new Error('no such tab'); } },
+      windows: { update: async () => ({}) },
+    },
+    agent: { isRunning: () => false, abort: () => {} },
+    ensureOffscreen: async () => {},
+    makeRunId: () => 'run_drain',
+  });
+
+  assert.equal(controller.isDraining(), false);
+  const prepared = await controller.prepareUpdate({});
+  assert.deepEqual(prepared, { ok: true, draining: true, busy: 0 });
+  assert.equal(controller.isDraining(), true);
+  await assert.rejects(
+    () => controller.startRun({ task: 'open example.com', mode: 'act' }),
+    (error) => {
+      assert.equal(error.status, 503);
+      assert.match(error.message, /about to update/);
+      return true;
+    },
+  );
+  // Idempotent: a second prepare is what Workmate's poll sends.
+  assert.deepEqual(await controller.prepareUpdate({}), { ok: true, draining: true, busy: 0 });
+
+  const resumed = await controller.prepareUpdate({ resume: true });
+  assert.equal(resumed.draining, false);
+  assert.equal(controller.isDraining(), false);
+  await assert.rejects(
+    () => controller.startRun({ task: 'open example.com', mode: 'act', tabId: 7 }),
+    (error) => {
+      assert.doesNotMatch(error.message, /about to update/, 'once resumed, the drain gate must be out of the way');
+      return true;
+    },
+  );
+});
+
+test('parseWorkmateConfig accepts Workmate\'s file and reports what is wrong with anything else', () => {
+  const good = parseWorkmateConfig(JSON.stringify({ schema: 1, wsUrl: ' ws://127.0.0.1:17374/extension ', token: ' abc ', installId: 'i', workmateVersion: '0.21.0', minServerVersion: '1.1.0' }));
+  assert.equal(good.error, '');
+  assert.deepEqual(good.config, { wsUrl: 'ws://127.0.0.1:17374/extension', token: 'abc', installId: 'i', workmateVersion: '0.21.0', minServerVersion: '1.1.0' });
+  assert.deepEqual(parseWorkmateConfig(JSON.stringify({ schema: 1 })).config, { wsUrl: null, token: '', installId: '', workmateVersion: '', minServerVersion: '' });
+  assert.match(parseWorkmateConfig('{ nope').error, /not valid JSON/);
+  assert.match(parseWorkmateConfig(JSON.stringify({ schema: 2 })).error, /unsupported schema/);
+  assert.match(parseWorkmateConfig('[]').error, /unsupported schema/);
+  assert.equal(parseWorkmateConfig('[]').config, null);
+  assert.equal(WORKMATE_SESSION_STORAGE_KEY, 'agentxAuthSessionV1', 'must mirror AGENTX_SESSION_STORAGE_KEY in the brand layer');
+});
+
+test('cloud run controller answers cloud_bridge_identity from the manifest, storage and workmate.json', async () => {
+  const build = ({ session, workmateText, fetchFails = false } = {}) => createCloudRunController({
+    chromeApi: {
+      storage: {
+        local: { get: async () => ({ [WORKMATE_SESSION_STORAGE_KEY]: session }) },
+        session: { get: async () => ({}), set: async () => {} },
+      },
+      runtime: {
+        sendMessage: async () => ({}),
+        getManifest: () => ({ version: '1.0.4' }),
+        getURL: (rel) => `chrome-extension://pfadeibckkgklmmjghiikadphihbpape/${rel}`,
+      },
+      tabs: { query: async () => [] },
+      windows: { update: async () => ({}) },
+    },
+    agent: { isRunning: () => false, abort: () => {} },
+    ensureOffscreen: async () => {},
+    fetchImpl: async (url) => {
+      assert.equal(url, 'chrome-extension://pfadeibckkgklmmjghiikadphihbpape/workmate.json');
+      if (fetchFails) throw new TypeError('Failed to fetch');
+      if (workmateText === undefined) return { ok: false, status: 404 };
+      return { ok: true, status: 200, text: async () => workmateText };
+    },
+  });
+
+  const dev = await build({ fetchFails: true }).bridgeIdentity();
+  assert.deepEqual(dev, { version: '1.0.4', signedIn: false, workmate: null, workmateError: '' });
+
+  const signedIn = await build({ session: { idToken: 'jwt', user: { subject: 'sub' } } }).bridgeIdentity();
+  assert.equal(signedIn.signedIn, true);
+  assert.equal(signedIn.workmate, null, 'a 404 is the normal dev case');
+
+  const paired = await build({ workmateText: JSON.stringify({ schema: 1, wsUrl: 'ws://127.0.0.1:17390/extension', token: 'tok' }) }).bridgeIdentity();
+  assert.equal(paired.workmate.wsUrl, 'ws://127.0.0.1:17390/extension');
+  assert.equal(paired.workmate.token, 'tok');
+  assert.equal(paired.workmateError, '');
+
+  const broken = await build({ workmateText: '{ nope' }).bridgeIdentity();
+  assert.equal(broken.workmate, null);
+  assert.match(broken.workmateError, /not valid JSON/);
+
+  // Storage that throws is "unknown", never a guess either way.
+  const noStorage = createCloudRunController({
+    chromeApi: {
+      storage: { local: { get: async () => { throw new Error('no storage'); } }, session: { get: async () => ({}), set: async () => {} } },
+      runtime: { sendMessage: async () => ({}), getManifest: () => ({ version: '1.0.4' }), getURL: (rel) => rel },
+      tabs: { query: async () => [] },
+      windows: { update: async () => ({}) },
+    },
+    agent: { isRunning: () => false, abort: () => {} },
+    ensureOffscreen: async () => {},
+    fetchImpl: async () => { throw new TypeError('Failed to fetch'); },
+  });
+  assert.equal((await noStorage.bridgeIdentity()).signedIn, null);
+});
+
+test('brand config pins a fixed extension ID that is derived from the manifest key', async () => {
+  const { extensionIdFromPublicKey, EXTENSION_ID_PATTERN } = await import(
+    'file://' + path.join(ROOT, 'scripts/extension-id.mjs').replace(/\\/g, '/')
+  );
+  const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'brand/brand.config.json'), 'utf8'));
+  const chrome = config.manifestOverrides?.chrome || {};
+  assert.ok(chrome.key, 'manifestOverrides.chrome.key pins the extension ID Workmate looks for');
+  assert.equal(chrome.minimum_chrome_version, '121');
+  assert.equal(config.manifestOverrides.all?.key, undefined, 'Firefox must not receive the Chrome key');
+  assert.match(config.product.extensionId, EXTENSION_ID_PATTERN);
+  assert.equal(extensionIdFromPublicKey(chrome.key), config.product.extensionId);
+  // Known vector: the ID of a key is the a–p spelling of the first 16 bytes of SHA-256(SPKI).
+  assert.equal(extensionIdFromPublicKey(Buffer.from('spki').toString('base64')).length, 32);
+  assert.throws(() => extensionIdFromPublicKey(''), /empty/);
 });
 
 test('getToolsForMode: `done` outcome is required in every supported Act and Dev prompt tier', () => {
