@@ -47511,7 +47511,7 @@ test('inferContextWindow: model-aware cloud/router defaults and local 16k fallba
     for (const providerName of ['lmstudio', 'jan', 'vllm', 'sglang', 'localai', 'gpt4all', 'local-openai-proxy']) {
       assert.equal(infer({ category: 'local', providerName, model: 'qwen3.7-plus' }), 16384);
     }
-    for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+    for (const model of ['gpt-6-luna-pro', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
       assert.equal(infer({ category: 'cloud', providerName: 'openai', model }), 1050000);
     }
     assert.equal(infer({ category: 'cloud', providerName: 'openai', model: 'gpt-5.5-pro' }), 1050000);
@@ -51271,8 +51271,9 @@ test('built-in catalog defaults opt into vision when the model name is multimoda
   }
 });
 
-test('OpenAI settings list only the GPT-5.6 family and current dated models', () => {
+test('OpenAI settings list GPT-6 Luna Pro, the GPT-5.6 family, and current dated models', () => {
   const expectedModels = [
+    'gpt-6-luna-pro',
     'gpt-5.6-terra',
     'gpt-5.6-sol',
     'gpt-5.6-luna',
@@ -51677,6 +51678,7 @@ test('Responses reasoning effort is normalized for GPT-5 Pro model constraints',
 
 test('official OpenAI Ask streaming follows the documented model capability', () => {
   const supportedModels = [
+    'gpt-6-luna-pro',
     'gpt-5.6-terra',
     'gpt-5.5',
     'gpt-5.5-2026-04-23',
@@ -53794,6 +53796,25 @@ test('router-prefixed OpenAI reasoning model ids use the new contract while rout
     for (const model of legacyContractModels) {
       assert.equal(compatibility.isNewOpenAIContractConfig({ providerName: 'openrouter', model }), false, `${model} should keep the legacy contract`);
     }
+    assert.equal(
+      compatibility.requiresOpenAIDefaultTemperature({ providerName: 'openrouter', model: 'openai/gpt-6-luna-pro' }),
+      true,
+      'OpenRouter GPT-6 Luna Pro should omit temperature',
+    );
+    assert.equal(
+      compatibility.requiresOpenAIDefaultTemperature({
+        providerName: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-6-luna-pro',
+      }),
+      true,
+      'official GPT-6 Luna Pro should omit temperature',
+    );
+    assert.equal(
+      compatibility.requiresOpenAIDefaultTemperature({ providerName: 'custom-proxy', model: 'openai/gpt-6-luna-pro' }),
+      false,
+      'a custom proxy must not inherit GPT-6 Luna Pro temperature behavior',
+    );
   }
 
   for (const Provider of [OpenAIProviderCh, OpenAIProviderFx]) {
@@ -53833,6 +53854,28 @@ test('router-prefixed OpenAI reasoning model ids use the new contract while rout
       assert.equal(body.max_tokens, 123, `${model} should use max_tokens`);
       assert.equal(body.max_completion_tokens, undefined, `${model} must not send max_completion_tokens`);
       assert.equal(body.temperature, 0.7, `${model} should keep the default temperature`);
+    }
+
+    for (const config of [
+      {
+        label: 'OpenRouter GPT-6 Luna Pro',
+        providerName: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: 'openai/gpt-6-luna-pro',
+      },
+      {
+        label: 'official GPT-6 Luna Pro',
+        providerName: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-6-luna-pro',
+      },
+    ]) {
+      const provider = new Provider(config);
+      assert.equal(provider._isNewOpenAIContract(), false, `${config.label} should keep the Chat Completions token contract`);
+      const body = provider._buildChatCompletionsBody(messages, { maxTokens: 123, temperature: 0.2 }, false);
+      assert.equal(body.max_tokens, 123, `${config.label} should use max_tokens`);
+      assert.equal(body.max_completion_tokens, undefined, `${config.label} must not send max_completion_tokens`);
+      assert.equal(body.temperature, undefined, `${config.label} must omit temperature`);
     }
 
     // gpt-4.1 accepts both parameter sets; it must stay legacy so explicit
