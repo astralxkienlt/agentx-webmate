@@ -2726,6 +2726,8 @@ function renderProviders() {
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gpt-5.6-terra',
           suggestions: [
             'gpt-6-luna-pro',
+            'gpt-6-sol',
+            'gpt-6-astra',
             'gpt-5.6-terra',
             'gpt-5.6-sol',
             'gpt-5.6-luna',
@@ -2745,7 +2747,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-or-...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'openrouter/free',
-          suggestions: ['openrouter/free', 'qwen/qwen3.8-27b', 'moonshotai/kimi-k3', 'z-ai/glm-5.3', 'minimax/minimax-m3'] },
+          suggestions: ['openrouter/free', 'anthropic/claude-opus-5.5', 'qwen/qwen3.8-27b', 'moonshotai/kimi-k3', 'z-ai/glm-5.3', 'minimax/minimax-m3'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://openrouter.ai/api/v1' },
         PROMPT_TIER_FIELD,
       ],
