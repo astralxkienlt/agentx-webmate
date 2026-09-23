@@ -77,12 +77,13 @@ const COPY = {
     removedMessage: 'Removed {name}.',
     restoredMessage: 'Restored {name} v{version} from the hub.',
     view: 'View',
+    openOnHub: 'Open on the Hub',
     fork: 'Fork to edit',
     forkSuffix: 'copy',
     forkedMessage: 'Made an editable copy "{name}". The hub version was withdrawn from this device; install it again from the hub any time.',
     restore: 'Restore hub version',
     restoreConfirm: 'Replace your edited copy of {slug} with the version on the hub?',
-    locked: 'Skills from the AgentX Hub are read-only — use "Fork to edit" to make your own copy.',
+    locked: 'Skills from the AgentX Hub are read-only. Its author edits it on the Hub ("Open on the Hub", then Edit) and every device that installed it gets the new version; for a copy of your own, use "Fork to edit".',
     forkedFromHub: 'Copy of AgentX Hub',
     advanced: 'Advanced',
     hubUrlLabel: 'Hub address',
@@ -160,12 +161,13 @@ const COPY = {
     removedMessage: 'Đã gỡ {name}.',
     restoredMessage: 'Đã khôi phục {name} v{version} từ hub.',
     view: 'Xem',
+    openOnHub: 'Mở trên Hub',
     fork: 'Tách bản sao để sửa',
     forkSuffix: 'bản sao',
     forkedMessage: 'Đã tạo bản sao "{name}" để bạn sửa. Bản của hub đã được gỡ khỏi thiết bị này; có thể cài lại từ hub bất cứ lúc nào.',
     restore: 'Khôi phục bản hub',
     restoreConfirm: 'Thay bản đã sửa của {slug} bằng bản trên hub?',
-    locked: 'Kỹ năng từ AgentX Hub chỉ đọc — dùng "Tách bản sao để sửa" nếu muốn có bản của riêng bạn.',
+    locked: 'Kỹ năng từ AgentX Hub chỉ đọc. Tác giả sửa trên Hub ("Mở trên Hub" rồi "Sửa") và mọi thiết bị đã cài tự nhận bản mới; muốn có bản của riêng bạn thì dùng "Tách bản sao để sửa".',
     forkedFromHub: 'Bản sao từ AgentX Hub',
     advanced: 'Nâng cao',
     hubUrlLabel: 'Địa chỉ hub',
@@ -229,26 +231,37 @@ export const AGENTX_HUB_ROW_ACTION_ATTR = 'data-agentx-hub-row-action';
 /**
  * The action buttons for one row of the enabled-skills list when the record
  * carries a hub slug, or '' so the caller renders the upstream Edit · Remove
- * pair. A hub record is read-only: View · Fork to edit · Remove — the removal
- * goes through the hub so the next sync does not put it back. A copy edited
- * by hand before the lock keeps Edit and gains Restore hub version. The
- * attributes are deliberately not the upstream `data-skill-id` /
- * `data-skill-edit-id`, so the upstream handlers never fire on these.
+ * pair. A hub record is read-only: View · Open on the Hub · Fork to edit ·
+ * Remove — the removal goes through the hub so the next sync does not put it
+ * back, and the skill's author edits it on the hub page (hub decision §8 #20).
+ * A copy edited by hand before the lock keeps Edit and gains Open on the Hub
+ * and Restore hub version. The attributes are deliberately not the upstream
+ * `data-skill-id` / `data-skill-edit-id`, so the upstream handlers never fire
+ * on these.
  */
 export function agentxHubSkillRowActions(skill, locale = 'en', labels = {}) {
   if (!skill?.hubSlug) return '';
   const lang = pickLang(locale);
-  const button = (action, text) => `<button class="btn-secondary" ${AGENTX_HUB_ROW_ACTION_ATTR}="${action}" data-agentx-skill-id="${escapeHtml(skill.id)}" data-hub-slug="${escapeHtml(skill.hubSlug)}" data-skill-name="${escapeHtml(skill.name || '')}">${escapeHtml(text)}</button>`;
+  const button = (action, text, extra = '') => `<button class="btn-secondary" ${AGENTX_HUB_ROW_ACTION_ATTR}="${action}" data-agentx-skill-id="${escapeHtml(skill.id)}" data-hub-slug="${escapeHtml(skill.hubSlug)}" data-skill-name="${escapeHtml(skill.name || '')}"${extra}>${escapeHtml(text)}</button>`;
+  const hubPage = hubPageUrl(skill.sourceUrl);
+  const open = hubPage ? button('open', copy(lang, 'openOnHub'), ` data-hub-url="${escapeHtml(hubPage)}"`) : '';
   if (skill.sourceType === 'hub') {
-    return button('view', copy(lang, 'view')) + button('fork', copy(lang, 'fork')) + button('remove', labels.remove || copy(lang, 'remove'));
+    return button('view', copy(lang, 'view')) + open + button('fork', copy(lang, 'fork')) + button('remove', labels.remove || copy(lang, 'remove'));
   }
-  return button('edit', labels.edit || 'Edit') + button('restore', copy(lang, 'restore')) + button('remove', labels.remove || copy(lang, 'remove'));
+  return button('edit', labels.edit || 'Edit') + open + button('restore', copy(lang, 'restore')) + button('remove', labels.remove || copy(lang, 'remove'));
+}
+
+/** A record's hub page, or '' — only an http(s) address is ever opened. */
+function hubPageUrl(value) {
+  const text = String(value || '').trim();
+  return /^https?:\/\/[^\s"'<>]+$/i.test(text) ? text : '';
 }
 
 /**
  * Wire the buttons above on the enabled-skills list (bound once; the list is
  * re-rendered on every change but its container is stable). `preview` and
- * `edit` are the page's own functions; fork, restore and remove go to the
+ * `edit` are the page's own functions; "Open on the Hub" opens the skill's
+ * hub page in a tab (`openImpl`); fork, restore and remove go to the
  * background and the storage listener re-renders the list.
  */
 export function bindAgentXHubSkillRowActions(container, {
@@ -258,6 +271,7 @@ export function bindAgentXHubSkillRowActions(container, {
   edit = () => {},
   notify = () => {},
   confirmImpl = (message) => globalThis.confirm?.(message) ?? true,
+  openImpl = (url) => globalThis.open?.(url, '_blank', 'noopener'),
 } = {}) {
   if (!container || typeof sendToBackground !== 'function') return false;
   if (container.dataset?.agentxHubRowsBound) return false;
@@ -273,6 +287,11 @@ export function bindAgentXHubSkillRowActions(container, {
     const lang = pickLang(locale);
     if (action === 'view') return preview(id);
     if (action === 'edit') return edit(id);
+    if (action === 'open') {
+      const url = hubPageUrl(button.dataset?.hubUrl);
+      if (url) openImpl(url);
+      return undefined;
+    }
     if (action === 'restore' && !confirmImpl(copy(lang, 'restoreConfirm', { slug }))) return undefined;
     button.disabled = true;
     try {
