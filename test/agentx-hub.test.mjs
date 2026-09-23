@@ -776,16 +776,24 @@ test('the Settings card labels hub records, renders search results and installed
     assert.equal(agentxHubSourceLabel({ sourceType: 'url', sourceUrl: 'https://x' }, 'vi'), '', 'non-hub records fall through to the upstream label');
     assert.match(agentxHubEditLockedMessage('vi'), /chỉ đọc/);
     assert.match(agentxHubEditLockedMessage('en'), /read-only/);
-    // The enabled-skills list: a hub row is View · Fork · Remove, never Edit; an edited copy keeps Edit and gains Restore.
-    const hubRow = agentxHubSkillRowActions({ id: 'hub_vneb-portal', name: 'VNEB <b>', sourceType: 'hub', hubSlug: 'vneb-portal' }, 'vi', { edit: 'Sửa', remove: 'Xóa' });
+    // The enabled-skills list: a hub row is View · Open on the Hub · Fork · Remove, never Edit; an edited copy keeps Edit and gains Restore.
+    assert.match(agentxHubEditLockedMessage('vi'), /"Mở trên Hub" rồi "Sửa"/, 'the author is sent to the hub editor, not to a fork');
+    const hubRow = agentxHubSkillRowActions({ id: 'hub_vneb-portal', name: 'VNEB <b>', sourceType: 'hub', hubSlug: 'vneb-portal', sourceUrl: 'https://skills.astralx.com.vn/skills/vneb-portal' }, 'vi', { edit: 'Sửa', remove: 'Xóa' });
     assert.match(hubRow, /data-agentx-hub-row-action="view"[^>]*>Xem</);
+    assert.match(hubRow, /data-agentx-hub-row-action="open"[^>]*data-hub-url="https:\/\/skills\.astralx\.com\.vn\/skills\/vneb-portal"[^>]*>Mở trên Hub</);
     assert.match(hubRow, /data-agentx-hub-row-action="fork"[^>]*>Tách bản sao để sửa</);
+    // Stored data is never trusted into an attribute or a tab: no http(s), no button.
+    for (const sourceUrl of ['', 'javascript:alert(1)', 'https://x" onmouseover="y']) {
+      assert.doesNotMatch(agentxHubSkillRowActions({ id: 'hub_x', sourceType: 'hub', hubSlug: 'x', sourceUrl }, 'en'), /"open"/, sourceUrl);
+    }
     assert.match(hubRow, /data-agentx-hub-row-action="remove"[^>]*>Xóa</);
     assert.doesNotMatch(hubRow, /data-skill-edit-id|data-skill-id=/, 'the upstream handlers must not fire on these buttons');
     assert.match(hubRow, /data-skill-name="VNEB &lt;b&gt;"/, 'escaped');
     const editedRow = agentxHubSkillRowActions({ id: 'hub_mine', name: 'Mine', sourceType: 'text', hubSlug: 'mine' }, 'en', { edit: 'Edit', remove: 'Remove' });
     assert.match(editedRow, /data-agentx-hub-row-action="edit"[^>]*>Edit</);
     assert.match(editedRow, /data-agentx-hub-row-action="restore"[^>]*>Restore hub version</);
+    assert.doesNotMatch(editedRow, /"open"/, 'no hub page recorded, no button');
+    assert.match(agentxHubSkillRowActions({ id: 'hub_mine', sourceType: 'text', hubSlug: 'mine', sourceUrl: 'https://hub.test/skills/mine' }, 'en'), /data-agentx-hub-row-action="open"[^>]*>Open on the Hub</);
     assert.doesNotMatch(editedRow, /"fork"/);
     assert.equal(agentxHubSkillRowActions({ id: 'fork_x', sourceType: 'text', forkedFrom: { slug: 'mine', version: '1.0.0' } }, 'vi'), '', 'a fork is an ordinary text skill: upstream Edit · Remove');
     assert.equal(agentxHubSkillRowActions({ id: 'plain', sourceType: 'text' }, 'vi'), '');
@@ -892,6 +900,7 @@ test('the enabled-skills row actions go through the background: view and edit st
     edit: (id) => notes.push(['edit', id]),
     notify: (kind, text) => notes.push([kind, text]),
     confirmImpl: () => true,
+    openImpl: (url) => notes.push(['open', url]),
   });
   assert.equal(bound, true);
   assert.equal(bindAgentXHubSkillRowActions(container, { sendToBackground: async () => ({}) }), false, 'bound once per container');
@@ -904,7 +913,15 @@ test('the enabled-skills row actions go through the background: view and edit st
   assert.deepEqual(notes.at(-1), ['preview', 'hub_vneb-portal']);
   await click(button('edit'));
   assert.deepEqual(notes.at(-1), ['edit', 'hub_vneb-portal']);
-  assert.deepEqual(messages, [], 'view and edit never leave the page');
+  const open = button('open');
+  open.dataset.hubUrl = 'https://skills.astralx.com.vn/skills/vneb-portal';
+  await click(open);
+  assert.deepEqual(notes.at(-1), ['open', 'https://skills.astralx.com.vn/skills/vneb-portal'], 'the hub page, where its author edits it');
+  open.dataset.hubUrl = 'javascript:alert(1)';
+  const before = notes.length;
+  await click(open);
+  assert.equal(notes.length, before, 'anything but an http(s) address is not opened');
+  assert.deepEqual(messages, [], 'view, edit and open never reach the background');
   const fork = button('fork');
   await click(fork);
   assert.deepEqual(messages.at(-1), ['agentx_hub_fork', { slug: 'vneb-portal', name: 'vneb-portal (bản sao)' }]);
