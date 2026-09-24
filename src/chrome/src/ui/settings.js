@@ -58,10 +58,12 @@ import {
   normalizeCapsolverApiKey,
 } from '../agent/capsolver-config.js';
 import {
+  OPENROUTER_ROUTING_VARIANTS,
   detectedCompatibilityPreset,
   isNewOpenAIContractConfig,
   normalizeOpenAICompatibleBaseUrl,
   normalizeProviderCompatibility,
+  openRouterRoutingVariant,
   parseProviderExtraBodyJson,
   shouldUseOpenAIResponsesApi,
 } from '../providers/provider-compatibility.js';
@@ -2226,6 +2228,13 @@ const VISION_MODE_FIELD = {
   ],
 };
 const OLLAMA_VISION_MODE_FIELD = VISION_MODE_FIELD;
+const OPTIONAL_LOCAL_API_KEY_FIELD = {
+  key: 'apiKey',
+  labelKey: 'st.provider.field.api_key',
+  type: 'password',
+  placeholder: 'optional',
+  collapsed: true,
+};
 
 function providerDefinitionId(id, config = providersData[id]) {
   return String(config?.sourceProviderId || config?.duplicateOf || id || '');
@@ -2282,6 +2291,15 @@ const CONTEXT_WINDOW_FIELD = {
   step: 1024,
 };
 
+const MAX_OUTPUT_TOKENS_FIELD = {
+  key: 'maxOutputTokens',
+  labelKey: 'st.provider.field.max_output_tokens',
+  type: 'number',
+  placeholder: '4096',
+  min: 1,
+  step: 1024,
+};
+
 const INPUT_COST_ESTIMATE_FIELD =
   { key: 'inputCostPerMillionUsd', labelKey: 'st.provider.field.input_cost_per_million', type: 'number', placeholder: '3.00' };
 const CACHE_READ_COST_ESTIMATE_FIELD =
@@ -2319,6 +2337,7 @@ const ZERO_ALLOWED_NUMBER_FIELDS = new Set([
   'outputCostPerMillionUsd',
 ]);
 const MIN_API_KEY_LENGTH = 12;
+const DUMMY_API_KEYS = new Set(['ollama', 'lm-studio']);
 
 function providerInputValue(input) {
   if (input.dataset.type === 'checkbox' || input.type === 'checkbox') {
@@ -2350,7 +2369,8 @@ function setProviderConfigValue(config, path, value) {
 function providerApiKeyWarning(id, config) {
   const input = document.querySelector(`input[data-provider="${id}"][data-key="apiKey"]`);
   if (!input) return '';
-  const apiKey = String(config.apiKey || '').trim();
+  const rawApiKey = String(config.apiKey || '').trim();
+  const apiKey = DUMMY_API_KEYS.has(rawApiKey) ? '' : rawApiKey;
   const keyIsOptional = providersData[id]?.category === 'local' && config.requiresApiKey !== true;
   const looksInvalid = apiKey ? apiKey.length < MIN_API_KEY_LENGTH : !keyIsOptional;
   input.setAttribute('aria-invalid', looksInvalid ? 'true' : 'false');
@@ -2386,9 +2406,25 @@ function prettyCompatibilityValue(value) {
   return translated === key ? (value || '') : translated;
 }
 
+function prettyOpenRouterRoutingVariant(value) {
+  if (value === 'standard') return prettyCompatibilityValue(value);
+  return value === 'nitro' ? 'Nitro' : 'Exacto';
+}
+
+function shouldPersistProviderInput(input) {
+  return input.dataset.key !== 'routingVariant' || input.dataset.routingExplicit === 'true';
+}
+
+function syncInferredOpenRouterRoutingVariant(id, model) {
+  const select = document.querySelector(`select[data-provider="${id}"][data-key="routingVariant"]`);
+  if (!select || select.dataset.routingExplicit === 'true') return;
+  select.value = openRouterRoutingVariant({ model });
+}
+
 function automaticTokenField(config) {
   if (shouldUseOpenAIResponsesApi(config)) return 'max_output_tokens';
-  return isNewOpenAIContractConfig(config) ? 'max_completion_tokens' : 'max_tokens';
+  const isNewOfficialContract = config.type === 'openai' && isNewOpenAIContractConfig(config);
+  return isNewOfficialContract ? 'max_completion_tokens' : 'max_tokens';
 }
 
 function compatibilitySummary(config) {
@@ -2415,13 +2451,17 @@ function compatibilitySummary(config) {
   const extra = extraCount
     ? t(extraCount === 1 ? 'st.providers.compat.summary_extra' : 'st.providers.compat.summary_extra_plural', { count: extraCount })
     : '';
-  return t('st.providers.compat.summary', { preset, reasoning, role, tokens, extra });
+  const routing = String(config.providerName || '').toLowerCase() === 'openrouter'
+    ? ` · ${prettyOpenRouterRoutingVariant(openRouterRoutingVariant(config))}`
+    : '';
+  return `${t('st.providers.compat.summary', { preset, reasoning, role, tokens, extra })}${routing}`;
 }
 
 function currentProviderCompatibilityConfig(id) {
   const source = providersData[id] || {};
   const config = { ...source, compat: { ...(source.compat || {}) } };
   document.querySelectorAll(`.provider-compatibility [data-provider="${id}"]`).forEach((input) => {
+    if (!shouldPersistProviderInput(input)) return;
     if (input.dataset.type === 'json') {
       try { config.extraBody = parseProviderExtraBodyJson(input.value); } catch { config.extraBody = {}; }
       return;
@@ -2453,6 +2493,7 @@ function refreshProviderCompatibilitySummary(id) {
 function renderProviderCompatibilitySettings(id, config) {
   if (!supportsProviderCompatibilitySettings(id, config)) return '';
   const showCompatibilityControls = supportsProviderCompatibilityControls(id, config);
+  const showOpenRouterRouting = String(config.providerName || '').toLowerCase() === 'openrouter';
   const compat = normalizeProviderCompatibility(config);
   const extraBody = providerCompatibilityJsonDrafts.has(id)
     ? providerCompatibilityJsonDrafts.get(id)
@@ -2477,6 +2518,15 @@ function renderProviderCompatibilitySettings(id, config) {
               ${options([['auto', valueLabel('auto')], ['openai', valueLabel('openai')], ['qwen', valueLabel('qwen')], ['deepseek', valueLabel('deepseek')], ['openrouter', valueLabel('openrouter')], ['custom', valueLabel('custom')]], compat.preset)}
             </select>
           </div>
+          ${showOpenRouterRouting ? `
+          <div class="field">
+            <label>${escapeHtml(valueLabel('openrouter'))}</label>
+            <select data-provider="${id}" data-key="routingVariant" data-type="select"
+                    data-routing-explicit="${Object.hasOwn(config, 'routingVariant') ? 'true' : 'false'}">
+              ${options(OPENROUTER_ROUTING_VARIANTS.map((value) => [value, prettyOpenRouterRoutingVariant(value)]), openRouterRoutingVariant(config))}
+            </select>
+          </div>
+          ` : ''}
           <div class="field">
             <label>${escapeHtml(t('st.providers.compat.reasoning'))}</label>
             <select data-provider="${id}" data-key="compat.reasoningEffort" data-type="select">
@@ -2543,7 +2593,7 @@ function providerSearchTextForEntry(id, config, fieldDefs) {
     config.baseUrl,
     fieldText,
     supportsProviderCompatibilitySettings(id, config)
-      ? 'advanced model compatibility reasoning thinking system developer max tokens custom request body json'
+      ? `advanced model compatibility reasoning thinking system developer max tokens custom request body json${String(config.providerName || '').toLowerCase() === 'openrouter' ? ' openrouter routing standard nitro exacto speed throughput tool quality' : ''}`
       : '',
   ].filter(Boolean).join(' '));
 }
@@ -2572,7 +2622,8 @@ function renderProviders() {
     llamacpp: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:8080' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'qwen/qwen3.5-9b' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'unsloth/Qwen3.8-27B-GGUF' },
         CONTEXT_WINDOW_FIELD,
         VISION_MODE_FIELD,
         PROMPT_TIER_FIELD,
@@ -2581,7 +2632,8 @@ function renderProviders() {
     ollama: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:11434/v1' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'qwen3.6:35b-a3b' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'qwen3.8:27b' },
         CONTEXT_WINDOW_FIELD,
         OLLAMA_VISION_MODE_FIELD,
         PROMPT_TIER_FIELD,
@@ -2590,6 +2642,7 @@ function renderProviders() {
     lmstudio: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:1234/v1' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
         { key: 'model', labelKey: 'st.provider.field.model_optional', type: 'text', placeholderKey: 'st.provider.field.model_loaded_hint' },
         CONTEXT_WINDOW_FIELD,
         VISION_MODE_FIELD,
@@ -2599,8 +2652,8 @@ function renderProviders() {
     jan: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:1337/v1' },
-        { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'optional' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gemma-4-12b-qat' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'google/gemma-4-12B-it' },
         CONTEXT_WINDOW_FIELD,
         { key: 'supportsVision', labelKey: 'st.provider.field.supports_vision', type: 'checkbox' },
         PROMPT_TIER_FIELD,
@@ -2609,8 +2662,8 @@ function renderProviders() {
     vllm: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:8000/v1' },
-        { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'optional' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gemma/gemma4-31b-qat' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'Qwen/Qwen3.8-27B' },
         CONTEXT_WINDOW_FIELD,
         { key: 'supportsVision', labelKey: 'st.provider.field.supports_vision', type: 'checkbox' },
         PROMPT_TIER_FIELD,
@@ -2619,8 +2672,8 @@ function renderProviders() {
     sglang: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:30000/v1' },
-        { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'optional' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gemma/gemma4-31b-qat' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'Qwen/Qwen3.8-27B' },
         CONTEXT_WINDOW_FIELD,
         { key: 'supportsVision', labelKey: 'st.provider.field.supports_vision', type: 'checkbox' },
         PROMPT_TIER_FIELD,
@@ -2629,7 +2682,7 @@ function renderProviders() {
     localai: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:8080/v1' },
-        { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'optional' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gpt-4' },
         CONTEXT_WINDOW_FIELD,
         VISION_MODE_FIELD,
@@ -2639,7 +2692,7 @@ function renderProviders() {
     gpt4all: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.server_url', type: 'text', placeholder: 'http://localhost:4891/v1' },
-        { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'optional' },
+        OPTIONAL_LOCAL_API_KEY_FIELD,
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'loaded model' },
         CONTEXT_WINDOW_FIELD,
         { key: 'supportsVision', labelKey: 'st.provider.field.supports_vision', type: 'checkbox' },
@@ -2672,7 +2725,7 @@ function renderProviders() {
         { key: 'accessKeyId', labelKey: 'st.provider.field.aws_access_key_id', type: 'text', placeholder: 'AKIA...' },
         { key: 'secretAccessKey', labelKey: 'st.provider.field.aws_secret_access_key', type: 'password', placeholder: '********' },
         { key: 'sessionToken', labelKey: 'st.provider.field.aws_session_token', type: 'password', placeholder: 'optional (STS)' },
-        { key: 'model', labelKey: 'st.provider.field.bedrock_model_id', type: 'text', placeholder: 'anthropic.claude-3-sonnet-20240229-v1:0' },
+        { key: 'model', labelKey: 'st.provider.field.bedrock_model_id', type: 'text', placeholder: 'anthropic.claude-sonnet-5' },
         ...CACHE_AWARE_COST_ESTIMATE_FIELDS,
       ],
     },
@@ -2681,6 +2734,9 @@ function renderProviders() {
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gpt-5.6-terra',
           suggestions: [
+            'gpt-6-luna-pro',
+            'gpt-6-sol',
+            'gpt-6-astra',
             'gpt-5.6-terra',
             'gpt-5.6-sol',
             'gpt-5.6-luna',
@@ -2700,7 +2756,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-or-...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'openrouter/free',
-          suggestions: ['openrouter/free', 'minimax/minimax-m3', 'stepfun/step-3.7-flash', 'qwen/qwen3.7-max', 'xiaomi/mimo-v2.5-pro'] },
+          suggestions: ['openrouter/free', 'anthropic/claude-opus-5.5', 'qwen/qwen3.8-27b', 'moonshotai/kimi-k3', 'z-ai/glm-5.3', 'minimax/minimax-m3'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://openrouter.ai/api/v1' },
         PROMPT_TIER_FIELD,
       ],
@@ -2708,8 +2764,8 @@ function renderProviders() {
     huggingface: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'hf_...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'zai-org/GLM-5.2',
-          suggestions: ['zai-org/GLM-5.2', 'Qwen/Qwen3.6-27B'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'moonshotai/Kimi-K3',
+          suggestions: ['moonshotai/Kimi-K3', 'zai-org/GLM-5.2', 'Qwen/Qwen3.8-2.4T-A95B', 'Qwen/Qwen3.6-27B'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://router.huggingface.co/v1' },
         // Hugging Face's catalog is huge and open-ended — unlike curated
         // routers, model-name sniffing (openai.js supportsVision) can't
@@ -2722,12 +2778,13 @@ function renderProviders() {
     fireworks: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'fw_...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'accounts/fireworks/models/kimi-k3',
           suggestions: [
-            'accounts/fireworks/models/llama-v3p3-70b-instruct',
-            'accounts/fireworks/models/llama4-scout-instruct-basic',
-            'accounts/fireworks/models/qwen3-235b-a22b',
-            'accounts/fireworks/models/deepseek-v3',
+            'accounts/fireworks/models/kimi-k3',
+            'accounts/fireworks/models/glm-5p2',
+            'accounts/fireworks/models/minimax-m3',
+            'accounts/fireworks/models/deepseek-v4-pro-0813',
+            'accounts/fireworks/models/qwen3p8-2p4t-a95b',
           ] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.fireworks.ai/inference/v1' },
         PROMPT_TIER_FIELD,
@@ -2736,8 +2793,8 @@ function renderProviders() {
     anthropic: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-ant-...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'claude-opus-4-8',
-          suggestions: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'claude-opus-5',
+          suggestions: ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.anthropic.com' },
         ...CACHE_AWARE_COST_ESTIMATE_FIELDS,
       ],
@@ -2746,7 +2803,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'AIza...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'gemini-3.1-pro',
-          suggestions: ['gemini-3.1-pro', 'gemini-3.1-flash', 'gemini-3-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'] },
+          suggestions: ['gemini-3.1-pro', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://generativelanguage.googleapis.com/v1beta/openai' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2757,7 +2814,7 @@ function renderProviders() {
         { key: 'accountId', label: 'Cloudflare Account ID', type: 'text', placeholder: '0123456789abcdef0123456789abcdef' },
         { key: 'gatewayId', label: 'AI Gateway ID (optional; @cf defaults to default)', type: 'text', placeholder: 'my-gateway' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: '@cf/zai-org/glm-5.2',
-          suggestions: ['@cf/zai-org/glm-5.2'] },
+          suggestions: ['@cf/zai-org/glm-5.2', '@cf/qwen/qwen3-30b-a3b-fp8'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2766,7 +2823,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'API key' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'mistral-medium-3.5',
-          suggestions: ['mistral-medium-3.5', 'mistral-large-latest', 'mistral-small-4', 'codestral-25.08', 'devstral-medium'] },
+          suggestions: ['mistral-medium-3.5', 'mistral-large-latest', 'mistral-small-4', 'codestral-latest'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.mistral.ai/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2775,7 +2832,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'deepseek-v4-flash',
-          suggestions: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+          suggestions: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.deepseek.com/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2783,8 +2840,8 @@ function renderProviders() {
     xai: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'xai-...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'grok-4.3',
-          suggestions: ['grok-4.3', 'grok-4.1-fast', 'grok-build-0.1'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'grok-4.6',
+          suggestions: ['grok-4.6', 'grok-4.5', 'grok-4.3', 'grok-build-0.1'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.x.ai/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2792,8 +2849,8 @@ function renderProviders() {
     nvidia: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'nvapi-...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'nvidia/llama-3.3-nemotron-super-49b',
-          suggestions: ['nvidia/llama-3.3-nemotron-super-49b', 'nvidia/llama-3.1-nemotron-70b-instruct', 'nvidia/nemotron-nano-9b-v2', 'meta/llama-3.3-70b-instruct', 'meta/llama-3.1-8b-instruct', 'deepseek-ai/deepseek-r1'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'nvidia/nemotron-3-super-120b-a12b',
+          suggestions: ['nvidia/nemotron-3-super-120b-a12b', 'nvidia/nemotron-3-nano-30b-a3b', 'z-ai/glm-5.2', 'qwen/qwen3.5-397b-a17b', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://integrate.api.nvidia.com/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2801,8 +2858,8 @@ function renderProviders() {
     minimax: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'API key' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'minimax-m2.7',
-          suggestions: ['minimax-m2.7', 'minimax-m3'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'MiniMax-M3',
+          suggestions: ['MiniMax-M3', 'MiniMax-M2.7'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.minimax.chat/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2810,8 +2867,8 @@ function renderProviders() {
     kimi: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'kimi-k2.5',
-          suggestions: ['kimi-k2.5', 'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'kimi-k3',
+          suggestions: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.moonshot.ai/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2819,8 +2876,8 @@ function renderProviders() {
     alibaba: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'sk-...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'qwen-max',
-          suggestions: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen3-235b-a22b'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'qwen3.8-max',
+          suggestions: ['qwen3.8-max', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.7-flash'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2828,12 +2885,13 @@ function renderProviders() {
     together: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'tgp_...' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'moonshotai/Kimi-K3',
           suggestions: [
-            'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-            'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
-            'Qwen/Qwen2.5-72B-Instruct-Turbo',
-            'deepseek-ai/DeepSeek-V3',
+            'moonshotai/Kimi-K3',
+            'zai-org/GLM-5.2',
+            'MiniMaxAI/MiniMax-M3',
+            'Qwen/Qwen3.8-2.4T-A95B',
+            'google/gemma-4-31B-it',
           ] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.together.xyz/v1' },
         ...COST_ESTIMATE_FIELDS,
@@ -2843,7 +2901,7 @@ function renderProviders() {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'gsk_...' },
         { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'openai/gpt-oss-120b',
-          suggestions: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b'] },
+          suggestions: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.groq.com/openai/v1' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2851,8 +2909,8 @@ function renderProviders() {
     z_ai: {
       fields: [
         { key: 'apiKey', labelKey: 'st.provider.field.api_key', type: 'password', placeholder: 'API key' },
-        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'glm-5.2',
-          suggestions: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo'] },
+        { key: 'model', labelKey: 'st.provider.field.model', type: 'text', placeholder: 'glm-5.3',
+          suggestions: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5-turbo'] },
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://api.z.ai/api/paas/v4' },
         ...COST_ESTIMATE_FIELDS,
       ],
@@ -2907,6 +2965,15 @@ function renderProviders() {
     providerConfigs[id] = { fields };
   }
 
+  // Model limits are portable provider settings, not local-runtime-only
+  // details. Keep them optional and expose them on every configurable card.
+  for (const [id, definition] of Object.entries(providerConfigs)) {
+    if (id === 'webbrain_cloud' || !Array.isArray(definition.fields)) continue;
+    const keys = new Set(definition.fields.map(field => field.key));
+    if (!keys.has('contextWindow')) definition.fields.push(CONTEXT_WINDOW_FIELD);
+    if (!keys.has('maxOutputTokens')) definition.fields.push(MAX_OUTPUT_TOKENS_FIELD);
+  }
+
   providersContainer.appendChild(renderProviderFilterBar());
 
   let entries = Object.entries(providersData);
@@ -2937,7 +3004,9 @@ function renderProviders() {
     visibleCount++;
 
     let fieldsHTML = '';
+    let collapsedFieldsHTML = '';
     for (const field of fieldDefs) {
+      let fieldHTML = '';
       const label = field.labelKey ? t(field.labelKey) : (field.label || field.key);
       const placeholder = field.placeholderKey ? t(field.placeholderKey) : (field.placeholder || '');
       if (field.type === 'select') {
@@ -2947,7 +3016,7 @@ function renderProviders() {
         const optionsHTML = field.options
           .map(o => `<option value="${escapeHtml(o.value)}"${o.value === current ? ' selected' : ''}>${escapeHtml(o.labelKey ? t(o.labelKey) : o.label)}</option>`)
           .join('');
-        fieldsHTML += `
+        fieldHTML += `
           <div class="field">
             <label>${escapeHtml(label)}</label>
             <select data-provider="${id}" data-key="${field.key}" data-type="select">${optionsHTML}</select>
@@ -2955,12 +3024,12 @@ function renderProviders() {
         `;
         if (VISION_UI_PROVIDER_IDS.has(definitionId) && field.key === 'visionMode') {
           const statusAttribute = definitionId === 'ollama' ? `data-ollama-vision-status="${id}"` : `data-vision-status="${id}"`;
-          fieldsHTML += `<div class="field-hint" ${statusAttribute}${current === 'auto' ? '' : ' hidden'} style="margin:-4px 0 10px;font-size:12px;color:var(--text2);">${escapeHtml(t(visionStatusKey(id, config)))}</div>`;
+          fieldHTML += `<div class="field-hint" ${statusAttribute}${current === 'auto' ? '' : ' hidden'} style="margin:-4px 0 10px;font-size:12px;color:var(--text2);">${escapeHtml(t(visionStatusKey(id, config)))}</div>`;
         }
       } else if (field.type === 'checkbox') {
         const isChecked = !!config[field.key];
         const checked = isChecked ? 'checked' : '';
-        fieldsHTML += `
+        fieldHTML += `
           <div class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;">
             <input type="checkbox" data-provider="${id}" data-key="${field.key}" data-type="checkbox" ${checked}
                    style="width:auto;cursor:pointer;">
@@ -2977,7 +3046,7 @@ function renderProviders() {
           .map(s => `<option value="${escapeHtml(s)}"${s === selectVal ? ' selected' : ''}>${escapeHtml(field.suggestionLabels?.[s] || s)}</option>`)
           .join('') +
           `<option value="__custom__"${isCustom ? ' selected' : ''}>${escapeHtml(t('st.provider.field.model_custom'))}</option>`;
-        fieldsHTML += `
+        fieldHTML += `
           <div class="field">
             <label>${escapeHtml(label)}</label>
             <select class="model-select" data-model-for="${id}">${optionsHTML}</select>
@@ -3017,7 +3086,7 @@ function renderProviders() {
         const minAttr = field.min != null ? ` min="${escapeHtml(field.min)}"` : '';
         const stepAttr = field.step != null ? ` step="${escapeHtml(field.step)}"` : '';
         const value = config[field.key] ?? '';
-        fieldsHTML += `
+        fieldHTML += `
           <div class="field">
             <label>${escapeHtml(label)}${apiKeyLink}</label>
             <input type="${field.type}" data-provider="${id}" data-key="${field.key}" data-type="${field.type}" ${listAttr}${minAttr}${stepAttr}
@@ -3028,6 +3097,19 @@ function renderProviders() {
           </div>
         `;
       }
+      if (field.collapsed) collapsedFieldsHTML += fieldHTML;
+      else fieldsHTML += fieldHTML;
+    }
+    if (collapsedFieldsHTML) {
+      fieldsHTML += `
+        <details class="provider-compatibility provider-local-auth">
+          <summary>
+            <span class="provider-compatibility-title">${escapeHtml(t('st.display.advanced'))}</span>
+            <span class="provider-compatibility-summary">${escapeHtml(t('st.provider.field.api_key'))}</span>
+          </summary>
+          <div class="provider-compatibility-body">${collapsedFieldsHTML}</div>
+        </details>
+      `;
     }
 
     const subscribeHref = id === 'webbrain_cloud' ? webbrainSubscribeUrl(config.deviceGuid) : '';
@@ -3148,6 +3230,7 @@ function renderProviders() {
         input.style.display = 'none';
         input.value = sel.value;
       }
+      syncInferredOpenRouterRoutingVariant(providerId, input.value);
       markProviderDirty(providerId);
       refreshProviderCompatibilitySummary(providerId);
       refreshVisionStatus(providerId);
@@ -3160,6 +3243,7 @@ function renderProviders() {
   document.querySelectorAll('.provider-compatibility select[data-provider], .provider-compatibility textarea[data-provider]').forEach((input) => {
     const eventName = input.tagName === 'TEXTAREA' ? 'input' : 'change';
     input.addEventListener(eventName, () => {
+      if (input.dataset.key === 'routingVariant') input.dataset.routingExplicit = 'true';
       if (input.tagName === 'TEXTAREA') {
         providerCompatibilityJsonDrafts.set(input.dataset.provider, input.value);
       }
@@ -3168,6 +3252,7 @@ function renderProviders() {
   });
   document.querySelectorAll('input[data-key="model"], input[data-key="baseUrl"]').forEach((input) => {
     input.addEventListener('input', () => {
+      if (input.dataset.key === 'model') syncInferredOpenRouterRoutingVariant(input.dataset.provider, input.value);
       refreshProviderCompatibilitySummary(input.dataset.provider);
       refreshVisionStatus(input.dataset.provider);
       if (providerDefinitionId(input.dataset.provider) === 'ollama') refreshVisionStatus(input.dataset.provider);
@@ -3177,7 +3262,14 @@ function renderProviders() {
     button.addEventListener('click', () => {
       const id = button.dataset.provider;
       const details = button.closest('.provider-compatibility');
-      details?.querySelectorAll('select[data-provider]').forEach((select) => { select.value = 'auto'; });
+      details?.querySelectorAll('select[data-provider]').forEach((select) => {
+        if (select.dataset.key === 'routingVariant') {
+          select.value = 'standard';
+          select.dataset.routingExplicit = 'true';
+        } else {
+          select.value = 'auto';
+        }
+      });
       const textarea = details?.querySelector('textarea[data-type="json"]');
       if (textarea) {
         textarea.value = '';
@@ -3203,6 +3295,7 @@ function renderProviders() {
       if (!input) return;
       const selectedModel = option.dataset.model || '';
       input.value = selectedModel;
+      syncInferredOpenRouterRoutingVariant(providerId, selectedModel);
       void saveProvider(providerId, { showFlash: false })
         .then(() => detectProviderContextWindowForModel(providerId, selectedModel))
         .catch(() => {});
@@ -3447,28 +3540,52 @@ function clearProviderLoadedModels(id) {
   if (datalistEl) datalistEl.innerHTML = '';
 }
 
+const providerModelLoadGenerations = new Map();
+const providerModelLoadSaveQueues = new Map();
+
+function queueProviderModelLoadSave(id, save) {
+  const previous = providerModelLoadSaveQueues.get(id) || Promise.resolve();
+  const queued = previous.catch(() => {}).then(save);
+  providerModelLoadSaveQueues.set(id, queued);
+  const clear = () => {
+    if (providerModelLoadSaveQueues.get(id) === queued) providerModelLoadSaveQueues.delete(id);
+  };
+  queued.then(clear, clear);
+  return queued;
+}
+
 async function loadProviderModels(id) {
   let datalistEl = document.getElementById(`models-${id}`);
   if (!datalistEl) return;
+  const generation = (providerModelLoadGenerations.get(id) || 0) + 1;
+  providerModelLoadGenerations.set(id, generation);
+  const isCurrent = () => providerModelLoadGenerations.get(id) === generation;
   clearProviderLoadedModels(id);
   // Persist whatever the user has typed in baseUrl/model so the background
   // call uses the current values, not stale storage.
   try {
-    await saveProvider(id, { showFlash: false, markConfigured: false });
+    await queueProviderModelLoadSave(id, async () => {
+      if (!isCurrent()) return;
+      await saveProvider(id, { showFlash: false, markConfigured: false });
+    });
   } catch (e) {
+    if (!isCurrent()) return;
     setProviderLoadModelsStatus(id, providerModelLoadErrorMessage(e.message), 'var(--danger, #c33)');
     return;
   }
 
+  if (!isCurrent()) return;
   setProviderLoadModelsStatus(id, t('st.providers.loading'));
   let res;
   try {
     res = await sendToBackground('list_provider_models', { providerId: id });
   } catch (e) {
+    if (!isCurrent()) return;
     setProviderLoadModelsStatus(id, providerModelLoadErrorMessage(e.message), 'var(--danger, #c33)');
     return;
   }
 
+  if (!isCurrent()) return;
   datalistEl = document.getElementById(`models-${id}`);
   if (!datalistEl) return;
   if (res?.ok) {
@@ -3509,6 +3626,7 @@ async function saveProvider(id, { showFlash = true, markConfigured = true } = {}
 
   try {
     inputs.forEach(input => {
+      if (!shouldPersistProviderInput(input)) return;
       const value = input.dataset.type === 'json'
         ? parseProviderExtraBodyJson(input.value)
         : providerInputValue(input);
@@ -3608,6 +3726,7 @@ function syncInputsIntoProvidersData() {
     const id = input.dataset.provider;
     const key = input.dataset.key;
     if (!id || !key || !providersData[id]) return;
+    if (!shouldPersistProviderInput(input)) return;
     // Keep extraBody as a parsed object in memory (matches saveProvider and
     // mergeProviderRequestBody). Invalid draft JSON is left unchanged so a
     // partial edit does not corrupt the last-known-good object.

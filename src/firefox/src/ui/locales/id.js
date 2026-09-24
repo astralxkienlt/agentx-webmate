@@ -137,7 +137,9 @@ export default {
   "sp.selection_scope.title": "Hanya teks yang dipilih",
   "sp.selection_scope.description": "Mulai percakapan baru untuk mengakses halaman atau layar.",
   "sp.selection_scope.context_title": "Teks pilihan + pengetahuan umum",
-  "sp.selection_scope.context_description": "Menggunakan teks pilihan dan pengetahuan model. Halaman, alat, file, dan percakapan sebelumnya tetap tidak tersedia.",
+  "sp.selection_scope.context_description": "Menggunakan teks yang dipilih, dialog sebelumnya yang aman, dan pengetahuan model. Halaman, alat, file, lampiran, serta konten mentah halaman sebelumnya tetap tidak tersedia.",
+  "sp.selection_scope.restore": "Gunakan percakapan yang lebih luas",
+  "sp.selection_scope.restore_description": "Pemulihan menghapus batas teks yang dipilih. Pesan berikutnya dapat menggunakan halaman saat ini, alat browser, file, lampiran, dan seluruh percakapan sebelumnya, termasuk konteks halaman.",
   "sp.input.selection_placeholder": "Tanyakan tentang teks yang dipilih...",
 
   'sp.mode.ask': 'Tanya',
@@ -338,6 +340,14 @@ export default {
   'tr.conversation.label': 'Percakapan',
   'tr.conversation.turn_of': 'giliran {n} dari {total}',
   'tr.conversation.tooltip': 'Bagian dari percakapan {n} giliran ({id}). Buka proses untuk berpindah antar giliran.',
+  'tr.lineage.standalone': 'Proses mandiri',
+  'tr.lineage.incomplete': 'Beberapa proses terkait mungkin berada di luar daftar yang dimuat.',
+  'tr.lineage.toggle': 'Perluas atau ciutkan proses anak',
+  'tr.lineage.missing_parent': 'Proses induk tidak ada dalam daftar yang dimuat.',
+  'tr.lineage.ambiguous_parent': 'Tautan induk ambigu; proses ini tetap sebagai akar.',
+  'tr.lineage.cross_session_parent': 'Proses induk berada di sesi lain; proses ini tetap sebagai akar.',
+  'tr.lineage.duplicate_id': 'ID proses duplikat; proses ini tetap sebagai akar.',
+  'tr.lineage.cycle': 'Siklus terdeteksi; proses ini tetap sebagai akar.',
 
   'tr.cost.label': 'Biaya:',
   'tr.cost.tooltip': 'Total biaya LLM yang dilaporkan penyedia (USD). Disorot oranye saat ≥ $0.50 tanpa jawaban akhir — kemungkinan proses yang sia-sia.',
@@ -612,6 +622,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Konfirmasi tindakan penting pada jadwal yang berjalan tanpa pengawasan',
   'st.display.scheduled_confirm.desc': 'Saat aktif, jadwal yang berjalan tanpa pengawasan tetap berhenti untuk meminta izin sebelum tindakan penting. Matikan hanya jika Anda mempercayai tugas terjadwal untuk bertindak tanpa konfirmasi tersebut.',
   'st.provider.field.context_window': 'Jendela konteks (token)',
+  'st.provider.field.max_output_tokens': 'Output maksimal (token)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Perintah slash',

@@ -27,7 +27,7 @@ export const AGENT_TOOLS = [
         properties: {
           filter: { type: 'string', enum: ['all', 'visible', 'interactive'], description: 'Which nodes to include. "visible" (in-viewport, visible) is a good default. "interactive" shows only clickable/typeable things. "all" traverses the entire DOM.' },
           maxDepth: { type: 'number', description: 'Max tree depth to descend (default 15).' },
-          maxChars: { type: 'number', maximum: STANDARD_TREE_PAGE_CHARS, description: 'Maximum pageContent characters per structured page (default and maximum 6000). Capable non-Compact providers with at least 64k context advertise a 12000 maximum for whole-thread or whole-document reads. Larger trees return continuationArgs for the next page.' },
+          maxChars: { type: 'integer', maximum: STANDARD_TREE_PAGE_CHARS, description: 'Maximum pageContent characters per structured page (default and maximum 6000). Capable non-Compact providers with at least 64k context advertise a 12000 maximum for whole-thread or whole-document reads. Larger trees return continuationArgs for the next page.' },
           ref_id: { type: 'string', description: 'Optional. Anchor at a previously-seen ref_id instead of document.body.' },
           page: { type: 'number', description: 'Optional 1-based chunk number for any tree filter. When a result returns hasMore:true, reuse the exact continuationArgs so filter, maxDepth, and maxChars remain stable.' },
           tree_revision: { type: 'string', description: 'Opaque tree snapshot revision returned inside continuationArgs for page 2 and later. Omit it when starting or restarting page 1; otherwise never invent or modify it and reuse the exact continuationArgs.' },
@@ -409,7 +409,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'go_back',
-      description: 'Go back one entry in the current tab\'s session history, like the browser Back button. Use this for "go back" / "return to the previous page" rather than trying to run history.back() yourself (page scripts are CSP-blocked on many sites). Returns {success, url} on success, or {success:false, error} when there is no earlier entry or the page is internal (the URL is verified to actually change). Leaving a page with unsaved changes is blocked unless force:true.',
+      description: 'Go back one entry in the current tab\'s session history, like the browser Back button. Use this for "go back" / "return to the previous page" rather than trying to run history.back() yourself (page scripts are CSP-blocked on many sites). Returns {success, url} on success, or {success:false, error} when there is no earlier entry or the page is internal. Movement is verified from browser history events or a changed URL, including SPA entries whose URL stays identical. Leaving a page with unsaved changes is blocked unless force:true.',
       parameters: {
         type: 'object',
         properties: {
@@ -423,7 +423,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'go_forward',
-      description: 'Go forward one entry in the current tab\'s session history, like the browser Forward button — reverses a previous go_back. Returns {success, url} on success, or {success:false, error} when there is no later entry or the page is internal. Leaving a page with unsaved changes is blocked unless force:true.',
+      description: 'Go forward one entry in the current tab\'s session history, like the browser Forward button — reverses a previous go_back. Returns {success, url} on success, or {success:false, error} when there is no later entry or the page is internal. Movement is verified from browser history events or a changed URL, including SPA entries whose URL stays identical. Leaving a page with unsaved changes is blocked unless force:true.',
       parameters: {
         type: 'object',
         properties: {

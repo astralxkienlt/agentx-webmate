@@ -12,7 +12,7 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
  
  const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
  const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
-@@ -1072,6 +1076,13 @@
+@@ -1390,6 +1394,13 @@
     * active provider when this returns null.
     */
    async getVisionProvider() {
@@ -26,7 +26,7 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
      try {
        const { visionModel } = await browser.storage.local.get(['visionModel']);
        if (!visionModel || !visionModel.baseUrl || !visionModel.model) return null;
-@@ -1379,12 +1390,26 @@
+@@ -1697,12 +1708,26 @@
     */
    async testTranscriptionProvider() {
      const api = (typeof browser !== 'undefined' ? browser : chrome);
@@ -62,11 +62,13 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
 diff --git a/src/providers/openai.js b/src/providers/openai.js
 --- a/src/providers/openai.js
 +++ b/src/providers/openai.js
-@@ -77,7 +77,20 @@
+@@ -89,10 +89,24 @@
    }
  
    get model() {
--    if (this.config.model) return this.config.model;
+-    if (this.config.model) {
+-      const model = String(this.config.model);
+-      return isOpenCodeZenConfig(this.config) ? model.replace(/^opencode\//i, '') : model;
 +    const configuredModel = String(this.config.model || '').trim();
 +    if (this.config.agentxCloudManaged === true) {
 +      const availableModels = Array.isArray(this.config.models)
@@ -79,8 +81,12 @@ diff --git a/src/providers/openai.js b/src/providers/openai.js
 +        throw new Error(`AgentX Cloud model "${configuredModel}" is not available through this gateway key.`);
 +      }
 +      return configuredModel;
+     }
++    if (configuredModel) {
++      return isOpenCodeZenConfig(this.config)
++        ? configuredModel.replace(/^opencode\//i, '')
++        : configuredModel;
 +    }
-+    if (configuredModel) return configuredModel;
      if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
      // Some local servers apply their own default when no model is configured.
      // Others carry `requiresModel: true` and throw above. Treat the category as

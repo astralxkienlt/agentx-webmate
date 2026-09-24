@@ -137,7 +137,9 @@ export default {
   "sp.selection_scope.title": "Napiling text lang",
   "sp.selection_scope.description": "Magsimula ng bagong pag-uusap para ma-access ang page o screen.",
   "sp.selection_scope.context_title": "Napiling text + pangkalahatang kaalaman",
-  "sp.selection_scope.context_description": "Ginagamit ang napiling text at kaalaman ng modelo. Hindi pa rin available ang page, tools, files, at naunang usapan.",
+  "sp.selection_scope.context_description": "Ginagamit ang napiling text, ligtas na naunang usapan, at kaalaman ng modelo. Hindi available ang page, tools, files, attachment, at hilaw na laman ng naunang page.",
+  "sp.selection_scope.restore": "Gamitin ang mas malawak na usapan",
+  "sp.selection_scope.restore_description": "Inaalis ng pag-restore ang hangganan ng napiling text. Magagamit ng mga susunod na mensahe ang kasalukuyang page, browser tools, files, attachments, at ang buong naunang usapan, kasama ang context ng page.",
   "sp.input.selection_placeholder": "Magtanong tungkol sa napiling text...",
 
   'sp.mode.ask': 'Tanong',
@@ -346,6 +348,14 @@ export default {
   'tr.conversation.label': 'Usapan',
   'tr.conversation.turn_of': 'turn {n} ng {total}',
   'tr.conversation.tooltip': 'Bahagi ng usapang may {n} turn ({id}). Buksan ang run para magpalipat-lipat sa mga turn.',
+  'tr.lineage.standalone': 'Standalone na run',
+  'tr.lineage.incomplete': 'Maaaring nasa labas ng na-load na listahan ang ilang kaugnay na run.',
+  'tr.lineage.toggle': 'I-expand o i-collapse ang mga child run',
+  'tr.lineage.missing_parent': 'Wala sa na-load na listahan ang parent run.',
+  'tr.lineage.ambiguous_parent': 'Malabo ang parent link; mananatiling root ang run na ito.',
+  'tr.lineage.cross_session_parent': 'Nasa ibang session ang parent; mananatiling root ang run na ito.',
+  'tr.lineage.duplicate_id': 'Dobleng run ID; mananatiling root ang run na ito.',
+  'tr.lineage.cycle': 'May natukoy na cycle; mananatiling root ang run na ito.',
 
   'tr.cost.label': 'Halaga:',
   'tr.cost.tooltip': 'Kabuuang halaga ng LLM na iniulat ng provider (USD). Naka-highlight ng orange kapag ≥ $0.50 at walang panghuling sagot — malamang na sayang na run.',
@@ -621,6 +631,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Kumpirmahin ang mga naka-iskedyul na mahahalagang aksyon',
   'st.display.scheduled_confirm.desc': 'Kapag naka-on, hihinto pa rin ang mga naka-iskedyul na run na walang tao para humingi ng pahintulot bago ang mga mahahalagang aksyon. I-off lamang kung pinagkakatiwalaan mo ang mga naka-iskedyul na gawain na kumilos nang walang mga prompt na iyon.',
   'st.provider.field.context_window': 'Context window (mga token)',
+  'st.provider.field.max_output_tokens': 'Pinakamataas na output (token)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Mga slash command',

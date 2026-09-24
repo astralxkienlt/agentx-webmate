@@ -190,7 +190,9 @@ export default {
   "sp.selection_scope.title": "Yalnızca seçili metin",
   "sp.selection_scope.description": "Sayfaya veya ekrana erişmek için yeni bir konuşma başlatın.",
   "sp.selection_scope.context_title": "Seçili metin + genel bilgi",
-  "sp.selection_scope.context_description": "Seçili metni ve model bilgisini kullanır. Sayfa, araçlar, dosyalar ve önceki konuşma kullanılamaz.",
+  "sp.selection_scope.context_description": "Seçili metni, güvenli önceki diyaloğu ve model bilgisini kullanır. Sayfa, araçlar, dosyalar, ekler ve önceki ham sayfa içeriği kullanılamaz.",
+  "sp.selection_scope.restore": "Daha geniş konuşmayı kullan",
+  "sp.selection_scope.restore_description": "Geri yükleme, seçili metin sınırını kaldırır. Sonraki mesajlar mevcut sayfayı, tarayıcı araçlarını, dosyaları, ekleri ve sayfa bağlamı dahil önceki konuşmanın tamamını kullanabilir.",
   "sp.input.selection_placeholder": "Seçili metin hakkında sorun...",
 
   'sp.mode.ask': 'Sor',
@@ -402,6 +404,14 @@ export default {
   'tr.conversation.label': 'Sohbet',
   'tr.conversation.turn_of': 'tur {n}/{total}',
   'tr.conversation.tooltip': '{n} turluk sohbetin parçası ({id}). Turlar arasında gezinmek için çalışmayı aç.',
+  'tr.lineage.standalone': 'Bağımsız çalıştırma',
+  'tr.lineage.incomplete': 'Bazı ilişkili çalıştırmalar yüklenen listenin dışında olabilir.',
+  'tr.lineage.toggle': 'Alt çalıştırmaları genişlet veya daralt',
+  'tr.lineage.missing_parent': 'Üst çalıştırma yüklenen listede yok.',
+  'tr.lineage.ambiguous_parent': 'Üst bağlantısı belirsiz; bu çalıştırma kök olarak kalır.',
+  'tr.lineage.cross_session_parent': 'Üst çalıştırma başka bir oturuma ait; bu çalıştırma kök olarak kalır.',
+  'tr.lineage.duplicate_id': 'Yinelenen çalıştırma kimliği; bu çalıştırma kök olarak kalır.',
+  'tr.lineage.cycle': 'Döngü algılandı; bu çalıştırma kök olarak kalır.',
 
   'tr.cost.label': 'Maliyet:',
   'tr.cost.tooltip': 'Sağlayıcının raporladığı toplam LLM maliyeti (USD). Cevap üretmeden ≥ $0.50 harcandıysa turuncuyla vurgulanır — büyük olasılıkla boşa giden bir çalışma.',
@@ -677,6 +687,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Zamanlanmış kritik işlemleri onayla',
   'st.display.scheduled_confirm.desc': 'Etkinken, gözetimsiz zamanlanmış çalışmalar kritik işlemlerden önce yine de izin ister. Yalnızca zamanlanmış görevlerin bu istemlere gerek kalmadan hareket etmesine güveniyorsanız kapatın.',
   'st.provider.field.context_window': 'Bağlam penceresi (token)',
+  'st.provider.field.max_output_tokens': 'Maksimum çıktı (token)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Eğik çizgi komutları',

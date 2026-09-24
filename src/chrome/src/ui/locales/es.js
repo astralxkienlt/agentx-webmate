@@ -137,7 +137,9 @@ export default {
   "sp.selection_scope.title": "Solo texto seleccionado",
   "sp.selection_scope.description": "Inicia una nueva conversación para acceder a la página o la pantalla.",
   "sp.selection_scope.context_title": "Texto seleccionado + conocimientos generales",
-  "sp.selection_scope.context_description": "Usa el texto seleccionado y los conocimientos del modelo. La página, las herramientas, los archivos y la conversación anterior siguen sin estar disponibles.",
+  "sp.selection_scope.context_description": "Usa el texto seleccionado, el diálogo anterior seguro y los conocimientos del modelo. La página, las herramientas, los archivos, los adjuntos y el contenido de página anterior permanecen no disponibles.",
+  "sp.selection_scope.restore": "Usar la conversación completa",
+  "sp.selection_scope.restore_description": "Al restaurar se elimina el límite del texto seleccionado. Los mensajes posteriores pueden usar la página actual, las herramientas del navegador, los archivos, los adjuntos y toda la conversación anterior, incluido el contexto de la página.",
   "sp.input.selection_placeholder": "Pregunta sobre el texto seleccionado...",
 
   'sp.mode.ask': 'Preguntar',
@@ -346,6 +348,14 @@ export default {
   'tr.conversation.label': 'Conversación',
   'tr.conversation.turn_of': 'turno {n} de {total}',
   'tr.conversation.tooltip': 'Forma parte de una conversación de {n} turnos ({id}). Abre la ejecución para saltar entre turnos.',
+  'tr.lineage.standalone': 'Ejecución independiente',
+  'tr.lineage.incomplete': 'Algunas ejecuciones relacionadas pueden estar fuera de la lista cargada.',
+  'tr.lineage.toggle': 'Expandir o contraer ejecuciones hijas',
+  'tr.lineage.missing_parent': 'La ejecución padre no está en la lista cargada.',
+  'tr.lineage.ambiguous_parent': 'El vínculo padre es ambiguo; esta ejecución permanece como raíz.',
+  'tr.lineage.cross_session_parent': 'La ejecución padre pertenece a otra sesión; esta ejecución permanece como raíz.',
+  'tr.lineage.duplicate_id': 'ID de ejecución duplicado; esta ejecución permanece como raíz.',
+  'tr.lineage.cycle': 'Se detectó un ciclo; esta ejecución permanece como raíz.',
 
   'tr.cost.label': 'Coste:',
   'tr.cost.tooltip': 'Coste total del LLM informado por el proveedor (USD). Resaltado en naranja a partir de 0,50 $ sin respuesta final — probablemente una ejecución desperdiciada.',
@@ -621,6 +631,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Confirmar acciones consecuentes en ejecuciones programadas',
   'st.display.scheduled_confirm.desc': 'Cuando está activado, las ejecuciones programadas desatendidas siguen solicitando permiso antes de realizar acciones consecuentes. Desactívalo solo si confías en que las tareas programadas actúen sin esas confirmaciones.',
   'st.provider.field.context_window': 'Ventana de contexto (tokens)',
+  'st.provider.field.max_output_tokens': 'Salida máxima (tokens)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Comandos de barra',

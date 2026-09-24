@@ -283,13 +283,31 @@ invariants therefore keep one production lifecycle.
 ### Selected-text source scopes
 
 Selected-text runs always carry an explicit, durable `source_grounding` policy.
-Fixed actions and custom questions default to `selection_only`, which limits the
-answer to the selected text. A custom question can explicitly opt into
-`selection_context`, which also permits the model's intrinsic general knowledge.
-Both policies treat the selection as untrusted data and exclude live page
-context, screenshots, tools, attachments, and conversation history from before
-the selection. The policy is stored with the per-tab conversation, survives
-follow-up turns and retries, and is shown in the side-panel scope banner.
+Fixed actions keep `selection_only`, which limits the answer to the selected
+text. A free-form question may use `selection_context`, which permits intrinsic
+model knowledge and a bounded projection of earlier user/assistant dialogue so
+references such as “the above” can be resolved. That projection is explicitly
+non-authoritative: wrapped page text, tool results, screenshots, attachments,
+and app-owned state are excluded. The current selection remains untrusted page
+data inside its own boundary.
+
+The visible transcript and provider payload are intentionally different views.
+The transcript keeps every bubble for reading and recovery; the provider view
+adds the scope system note, the current selection, and (for `selection_context`)
+only the safe dialogue projection. Each selection adds an inline scope divider
+and the side-panel banner explains the included/excluded material. The user can
+confirm **Use the broader conversation** to remove the scope before the next
+turn; only that explicit action allows the normal conversation payload again.
+
+`source_grounding` and the selection anchor are persisted with the per-tab
+conversation, survive panel/service-worker restart, retries, tab switches, and
+compaction, and are cleared by New conversation. The selection-scope fields in
+trace runtime metadata record only the policy, anchor presence, and
+`selection_scope_excluded_messages` count — never projected text or anchor/message
+fingerprints. This allowlist does not change the broader Trace retention contract:
+other run, event, screenshot, deep-debug, or lossless fields follow the current
+privacy mode documented in [Privacy & Data Flow](privacy-and-data-flow.md). Treat
+trace and diagnostic exports as privacy-sensitive data.
 
 ### Step 6: Tool Execution
 
@@ -317,7 +335,7 @@ follow-up turns and retries, and is shown in the side-panel scope banner.
 | `inspect_event_listeners` | permission-gated content target marker + CDP `DOMDebugger.getEventListeners` | Chrome Dev-only listener diagnosis |
 | `get_shadow_dom`, `shadow_dom_query`, `get_frames` | content/CDP helpers | Full Act advanced fallbacks; also added to Mid in Dev mode |
 
-Chrome CSS patch records include the top-level `documentId` and a patch-specific CSS marker. Full navigation clears persisted records, and `remove_injected_css` checks the live document before calling `removeCSS`, preventing an old patch ID from removing equivalent CSS on a replacement page. If navigation races either identity check during injection, WebBrain removes that patch's exact uniquely marked CSS from the replacement document before discarding its record. Chrome `execute_js` passes a 15-second timeout to CDP. Dev diagnostic event handlers are registered before either agent-loop variant starts; leaving the panel-wide Dev mode drains every tab in the CDP client's active-diagnostics registry, removes the handlers and buffers, and sends `Runtime.disable`, `Log.disable`, and `Network.disable` so Chrome also stops domain-level diagnostic work.
+Chrome CSS patch records include the top-level `documentId` and a patch-specific CSS marker. Full navigation clears persisted records, and `remove_injected_css` checks the live document before calling `removeCSS`, preventing an old patch ID from removing equivalent CSS on a replacement page. If navigation races either identity check during injection, WebBrain removes that patch's exact uniquely marked CSS from the replacement document before discarding its record. Chrome `execute_js` passes a 15-second timeout to CDP. Dev diagnostic event handlers are registered before either agent-loop variant starts and own their debugger session across turns, so ordinary run cleanup preserves their bounded buffers. Leaving the panel-wide Dev mode drains every tab in the CDP client's active-diagnostics registry, removes the handlers and buffers, and sends `Runtime.disable`, `Log.disable`, and `Network.disable` so Chrome also stops domain-level diagnostic work; conversation and tab cleanup additionally detach the debugger.
 
 ### Step 6a: Skills and Dynamic Tool Exposure
 

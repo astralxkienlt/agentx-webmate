@@ -50,6 +50,8 @@ import { modelPickerState, modelShortName, modelVendorPrefix, modelVisionNote } 
 import { formatErrorMessage } from '../error-format.js';
 import { buildMessageInfoPills } from '../message-info.js';
 import { escapeHtml } from './utils.js';
+import { buildSelectionComposerDraft, selectionIsQuoteable, selectionTextFromRange } from './selection-quote.js';
+import { getSelectionShortcutLocalization } from '../selection-shortcut-i18n.js';
 import {
   isBackgroundConnectionError,
   runDetachedWithReconnect,
@@ -440,7 +442,9 @@ const newConversationConfirmAcceptBtn = document.getElementById('new-conversatio
 const selectionScopeBannerEl = document.getElementById('selection-scope-banner');
 const selectionScopeTitleEl = document.getElementById('selection-scope-title');
 const selectionScopeDescriptionEl = document.getElementById('selection-scope-description');
+const selectionScopeRestoreBtn = document.getElementById('selection-scope-restore');
 const selectionScopeNewConversationBtn = document.getElementById('selection-scope-new-conversation');
+const selectionAskActionEl = document.getElementById('selection-ask-action');
 const historyBtn = document.getElementById('btn-history');
 const expandBtn = document.getElementById('btn-expand');
 const settingsBtn = document.getElementById('btn-settings');
@@ -498,6 +502,11 @@ const ASK_PLACEHOLDER_KEYS = [
   'sp.input.placeholder_tip.help',
 ];
 const PERMISSION_REMINDER_PLACEHOLDER_KEY = 'sp.input.placeholder_tip.skip_permissions';
+let pendingAnswerSelection = null;
+let selectionAskActionRefreshFrame = null;
+let selectionAskPointerDown = false;
+let selectionAskActionLocale = '';
+let selectionAskActionLabel = '';
 const SLASH_COMMANDS = [
   { value: '/help', usage: '/help', descriptionKey: 'sp.slash.help', action: 'show', outOfBand: true },
   {
@@ -919,8 +928,10 @@ let newConversationConfirmationState = null;
 const localRunRequestIds = new Map();
 const localRunFollowers = new Map();
 const cancelledRunRecoveryRequestIds = new Set();
+const conversationClearFollowerCancellationRequestIds = new Set();
 const adoptedRunRecoveryRequestIds = new Set();
 const clearedConversationRunRequestIds = new Set();
+const failedConversationClearRecoveryTabs = new Set();
 let recommendationsRequestId = 0;
 let providerSelectionRequestId = 0;
 let providerTestRequestId = 0;
@@ -937,9 +948,13 @@ const activeChatPayloadsByTab = new Map();
 function setTabProcessing(tabId, processing) {
   const numericTabId = Number(tabId);
   if (!Number.isFinite(numericTabId)) return;
-  if (processing) processingTabs.add(numericTabId);
+  const effectiveProcessing = !!processing || failedConversationClearRecoveryTabs.has(numericTabId);
+  if (effectiveProcessing) processingTabs.add(numericTabId);
   else processingTabs.delete(numericTabId);
-  if (sameTabId(currentTabId, numericTabId)) isProcessing = !!processing;
+  if (sameTabId(currentTabId, numericTabId)) {
+    isProcessing = effectiveProcessing;
+    syncSelectionScopeRestoreAvailability();
+  }
 }
 
 function isTabProcessing(tabId) {
@@ -980,10 +995,17 @@ function rejectSelectionScopedMode(mode, tabId = currentTabId, sourceGrounding =
   return true;
 }
 
+function syncSelectionScopeRestoreAvailability() {
+  if (!selectionScopeRestoreBtn) return;
+  selectionScopeRestoreBtn.disabled = !isSelectionGroundedForTab(currentTabId)
+    || isTabProcessing(currentTabId);
+}
+
 function syncSelectionScopeUi() {
   const scoped = isSelectionGroundedForTab(currentTabId);
   const sourceGrounding = selectionGroundingForTab(currentTabId);
   selectionScopeBannerEl?.classList.toggle('hidden', !scoped);
+  syncSelectionScopeRestoreAvailability();
   if (selectionScopeTitleEl) {
     selectionScopeTitleEl.textContent = t(sourceGrounding === SELECTION_CONTEXT_SOURCE_GROUNDING
       ? 'sp.selection_scope.context_title'
@@ -1004,6 +1026,32 @@ function syncSelectionScopeUi() {
   }
   if (scoped && agentMode !== 'ask') setMode('ask', { remember: false });
   else resetInputPlaceholderRotation();
+  syncSelectionScopeDividers();
+}
+
+function syncSelectionScopeDividers() {
+  messagesEl?.querySelectorAll('.selection-scope-divider').forEach((divider) => {
+    const sourceGrounding = normalizeSelectionSourceGrounding(divider.dataset.sourceGrounding);
+    const key = sourceGrounding === SELECTION_CONTEXT_SOURCE_GROUNDING
+      ? 'sp.selection_scope.context_title'
+      : 'sp.selection_scope.title';
+    divider.querySelector('.selection-scope-divider-label').textContent = t(key);
+    divider.setAttribute('aria-label', t(key));
+  });
+}
+
+function addSelectionScopeDivider(messageEl, sourceGrounding) {
+  const normalized = normalizeSelectionSourceGrounding(sourceGrounding);
+  if (!messageEl || !normalized || !messagesEl) return;
+  const divider = document.createElement('div');
+  divider.className = 'selection-scope-divider';
+  divider.dataset.sourceGrounding = normalized;
+  divider.setAttribute('role', 'separator');
+  const label = document.createElement('span');
+  label.className = 'selection-scope-divider-label';
+  divider.appendChild(label);
+  messageEl.before(divider);
+  syncSelectionScopeDividers();
 }
 
 function setSelectionGroundedForTab(
@@ -1146,6 +1194,7 @@ function createRunRequestId(tabId) {
 const {
   acceptContextMenuPrompt,
   drainQueuedContextMenuPrompts,
+  hasQueuedForTab: hasQueuedContextMenuPromptForTab,
   consumePendingContextMenuPrompt,
   clearQueuedForTab,
 } = createContextMenuPromptHandler({
@@ -3063,11 +3112,23 @@ function drainQueuedComposerMessageForCurrentTab() {
   return true;
 }
 
-async function renderClearedConversationForTab(tabId) {
+async function renderClearedConversationForTab(tabId, { allowCacheClearFailure = false } = {}) {
+  dismissSelectionAskAction();
   setSelectionGroundedForTab(tabId, false);
-  const clearResult = await clearCachedTabChat(tabId);
-  if (!clearResult?.ok || clearResult?.skipped) {
-    throw new Error(clearResult?.error || 'Unable to clear tab chat.');
+  // The background conversation is already cleared before this helper runs.
+  // Release the old run even if clearing the local transcript fails, because
+  // its follower no longer owns the tab and cannot settle these flags itself.
+  setTabProcessing(tabId, false);
+  setTabAbortRequested(tabId, false);
+  let clearResult = null;
+  let cacheClearError = null;
+  try {
+    clearResult = await clearCachedTabChat(tabId);
+  } catch (error) {
+    cacheClearError = error;
+  }
+  if ((!clearResult?.ok || clearResult?.skipped) && !allowCacheClearFailure) {
+    throw cacheClearError || new Error(clearResult?.error || 'Unable to clear tab chat.');
   }
   resetComposerHistoryNavigation(tabId);
   saveInputDraftForTab(tabId, '');
@@ -3079,6 +3140,8 @@ async function renderClearedConversationForTab(tabId) {
   resetChatNavigation();
   renderedTabId = tabId;
   messagesEl.innerHTML = '';
+  currentAssistantEl = null;
+  hideActivity();
   inputEl.value = '';
   autoResizeInput();
   syncSendButtonState();
@@ -3201,6 +3264,8 @@ function scheduledJobActions(job) {
 const SCHEDULED_VISIBLE_STATUSES = new Set(['pending', 'queued', 'paused', 'running', 'needs_user_input', 'failed', 'completed']);
 const COMPLETED_SCHEDULED_JOB_AUTO_HIDE_MS = 15 * 1000;
 const pinnedCompletedScheduledJobIds = new Set();
+const pendingScheduledPlannerFallbackMessages = new Map();
+const scheduledAssistantPreparationJobIds = new Set();
 let scheduledJobAutoHideTimer = null;
 
 function visibleScheduledJobs(jobs = []) {
@@ -3268,8 +3333,11 @@ function findScheduledClarifyCardForJob(jobId) {
 function findScheduledAssistantMessageForJob(jobId) {
   const id = String(jobId || '');
   if (!id) return null;
-  for (const msgEl of messagesEl?.querySelectorAll?.('.message.assistant[data-scheduled-job-id]') || []) {
-    if (msgEl.dataset.scheduledJobId === id) return msgEl;
+  const messages = Array.from(
+    messagesEl?.querySelectorAll?.('.message.assistant[data-scheduled-job-id]') || [],
+  );
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].dataset.scheduledJobId === id) return messages[i];
   }
   const card = findScheduledClarifyCardForJob(id);
   const msgEl = card?.closest?.('.message.assistant');
@@ -3278,14 +3346,42 @@ function findScheduledAssistantMessageForJob(jobId) {
   return null;
 }
 
+function queueScheduledPlannerFallbackMessage(jobId, message) {
+  const id = String(jobId || '');
+  if (!id || !message) return;
+  pendingScheduledPlannerFallbackMessages.delete(id);
+  pendingScheduledPlannerFallbackMessages.set(id, message);
+  while (pendingScheduledPlannerFallbackMessages.size > 50) {
+    pendingScheduledPlannerFallbackMessages.delete(
+      pendingScheduledPlannerFallbackMessages.keys().next().value,
+    );
+  }
+}
+
+function flushScheduledPlannerFallbackMessage(jobId, assistantEl = null) {
+  const id = String(jobId || '');
+  if (!id || !pendingScheduledPlannerFallbackMessages.has(id)) return false;
+  if (!assistantEl) assistantEl = findScheduledAssistantMessageForJob(id);
+  if (!assistantEl) return false;
+  const message = pendingScheduledPlannerFallbackMessages.get(id);
+  pendingScheduledPlannerFallbackMessages.delete(id);
+  addPlannerFallbackNote(message, assistantEl);
+  return true;
+}
+
 function ensureScheduledTerminalMessage(job) {
   const jobId = job?.id ? String(job.id) : '';
   if (!jobId || !isUrlTargetScheduledJob(job)) return null;
   const existing = findScheduledAssistantMessageForJob(jobId);
-  if (existing) return existing;
+  if (existing && scheduledAssistantPreparationJobIds.has(jobId)) return existing;
+  if (existing) {
+    flushScheduledPlannerFallbackMessage(jobId, existing);
+    return existing;
+  }
   resetChatNavigation();
   const msgEl = addMessage('assistant', '');
   msgEl.dataset.scheduledJobId = jobId;
+  flushScheduledPlannerFallbackMessage(jobId, msgEl);
   return msgEl;
 }
 
@@ -3386,7 +3482,56 @@ async function scheduledJobAction(action, jobId) {
   }
 }
 
-async function drainQueuedPromptsAfterRunSettles() {
+const QUEUED_PROMPT_DRAIN_RETRY_MS = 1_000;
+const queuedPromptDrainRetryTimers = new Map();
+
+function cancelQueuedPromptDrainRetry(tabId) {
+  const numericTabId = Number(tabId);
+  const timerId = queuedPromptDrainRetryTimers.get(numericTabId);
+  if (timerId != null) clearTimeout(timerId);
+  queuedPromptDrainRetryTimers.delete(numericTabId);
+}
+
+function scheduleQueuedPromptDrainRetry(tabId) {
+  const numericTabId = Number(tabId);
+  if (!Number.isFinite(numericTabId) || queuedPromptDrainRetryTimers.has(numericTabId)) return;
+  const timerId = setTimeout(() => {
+    queuedPromptDrainRetryTimers.delete(numericTabId);
+    void drainQueuedPromptsAfterRunSettles(numericTabId);
+  }, QUEUED_PROMPT_DRAIN_RETRY_MS);
+  queuedPromptDrainRetryTimers.set(numericTabId, timerId);
+}
+
+function hasQueuedPromptForTab(tabId) {
+  return getQueuedComposerMessages(tabId).length > 0
+    || hasQueuedContextMenuPromptForTab(tabId);
+}
+
+async function drainQueuedPromptsAfterRunSettles(tabId = currentTabId) {
+  const numericTabId = Number(tabId);
+  if (!sameTabId(currentTabId, numericTabId) || !sameTabId(renderedTabId, numericTabId)) {
+    cancelQueuedPromptDrainRetry(numericTabId);
+    return;
+  }
+  if (isConversationClearInProgress(tabId)) return;
+  if (!hasQueuedPromptForTab(numericTabId)) {
+    cancelQueuedPromptDrainRetry(numericTabId);
+    return;
+  }
+  let runState = null;
+  try {
+    runState = await sendToBackground('agent_run_state', { tabId: numericTabId });
+  } catch { /* retry while a queued prompt still needs the background reservation */ }
+  if (!sameTabId(currentTabId, numericTabId) || !sameTabId(renderedTabId, numericTabId)) {
+    cancelQueuedPromptDrainRetry(numericTabId);
+    return;
+  }
+  if (isConversationClearInProgress(numericTabId)) return;
+  if (!runState?.ok || runState.running || runState.starting) {
+    scheduleQueuedPromptDrainRetry(numericTabId);
+    return;
+  }
+  cancelQueuedPromptDrainRetry(numericTabId);
   if (drainQueuedComposerMessageForCurrentTab()) return;
   drainQueuedContextMenuPrompts();
 }
@@ -3438,11 +3583,40 @@ async function settleScheduledRun(event, job, tabId = currentTabId) {
     hideActivity();
     if (currentAssistantEl === assistantEl) currentAssistantEl = null;
     if (renderedTabId != null) await flushRenderedTabChat();
-    await drainQueuedPromptsAfterRunSettles();
+    await drainQueuedPromptsAfterRunSettles(runTabId);
   }
   if (event === 'completed' && job?.source !== 'watch') {
     notifyCompletion({ success: job?.lastOutcome === 'success' });
   }
+}
+
+function renderScheduledJobCreatedMessage(job, preferredMessage = null, root = messagesEl) {
+  const jobId = job?.id ? String(job.id) : '';
+  if (jobId) {
+    const alreadyRendered = Array.from(
+      root?.querySelectorAll?.('.message.system[data-scheduled-created-job-id]') || [],
+    ).find((message) => message.dataset.scheduledCreatedJobId === jobId);
+    if (alreadyRendered) {
+      if (preferredMessage && preferredMessage !== alreadyRendered) preferredMessage.remove();
+      return alreadyRendered;
+    }
+  }
+
+  const title = scheduledJobTitle(job);
+  const createdParams = {
+    title,
+    time: formatScheduledTime(job.nextRunAt || job.scheduledAt),
+  };
+  const createdHtml = preferredMessage
+    ? tSystemHtml('sp.schedule_form.created', createdParams)
+    : tSystemHtml('sp.scheduled.created', createdParams);
+  const message = preferredMessage || addMessage('system', systemHtml(createdHtml));
+  const textEl = preferredMessage?.querySelector('.message-text');
+  if (textEl) textEl.innerHTML = createdHtml;
+  // Runtime delivery and restored chat can converge on the same presentation
+  // event. Persist the job identity in the DOM so remounts remain idempotent.
+  if (jobId) message.dataset.scheduledCreatedJobId = jobId;
+  return message;
 }
 
 async function handleScheduledJobEvent(data, tabId) {
@@ -3466,29 +3640,41 @@ async function handleScheduledJobEvent(data, tabId) {
     || terminalScheduledEvent
     || watchPollEvent
     || event === 'needs_user_input';
+  const preparingScheduledAssistant = event === 'running' && !!jobId;
+  if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.add(jobId);
   if (scopeChangingScheduledEvent && runTabId != null) {
-    await refreshConversationScopeState(runTabId);
+    try {
+      await refreshConversationScopeState(runTabId);
+    } catch (error) {
+      if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.delete(jobId);
+      throw error;
+    }
   }
 
   const title = scheduledJobTitle(job);
   if (event === 'created') {
-    addMessage('system', systemHtml(tSystemHtml('sp.scheduled.created', { title, time: formatScheduledTime(job.nextRunAt || job.scheduledAt) })));
+    renderScheduledJobCreatedMessage(job);
   } else if (event === 'running') {
-    clearActiveChatPayloadForTab(runTabId);
-    setTabProcessing(runTabId, true);
-    setTabAbortRequested(runTabId, false);
-    syncSendButtonState();
-    if (job?.source === 'watch') {
-      hideRecommendedActions();
-      resetChatNavigation();
-      currentAssistantEl = ensureScheduledTerminalMessage(job);
-    } else {
-      hideRecommendedActions();
-      resetChatNavigation();
-      currentAssistantEl = addMessage('assistant', '');
+    try {
+      clearActiveChatPayloadForTab(runTabId);
+      setTabProcessing(runTabId, true);
+      setTabAbortRequested(runTabId, false);
+      syncSendButtonState();
+      if (job?.source === 'watch') {
+        hideRecommendedActions();
+        resetChatNavigation();
+        currentAssistantEl = ensureScheduledTerminalMessage(job);
+      } else {
+        hideRecommendedActions();
+        resetChatNavigation();
+        currentAssistantEl = addMessage('assistant', '');
+      }
+      if (jobId) currentAssistantEl.dataset.scheduledJobId = jobId;
+      flushScheduledPlannerFallbackMessage(jobId, currentAssistantEl);
+      showActivity(t('sp.scheduled.running', { title }));
+    } finally {
+      if (preparingScheduledAssistant) scheduledAssistantPreparationJobIds.delete(jobId);
     }
-    if (jobId) currentAssistantEl.dataset.scheduledJobId = jobId;
-    showActivity(t('sp.scheduled.running', { title }));
   } else if (event === 'completed') {
     ensureScheduledTerminalMessage(job);
     settleScheduledRun(event, job, runTabId);
@@ -3514,7 +3700,7 @@ async function handleScheduledJobEvent(data, tabId) {
       setTabProcessing(runTabId, false);
       syncSendButtonState();
       addMessage('system', systemHtml(tSystemHtml('sp.scheduled.needs_user_input', { title })));
-      drainQueuedPromptsAfterRunSettles();
+      drainQueuedPromptsAfterRunSettles(runTabId);
     }
   }
 }
@@ -3675,20 +3861,21 @@ async function submitScheduleComposer(e, form) {
     if (res?.success === false || res?.ok === false || !res?.scheduledAt) {
       throw new Error(res?.error || 'Could not create scheduled job.');
     }
-    const createdHtml = tSystemHtml('sp.schedule_form.created', {
-      title,
-      time: formatScheduledTime(res.scheduledAt),
-    });
     if (currentTabId !== tabId) {
-      replaceCachedScheduleComposer(tabId, form.dataset.composerId, createdHtml);
+      replaceCachedScheduleComposer(tabId, form.dataset.composerId, {
+        id: res.jobId,
+        title,
+        scheduledAt: res.scheduledAt,
+      });
       return;
     }
     const msgEl = form.closest('.message');
     form.remove();
-    const textEl = msgEl?.querySelector('.message-text');
-    if (textEl) {
-      textEl.innerHTML = createdHtml;
-    }
+    renderScheduledJobCreatedMessage({
+      id: res.jobId,
+      title,
+      scheduledAt: res.scheduledAt,
+    }, msgEl);
     await refreshScheduledJobs({ tabId });
   } catch (err) {
     if (currentTabId !== tabId) {
@@ -3712,16 +3899,17 @@ function bindScheduleComposer(form) {
   form.addEventListener('submit', (e) => submitScheduleComposer(e, form));
 }
 
-function replaceCachedScheduleComposer(tabId, composerId, html) {
+function replaceCachedScheduleComposer(tabId, composerId, job) {
   const cached = tabChats.get(tabId);
   if (typeof cached !== 'string' || !composerId) return;
   const wrapper = document.createElement('div');
   wrapper.innerHTML = cached;
   const form = wrapper.querySelector(`form.schedule-composer[data-composer-id="${composerId}"]`);
-  const textEl = form?.closest('.message')?.querySelector('.message-text');
-  if (!form || !textEl) return;
+  const msgEl = form?.closest('.message');
+  const textEl = msgEl?.querySelector('.message-text');
+  if (!form || !msgEl || !textEl) return;
   form.remove();
-  textEl.innerHTML = html;
+  renderScheduledJobCreatedMessage(job, msgEl, wrapper);
   persistTabChat(tabId, wrapper.innerHTML);
 }
 
@@ -4724,6 +4912,7 @@ if (verboseBtn) {
 
 async function switchToTab(newTabId) {
   if (newTabId === currentTabId && renderedTabId === newTabId) { return; }
+  dismissSelectionAskAction();
   if (newConversationConfirmationState
       && !sameTabId(newConversationConfirmationState.tabId, newTabId)) {
     settleNewConversationConfirmation(false, { restoreFocus: false });
@@ -4799,7 +4988,9 @@ async function switchToTab(newTabId) {
     syncSendButtonState();
   }
   drainQueuedAgentUpdatesForTab(newTabId);
-  consumePendingContextMenuPrompt().then(() => drainQueuedContextMenuPrompts()).catch(() => {});
+  consumePendingContextMenuPrompt()
+    .then(() => drainQueuedPromptsAfterRunSettles(newTabId))
+    .catch(() => {});
   if (visibleStateRefreshPending) requestVisibleSidePanelStateRefresh();
 }
 
@@ -4869,7 +5060,7 @@ function requestVisibleSidePanelStateRefresh() {
   }).catch(() => {});
 }
 
-async function refreshConversationScopeState(tabId = currentTabId) {
+async function refreshConversationScopeState(tabId = currentTabId, { apply = true } = {}) {
   const numericTabId = normalizePlanReviewTabId(tabId);
   if (numericTabId == null) return null;
   let state = null;
@@ -4878,16 +5069,147 @@ async function refreshConversationScopeState(tabId = currentTabId) {
   } catch {
     return null;
   }
-  applyConversationScopeState(numericTabId, state);
+  if (apply) applyConversationScopeState(numericTabId, state);
   return state;
+}
+
+const FAILED_CONVERSATION_CLEAR_RECOVERY_RETRY_MS = 1_000;
+const failedConversationClearRecoveryRetryTimers = new Map();
+const failedConversationClearRecoveryTokens = new Map();
+
+function cancelFailedConversationClearRecoveryRetry(tabId) {
+  const numericTabId = Number(tabId);
+  const timerId = failedConversationClearRecoveryRetryTimers.get(numericTabId);
+  if (timerId != null) clearTimeout(timerId);
+  failedConversationClearRecoveryRetryTimers.delete(numericTabId);
+}
+
+function scheduleFailedConversationClearRecoveryRetry(tabId) {
+  const numericTabId = Number(tabId);
+  if (!Number.isFinite(numericTabId)
+      || failedConversationClearRecoveryRetryTimers.has(numericTabId)) return;
+  const timerId = setTimeout(() => {
+    failedConversationClearRecoveryRetryTimers.delete(numericTabId);
+    void recoverActiveRunAfterFailedConversationClear(numericTabId);
+  }, FAILED_CONVERSATION_CLEAR_RECOVERY_RETRY_MS);
+  failedConversationClearRecoveryRetryTimers.set(numericTabId, timerId);
+}
+
+function holdFailedConversationClearRecovery(tabId) {
+  const numericTabId = normalizePlanReviewTabId(tabId);
+  if (numericTabId == null) return null;
+  const recoveryToken = Symbol('failed-conversation-clear-recovery');
+  failedConversationClearRecoveryTokens.set(numericTabId, recoveryToken);
+  // A timed-out local abort can finish after clear_conversation has failed.
+  // Keep its finalizer from making the composer look idle until the background
+  // reservation has either been re-adopted or authoritatively ended.
+  failedConversationClearRecoveryTabs.add(numericTabId);
+  setTabProcessing(numericTabId, true);
+  setTabAbortRequested(numericTabId, false);
+  if (sameTabId(currentTabId, numericTabId)) {
+    showActivity('Reconnecting\u2026');
+    syncSendButtonState();
+  }
+  return recoveryToken;
+}
+
+function isFailedConversationClearRecoveryCurrent(tabId, recoveryToken) {
+  const numericTabId = Number(tabId);
+  return failedConversationClearRecoveryTabs.has(numericTabId)
+    && failedConversationClearRecoveryTokens.get(numericTabId) === recoveryToken
+    && !isConversationClearInProgress(numericTabId);
+}
+
+function finishFailedConversationClearRecovery(tabId, { processing }) {
+  const numericTabId = normalizePlanReviewTabId(tabId);
+  if (numericTabId == null) return;
+  failedConversationClearRecoveryTabs.delete(numericTabId);
+  failedConversationClearRecoveryTokens.delete(numericTabId);
+  cancelFailedConversationClearRecoveryRetry(numericTabId);
+  setTabProcessing(numericTabId, processing);
+  setTabAbortRequested(numericTabId, false);
+  if (sameTabId(currentTabId, numericTabId)) {
+    if (!processing) hideActivity();
+    syncSendButtonState();
+  }
+}
+
+async function recoverActiveRunAfterFailedConversationClear(tabId) {
+  const numericTabId = normalizePlanReviewTabId(tabId);
+  if (numericTabId == null) return false;
+  const recoveryToken = holdFailedConversationClearRecovery(numericTabId);
+  if (!sameTabId(currentTabId, numericTabId) || !sameTabId(renderedTabId, numericTabId)) {
+    cancelFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+
+  const state = await refreshConversationScopeState(numericTabId, { apply: false });
+  if (!isFailedConversationClearRecoveryCurrent(numericTabId, recoveryToken)) return false;
+  if (!sameTabId(currentTabId, numericTabId) || !sameTabId(renderedTabId, numericTabId)) {
+    cancelFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+  if (!state?.ok) {
+    scheduleFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+  applyConversationScopeState(numericTabId, state);
+
+  const recoveryStillCurrent = () => (
+    isFailedConversationClearRecoveryCurrent(numericTabId, recoveryToken)
+  );
+  const snapshotStillActive = await applyActiveRunState(numericTabId, state, {
+    shouldContinue: recoveryStillCurrent,
+  });
+  if (!recoveryStillCurrent()) return false;
+  if (!snapshotStillActive) {
+    scheduleFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+  if (!state.running && !state.starting) {
+    finishFailedConversationClearRecovery(numericTabId, { processing: false });
+    await drainQueuedPromptsAfterRunSettles(numericTabId);
+    return true;
+  }
+
+  const runUi = state.runUi && typeof state.runUi === 'object' ? state.runUi : null;
+  const requestId = String(runUi?.requestId || '');
+  const oldFollowerStillSettling = !requestId
+    || conversationClearFollowerCancellationRequestIds.has(requestId)
+    || localRunFollowers.has(numericTabId)
+    || localRunRequestIds.has(numericTabId);
+  if (oldFollowerStillSettling) {
+    scheduleFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+  if (runUi?.status === 'awaiting_plan') {
+    finishFailedConversationClearRecovery(numericTabId, { processing: true });
+    return true;
+  }
+
+  void adoptRestoredRunState(numericTabId, state);
+  if (!recoveryStillCurrent()) return false;
+  const runWasAdopted = localRunRequestIds.get(numericTabId) === requestId
+    && localRunFollowers.get(numericTabId)?.requestId === requestId;
+  if (!runWasAdopted) {
+    scheduleFailedConversationClearRecoveryRetry(numericTabId);
+    return false;
+  }
+  finishFailedConversationClearRecovery(numericTabId, { processing: true });
+  return true;
 }
 
 async function restoreActiveRunState(tabId = currentTabId) {
   const numericTabId = normalizePlanReviewTabId(tabId);
   if (numericTabId == null) return;
+  if (failedConversationClearRecoveryTabs.has(numericTabId)) {
+    await recoverActiveRunAfterFailedConversationClear(numericTabId);
+    return;
+  }
   const state = await refreshConversationScopeState(numericTabId);
   if (!state) return;
-  await applyActiveRunState(numericTabId, state);
+  const snapshotStillActive = await applyActiveRunState(numericTabId, state);
+  if (!snapshotStillActive) return;
   void adoptRestoredRunState(numericTabId, state);
 }
 
@@ -4901,6 +5223,10 @@ async function adoptRestoredRunState(tabId, state) {
   if (!requestId
       || isTerminalRunUiStatus(runUi.status)
       || runUi.status === 'awaiting_plan'
+      || isConversationClearInProgress(tabId)
+      || clearedConversationRunRequestIds.has(requestId)
+      || !sameTabId(currentTabId, tabId)
+      || !sameTabId(renderedTabId, tabId)
       || localRunRequestIds.has(Number(tabId))
       || adoptedRunRecoveryRequestIds.has(requestId)) return;
 
@@ -4927,7 +5253,11 @@ async function adoptRestoredRunState(tabId, state) {
       requireDurableSubmittedTurn: runUi.kind !== 'continue',
     });
     const returnedPlannerFailure = plannerRequestFailureUpdate(res?.updates);
-    if (returnedPlannerFailure && sameTabId(currentTabId, tabId) && !isTabAbortRequested(tabId)) {
+    if (returnedPlannerFailure
+        && sameTabId(currentTabId, tabId)
+        && !isTabAbortRequested(tabId)
+        && !clearedConversationRunRequestIds.has(requestId)
+        && !conversationClearFollowerCancellationRequestIds.has(requestId)) {
       renderPlannerRequestFailure(
         assistantEl,
         returnedPlannerFailure.data,
@@ -4937,23 +5267,32 @@ async function adoptRestoredRunState(tabId, state) {
     const returnedErrorUpdate = Array.isArray(res?.updates)
       ? res.updates.find(update => update?.type === 'error')
       : null;
-    if (returnedErrorUpdate && sameTabId(currentTabId, tabId) && !isTabAbortRequested(tabId)) {
+    if (returnedErrorUpdate
+        && sameTabId(currentTabId, tabId)
+        && !isTabAbortRequested(tabId)
+        && !clearedConversationRunRequestIds.has(requestId)
+        && !conversationClearFollowerCancellationRequestIds.has(requestId)) {
       renderAgentErrorUpdate(returnedErrorUpdate.data, tabId, requestId, {
         submittedTurnDurable: res.submittedTurnDurable,
       });
     }
   } catch (error) {
-    if (sameTabId(currentTabId, tabId) && !isTabAbortRequested(tabId)) {
+    if (sameTabId(currentTabId, tabId)
+        && !isTabAbortRequested(tabId)
+        && !clearedConversationRunRequestIds.has(requestId)
+        && !conversationClearFollowerCancellationRequestIds.has(requestId)) {
       renderAgentErrorUpdate({ message: error.message }, tabId, requestId);
     }
   } finally {
     adoptedRunRecoveryRequestIds.delete(requestId);
-    if (localRunRequestIds.get(Number(tabId)) === requestId) {
+    conversationClearFollowerCancellationRequestIds.delete(requestId);
+    const ownsRunState = localRunRequestIds.get(Number(tabId)) === requestId;
+    if (ownsRunState) {
       localRunRequestIds.delete(Number(tabId));
       setTabProcessing(tabId, false);
       setTabAbortRequested(tabId, false);
     }
-    if (sameTabId(currentTabId, tabId)) {
+    if (ownsRunState && sameTabId(currentTabId, tabId)) {
       if (assistantEl) finalizeSteps(assistantEl);
       syncSendButtonState();
       hideActivity();
@@ -4963,12 +5302,19 @@ async function adoptRestoredRunState(tabId, state) {
         await flushChatHistorySnapshot(tabId, { refreshTabInfo: true });
       }
     }
+    if (ownsRunState) await drainQueuedPromptsAfterRunSettles(tabId);
   }
 }
 
-async function applyActiveRunState(numericTabId, state) {
-  if (!sameTabId(currentTabId, numericTabId) || !sameTabId(renderedTabId, numericTabId)) return;
+async function applyActiveRunState(numericTabId, state, { shouldContinue = () => true } = {}) {
   const runUi = state?.runUi && typeof state.runUi === 'object' ? state.runUi : null;
+  const requestId = String(runUi?.requestId || '');
+  const shouldApplyState = () => shouldContinue()
+    && !isConversationClearInProgress(numericTabId)
+    && (!requestId || !clearedConversationRunRequestIds.has(requestId))
+    && sameTabId(currentTabId, numericTabId)
+    && sameTabId(renderedTabId, numericTabId);
+  if (!shouldApplyState()) return false;
   if (runUi?.requestId) {
     const runAssistantEl = messagesEl.querySelector(`.message.assistant[data-run-request-id="${CSS.escape(String(runUi.requestId))}"]`)
       || messagesEl.querySelector('.message.assistant:last-of-type')
@@ -5053,7 +5399,9 @@ async function applyActiveRunState(numericTabId, state) {
       numericTabId,
       runUi.requestId,
       runUi.attachmentDeliveryState,
+      { shouldContinue: shouldApplyState },
     );
+    if (!shouldApplyState()) return false;
     const renderedSeq = Number(runAssistantEl.dataset.lastRenderedSeq || 0);
     if (renderedSeq > Number(runUi.ackedSeq || 0)) {
       await sendToBackground('agent_run_ack', {
@@ -5061,6 +5409,7 @@ async function applyActiveRunState(numericTabId, state) {
         requestId: runUi.requestId,
         seq: renderedSeq,
       }).catch(() => {});
+      if (!shouldApplyState()) return false;
     }
   }
   const pendingPlan = state?.pendingPlan;
@@ -5074,7 +5423,7 @@ async function applyActiveRunState(numericTabId, state) {
         && String(lastPlanLifecycleEvent.data?.planId || '') === String(pendingPlan.planId)));
   if (pendingPlanMatchesRun) {
     renderPlanReviewCard({ ...pendingPlan, tabId: numericTabId, requestId: runUi?.requestId || null, runId: runUi?.runId || null });
-    return;
+    return true;
   }
   const restoredPlanResolution = lastPlanLifecycleEvent?.type === 'plan_resolved'
     ? lastPlanLifecycleEvent.data
@@ -5123,6 +5472,7 @@ async function applyActiveRunState(numericTabId, state) {
     hideActivity();
     syncSendButtonState();
   }
+  return true;
 }
 
 function conversationHasUserMessages() {
@@ -6333,7 +6683,7 @@ function clearPlanReviewActiveRun(assistantEl, tabId = currentTabId) {
     sendBtn.disabled = false;
     hideActivity();
   }
-  drainQueuedPromptsAfterRunSettles();
+  drainQueuedPromptsAfterRunSettles(tabId);
   refreshRecommendedActions();
 }
 
@@ -7955,14 +8305,37 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
   }
 
   if (command.value === '/reset') {
+    const clearingRequestId = localRunRequestIdForTab(tabId);
+    let backgroundClearSucceeded = false;
+    let shouldRecoverActiveRun = false;
     setConversationClearInProgress(tabId, true);
     try {
-      suppressRunUpdatesForClearedConversation(tabId);
-      if (isTabProcessing(tabId)) await abortRun(tabId);
+      if (isTabProcessing(tabId)) await abortRunForConversationClear(tabId, clearingRequestId);
       await sendToBackground('clear_conversation', { tabId });
+      backgroundClearSucceeded = true;
+      if (failedConversationClearRecoveryTabs.has(Number(tabId))) {
+        finishFailedConversationClearRecovery(tabId, { processing: false });
+      }
+      suppressRunUpdatesForClearedConversation(tabId, clearingRequestId);
       await renderClearedConversationForTab(tabId);
+    } catch (error) {
+      if (backgroundClearSucceeded) {
+        try {
+          // The authoritative conversation is already empty. Retry the cache
+          // handoff, then finish the local reset even if that retry still fails.
+          await renderClearedConversationForTab(tabId, { allowCacheClearFailure: true });
+        } catch (localError) {
+          showComposerToast(localError?.message || 'Unable to finish clearing the conversation.', { duration: 7000 });
+        }
+      } else {
+        shouldRecoverActiveRun = true;
+        holdFailedConversationClearRecovery(tabId);
+        showComposerToast(error?.message || 'Unable to clear the conversation.', { duration: 7000 });
+      }
     } finally {
       setConversationClearInProgress(tabId, false);
+      if (shouldRecoverActiveRun) await recoverActiveRunAfterFailedConversationClear(tabId);
+      else if (backgroundClearSucceeded) await drainQueuedPromptsAfterRunSettles(tabId);
     }
     return '';
   }
@@ -8194,6 +8567,7 @@ async function sendMessage(extraChatParams = {}) {
       ...(retryOptions ? { __retry: { ...retryOptions, mode: 'ask' } } : {}),
     };
   }
+  dismissSelectionAskAction();
   const retryOptions = extraChatParams?.__retry || null;
   const modeOverride = ['ask', 'act', 'dev'].includes(extraChatParams?.__mode) ? extraChatParams.__mode : null;
   const onContextMenuClaimRejected = typeof extraChatParams?.__onContextMenuClaimRejected === 'function'
@@ -8501,6 +8875,7 @@ async function sendMessage(extraChatParams = {}) {
     userEl = addMessage('user', agentPrompt ? submittedText : text, {
       attachments: attachmentsForSend,
       attachmentState: attachmentsForSend.length ? 'sending' : '',
+      ...(sourceGrounding ? { sourceGrounding } : {}),
     });
     showActivity(t('sp.activity.thinking'));
     assistantEl = addMessage('assistant', '');
@@ -8644,6 +9019,8 @@ async function sendMessage(extraChatParams = {}) {
       }
     }
   } catch (e) {
+    if (clearedConversationRunRequestIds.has(requestId)
+        || conversationClearFollowerCancellationRequestIds.has(requestId)) return accepted;
     reconcileFailedSelectionGroundedStart(tabId, {
       sourceGrounding,
       selectionGroundedBeforeSend,
@@ -8698,13 +9075,16 @@ async function sendMessage(extraChatParams = {}) {
       }
     }
   } finally {
-    if (localRunRequestIds.get(tabId) === requestId) localRunRequestIds.delete(tabId);
+    const ownsRunState = localRunRequestIds.get(tabId) === requestId;
+    if (ownsRunState) localRunRequestIds.delete(tabId);
     cancelledRunRecoveryRequestIds.delete(requestId);
+    conversationClearFollowerCancellationRequestIds.delete(requestId);
     if (activeChatPayloadsByTab.get(tabId) === activePayloadState) {
       scheduleActiveChatPayloadCleanup(tabId, activePayloadState);
     }
-    if (renderToCurrentTab && currentTabId === tabId) finalizeSteps(assistantEl);
     clearAssistantTextStreamState(assistantEl);
+    if (!ownsRunState) return accepted;
+    if (renderToCurrentTab && currentTabId === tabId) finalizeSteps(assistantEl);
     const wasAborted = isTabAbortRequested(tabId);
     setTabProcessing(tabId, false);
     setTabAbortRequested(tabId, false);
@@ -8725,7 +9105,7 @@ async function sendMessage(extraChatParams = {}) {
         storeReviewSuccess: currentTabId === tabId && promptEligibleCompletion,
       });
     }
-    await drainQueuedPromptsAfterRunSettles();
+    await drainQueuedPromptsAfterRunSettles(tabId);
   }
   return accepted;
 }
@@ -8797,9 +9177,13 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 browser.runtime.onMessage.addListener((msg) => {
   if (msg?.target !== 'sidepanel'
-      || msg.action !== 'tab_chat_cleared'
-      || msg.handoffOwnerId === tabChatHandoffOwnerId
+      || msg.action !== 'tab_chat_cleared') return;
+  if (msg.clearedContextMenuPromptId) {
+    clearQueuedForTab(msg.tabId, { promptId: msg.clearedContextMenuPromptId });
+  }
+  if (msg.handoffOwnerId === tabChatHandoffOwnerId
       || document.visibilityState === 'hidden'
+      || isConversationClearInProgress(msg.tabId)
       || !sameTabId(currentTabId, msg.tabId)) return;
   tabChats.delete(Number(msg.tabId));
   if (lastVisibleTabChatSnapshot
@@ -8852,18 +9236,29 @@ function ensureCurrentRunAssistant(msg) {
   return assistantEl;
 }
 
-function suppressRunUpdatesForClearedConversation(tabId) {
-  const requestId = String(
+function localRunRequestIdForTab(tabId) {
+  return String(
     localRunRequestIds.get(Number(tabId))
       || (sameTabId(currentTabId, tabId) ? currentAssistantEl?.dataset?.runRequestId : '')
       || '',
   );
+}
+
+function suppressRunUpdatesForClearedConversation(tabId, requestId = localRunRequestIdForTab(tabId)) {
+  requestId = String(requestId || '');
   if (!requestId) return;
   // Runtime messages are delivered asynchronously. Keep recently cleared
   // request IDs so a terminal update already queued by the background cannot
   // recreate an assistant bubble after the empty conversation is rendered.
   clearedConversationRunRequestIds.delete(requestId);
   clearedConversationRunRequestIds.add(requestId);
+  if (localRunFollowers.get(Number(tabId))?.requestId === requestId) {
+    cancelledRunRecoveryRequestIds.add(requestId);
+    conversationClearFollowerCancellationRequestIds.add(requestId);
+  }
+  if (localRunRequestIds.get(Number(tabId)) === requestId) {
+    localRunRequestIds.delete(Number(tabId));
+  }
   while (clearedConversationRunRequestIds.size > 100) {
     clearedConversationRunRequestIds.delete(clearedConversationRunRequestIds.values().next().value);
   }
@@ -9139,7 +9534,17 @@ function handleAgentUpdateMessage(msg) {
           || retryPayloadForRunAssistant(targetAssistantEl);
         renderPlannerRequestFailure(targetAssistantEl, data, retryPayload);
       } else if (data?.code === 'planner_failed_continue_act') {
-        showComposerToast(data?.message || t('sp.plan.intent_unavailable'), { duration: 10000 });
+        const message = data?.message || t('sp.plan.intent_unavailable');
+        const scheduledJobId = String(data?.scheduledJobId || '');
+        const scheduledAssistantPending = scheduledAssistantPreparationJobIds.has(scheduledJobId);
+        const scheduledAssistantEl = scheduledJobId && !scheduledAssistantPending
+          ? findScheduledAssistantMessageForJob(scheduledJobId)
+          : null;
+        if (scheduledJobId && (scheduledAssistantPending || !scheduledAssistantEl)) {
+          queueScheduledPlannerFallbackMessage(scheduledJobId, message);
+        } else {
+          addPlannerFallbackNote(message, scheduledAssistantEl || eventAssistantEl || currentAssistantEl);
+        }
       } else if (data?.code === 'ask_stream_fallback') {
         showComposerToast(t('sp.streaming.fallback'), { duration: 6000 });
       } else if (data?.code === 'persistence_degraded') {
@@ -10126,7 +10531,7 @@ function submitClarify(card, tabId, clarifyId, answer, source) {
           syncSendButtonState();
           hideActivity();
         }
-        drainQueuedPromptsAfterRunSettles();
+        drainQueuedPromptsAfterRunSettles(tabId);
       }
       /* background may be torn down — clarify state already lives there */
     });
@@ -10152,9 +10557,9 @@ function placeAnsweredClarifyCardInTimeline(card) {
   content.insertBefore(card, textEl);
 }
 
-function getOrCreateStepsContainer() {
-  if (!currentAssistantEl) return null;
-  const content = currentAssistantEl.querySelector('.message-content');
+function getOrCreateStepsContainer(assistantEl = currentAssistantEl) {
+  if (!assistantEl) return null;
+  const content = assistantEl.querySelector('.message-content');
   const textEl = [...content.children]
     .find(child => child.classList.contains('message-text')) || null;
   if (!textEl) return null;
@@ -10856,6 +11261,11 @@ function messageCompletionFromElement(msgEl) {
   };
 }
 
+function messageInfoOpenedAt(msgEl) {
+  const value = Number(msgEl?.dataset?.messageInfoOpenedAt);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 let messageInfoRowId = 0;
 
 function ensureMessageInfoElements(msgEl) {
@@ -10910,13 +11320,13 @@ function renderMessageInfo(msgEl) {
     completion: messageCompletionFromElement(msgEl),
     verbose: verboseMode,
     locale: getLocale(),
+    now: messageInfoOpenedAt(msgEl) ?? Date.now(),
   });
   row.replaceChildren(...pills.map((pill) => {
     const item = document.createElement('span');
-    item.className = pill.kind === 'sent'
-      ? 'message-info-item message-info-sent'
-      : `message-info-item message-info-pill message-info-${pill.kind}`;
+    item.className = `message-info-item message-info-pill message-info-${pill.kind}`;
     item.textContent = t(pill.key, pill.params);
+    if (pill.title) item.title = pill.title;
     return item;
   }));
   row.hidden = !msgEl.classList.contains('message-info-open') || pills.length === 0;
@@ -10930,6 +11340,8 @@ function messageInfoClickIsInteractive(target) {
 
 function toggleMessageInfo(msgEl) {
   const open = msgEl.classList.toggle('message-info-open');
+  if (open) msgEl.dataset.messageInfoOpenedAt = String(Date.now());
+  else delete msgEl.dataset.messageInfoOpenedAt;
   ensureMessageInfoElements(msgEl).toggle.setAttribute('aria-expanded', String(open));
   renderMessageInfo(msgEl);
   schedulePersist();
@@ -10942,7 +11354,10 @@ function bindMessageInfoToggle(msgEl) {
   msgEl.removeAttribute('aria-expanded');
   msgEl.removeAttribute('title');
   const { toggle } = ensureMessageInfoElements(msgEl);
-  if (msgEl.classList.contains('message-info-open')) renderMessageInfo(msgEl);
+  if (msgEl.classList.contains('message-info-open')) {
+    if (!messageInfoOpenedAt(msgEl)) msgEl.dataset.messageInfoOpenedAt = String(Date.now());
+    renderMessageInfo(msgEl);
+  }
   if (msgEl.__wbMessageInfoBound) return;
   msgEl.__wbMessageInfoBound = true;
   toggle.addEventListener('click', () => toggleMessageInfo(msgEl));
@@ -10983,6 +11398,126 @@ function refreshOpenMessageInfoRows() {
     ensureMessageInfoElements(msgEl);
     if (msgEl.classList.contains('message-info-open')) renderMessageInfo(msgEl);
   });
+}
+
+function assistantTextElementForSelectionNode(node) {
+  const element = node?.nodeType === 1 ? node : node?.parentElement;
+  return element?.closest?.('.message.assistant .message-text') || null;
+}
+
+function selectedAssistantAnswer() {
+  const selection = window.getSelection?.();
+  if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!range.startContainer.isConnected || !range.endContainer.isConnected) return null;
+  const startTextElement = assistantTextElementForSelectionNode(range.startContainer);
+  const endTextElement = assistantTextElementForSelectionNode(range.endContainer);
+  const text = selectionTextFromRange(range);
+  if (!selectionIsQuoteable({ startTextElement, endTextElement, text })) return null;
+  return { range, text };
+}
+
+function dismissSelectionAskAction() {
+  if (selectionAskActionRefreshFrame != null) {
+    cancelAnimationFrame(selectionAskActionRefreshFrame);
+    selectionAskActionRefreshFrame = null;
+  }
+  pendingAnswerSelection = null;
+  selectionAskActionEl?.classList.add('hidden');
+}
+
+function positionSelectionAskAction(range) {
+  if (!selectionAskActionEl || !range) return;
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    dismissSelectionAskAction();
+    return;
+  }
+  const gap = 6;
+  const actionRect = selectionAskActionEl.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(8, rect.left),
+    Math.max(8, window.innerWidth - actionRect.width - 8),
+  );
+  const belowTop = rect.bottom + gap;
+  const preferredTop = belowTop + actionRect.height <= window.innerHeight - 8
+    ? belowTop
+    : Math.max(8, rect.top - actionRect.height - gap);
+  const top = Math.min(
+    Math.max(8, window.innerHeight - actionRect.height - 8),
+    preferredTop,
+  );
+  selectionAskActionEl.style.left = `${left}px`;
+  selectionAskActionEl.style.top = `${top}px`;
+}
+
+function applySelectionAskActionLabel() {
+  if (!selectionAskActionEl) return;
+  const locale = getLocale();
+  if (selectionAskActionLocale === locale && selectionAskActionLabel
+      && selectionAskActionEl.textContent === selectionAskActionLabel) {
+    return;
+  }
+  selectionAskActionLocale = locale;
+  selectionAskActionLabel = getSelectionShortcutLocalization(locale).strings.askQuestion;
+  selectionAskActionEl.textContent = selectionAskActionLabel;
+  selectionAskActionEl.title = selectionAskActionLabel;
+  selectionAskActionEl.setAttribute('aria-label', selectionAskActionLabel);
+}
+
+function refreshSelectionAskAction() {
+  const selected = selectedAssistantAnswer();
+  if (!selected || !selectionAskActionEl) {
+    dismissSelectionAskAction();
+    return;
+  }
+  pendingAnswerSelection = selected;
+  applySelectionAskActionLabel();
+  selectionAskActionEl.classList.remove('hidden');
+  positionSelectionAskAction(selected.range);
+}
+
+function scheduleSelectionAskActionRefresh({ force = false } = {}) {
+  if (!force && selectionAskPointerDown) return;
+  if (selectionAskActionRefreshFrame != null) return;
+  selectionAskActionRefreshFrame = requestAnimationFrame(() => {
+    selectionAskActionRefreshFrame = null;
+    if (!force && selectionAskPointerDown) return;
+    refreshSelectionAskAction();
+  });
+}
+
+function handleSelectionAskPointerDown(event) {
+  if (selectionAskActionEl?.contains(event.target)) return;
+  selectionAskPointerDown = true;
+  dismissSelectionAskAction();
+}
+
+function handleSelectionAskPointerUp() {
+  if (!selectionAskPointerDown) return;
+  selectionAskPointerDown = false;
+  scheduleSelectionAskActionRefresh({ force: true });
+}
+
+function askAboutSelectedAnswer() {
+  const selection = pendingAnswerSelection;
+  if (!selection) return;
+  const liveSelection = selectedAssistantAnswer();
+  if (!liveSelection) {
+    dismissSelectionAskAction();
+    return;
+  }
+  const nextDraft = buildSelectionComposerDraft(liveSelection.text, inputEl.value);
+  if (nextDraft === inputEl.value) {
+    dismissSelectionAskAction();
+    return;
+  }
+  inputEl.value = nextDraft;
+  dismissSelectionAskAction();
+  window.getSelection?.()?.removeAllRanges();
+  handleInput();
+  inputEl.focus();
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
 }
 
 function addMessage(role, content, options = {}) {
@@ -11029,6 +11564,9 @@ function addMessage(role, content, options = {}) {
   } else {
     messagesEl.appendChild(msgEl);
   }
+  if (role === 'user' && options.sourceGrounding) {
+    addSelectionScopeDivider(msgEl, options.sourceGrounding);
+  }
   if (role === 'user' || role === 'assistant') {
     setMessageCreatedAt(msgEl, options.createdAt ?? Date.now());
     bindMessageInfoToggle(msgEl);
@@ -11072,6 +11610,34 @@ function addPlanAutoApprovedNote(data) {
   } else {
     messagesEl.appendChild(note);
   }
+  scrollToBottom();
+}
+
+function addPlannerFallbackNote(message, assistantEl = currentAssistantEl) {
+  if (!assistantEl || !message) return;
+
+  let note = assistantEl.querySelector('.planner-fallback-note');
+  if (!note) {
+    const stepsContainer = getOrCreateStepsContainer(assistantEl);
+    if (!stepsContainer) return;
+
+    note = document.createElement('div');
+    note.className = 'planner-fallback-note';
+    note.setAttribute('role', 'status');
+    note.setAttribute('aria-live', 'polite');
+
+    const icon = document.createElement('span');
+    icon.className = 'planner-fallback-note-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '!';
+
+    const text = document.createElement('span');
+    text.className = 'planner-fallback-note-text';
+    note.append(icon, text);
+    stepsContainer.appendChild(note);
+  }
+
+  note.querySelector('.planner-fallback-note-text').textContent = message;
   scrollToBottom();
 }
 
@@ -11212,14 +11778,18 @@ async function continueAgent(options = {}) {
     if (currentTabId === tabId
         && assistantEl
         && !isTabAbortRequested(tabId)
-        && !clearedConversationRunRequestIds.has(requestId)) {
+        && !clearedConversationRunRequestIds.has(requestId)
+        && !conversationClearFollowerCancellationRequestIds.has(requestId)) {
       addMessage('error', t('sp.error_prefix', { msg: e.message }));
     }
   } finally {
-    if (localRunRequestIds.get(tabId) === requestId) localRunRequestIds.delete(tabId);
+    const ownsRunState = localRunRequestIds.get(tabId) === requestId;
+    if (ownsRunState) localRunRequestIds.delete(tabId);
     cancelledRunRecoveryRequestIds.delete(requestId);
-    if (currentTabId === tabId && assistantEl) finalizeSteps(assistantEl);
+    conversationClearFollowerCancellationRequestIds.delete(requestId);
     clearAssistantTextStreamState(assistantEl);
+    if (!ownsRunState) return;
+    if (currentTabId === tabId && assistantEl) finalizeSteps(assistantEl);
     setTabProcessing(tabId, false);
     setTabAbortRequested(tabId, false);
     if (currentTabId === tabId) {
@@ -11230,7 +11800,7 @@ async function continueAgent(options = {}) {
     if (currentTabId === tabId) scrollToBottom();
     if (currentTabId === tabId && renderedTabId === tabId) await flushRenderedTabChat();
     if (currentTabId === tabId && renderedTabId === tabId) await flushChatHistorySnapshot(tabId, { refreshTabInfo: true });
-    await drainQueuedPromptsAfterRunSettles();
+    await drainQueuedPromptsAfterRunSettles(tabId);
   }
 }
 
@@ -11894,6 +12464,8 @@ async function sendRunWithReconnect(initialAction, payload, recoveryOptions = {}
   const tabId = Number(payload?.tabId);
   const requestId = String(payload?.requestId || '');
   cancelledRunRecoveryRequestIds.delete(requestId);
+  conversationClearFollowerCancellationRequestIds.delete(requestId);
+  const shouldContinueRunRecovery = () => !conversationClearFollowerCancellationRequestIds.has(requestId);
   const promise = runDetachedWithReconnect({
     initialAction,
     payload,
@@ -11904,11 +12476,13 @@ async function sendRunWithReconnect(initialAction, payload, recoveryOptions = {}
     }),
     isConnectionError: isBackgroundConnectionError,
     onState: state => {
+      if (!shouldContinueRunRecovery()) return;
       applyConversationScopeState(tabId, state);
-      return applyActiveRunState(tabId, state);
+      return applyActiveRunState(tabId, state, { shouldContinue: shouldContinueRunRecovery });
     },
     shouldResume: () => !isTabAbortRequested(tabId)
       && !cancelledRunRecoveryRequestIds.has(requestId),
+    shouldContinue: shouldContinueRunRecovery,
     onStatus: ({ phase }) => {
       if (!sameTabId(currentTabId, tabId)) return;
       if (phase === 'reconnecting' || phase === 'retrying_start') {
@@ -11967,6 +12541,11 @@ async function handleGlobalKeydown(e) {
     if (e.isComposing) return;
     const slashMenuOpen = !!slashCommandMenuEl && !slashCommandMenuEl.classList.contains('hidden');
     if (slashMenuOpen) return;
+    if (selectionAskActionEl && !selectionAskActionEl.classList.contains('hidden')) {
+      e.preventDefault();
+      dismissSelectionAskAction();
+      return;
+    }
     // Provider/language pickers close on Escape in bubble/target handlers; do not
     // abort the active run while those listboxes are open.
     const providerPickerOpen = !!providerPickerMenu && !providerPickerMenu.classList.contains('hidden');
@@ -12210,7 +12789,7 @@ async function abortRun(tabId = currentTabId) {
       currentAssistantEl = null;
       setTabAbortRequested(tabId, false);
       await flushRenderedTabChat();
-      await drainQueuedPromptsAfterRunSettles();
+      await drainQueuedPromptsAfterRunSettles(tabId);
       resolve();
     };
     fallbackTimer = setTimeout(settleWhenInactive, 3000);
@@ -12233,6 +12812,25 @@ async function abortRun(tabId = currentTabId) {
     await follower.promise.catch(() => {});
     fallbackCancelled = true;
     clearTimeout(fallbackTimer);
+  }
+}
+
+const CONVERSATION_CLEAR_LOCAL_ABORT_TIMEOUT_MS = 2_000;
+
+async function abortRunForConversationClear(tabId, requestId = localRunRequestIdForTab(tabId)) {
+  requestId = String(requestId || '');
+  const follower = localRunFollowers.get(Number(tabId));
+  if (requestId && follower?.requestId === requestId) {
+    conversationClearFollowerCancellationRequestIds.add(requestId);
+  }
+  let timeoutId = null;
+  const timeout = new Promise(resolve => {
+    timeoutId = setTimeout(resolve, CONVERSATION_CLEAR_LOCAL_ABORT_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([abortRun(tabId).catch(() => {}), timeout]);
+  } finally {
+    if (timeoutId != null) clearTimeout(timeoutId);
   }
 }
 
@@ -12627,16 +13225,24 @@ function clearPendingAttachmentsForTab(tabId, { preserveStoredScreenshots = fals
   }
 }
 
-async function restorePendingAttachmentsForTab(tabId, attachments) {
+async function restorePendingAttachmentsForTab(tabId, attachments, {
+  shouldContinue = () => true,
+  attachmentGeneration = null,
+} = {}) {
   if (!Array.isArray(attachments) || !attachments.length) return;
   const numericTabId = normalizeAttachmentTabId(tabId);
-  if (numericTabId == null) return;
+  if (numericTabId == null || !shouldContinue()) return;
+  const expectedGeneration = attachmentGeneration ?? getAttachmentGeneration(numericTabId);
   const screenshotsPersisted = await markStagedScreenshots(
     browser.storage.local,
     numericTabId,
     attachments,
     { deliveryState: 'pending' },
   ).catch(() => false);
+  if (getAttachmentGeneration(numericTabId) !== expectedGeneration) {
+    await removeStagedScreenshots(browser.storage.local, numericTabId, attachments).catch(() => {});
+    return;
+  }
   const restorable = screenshotsPersisted
     ? attachments
     : attachments.filter(attachment => attachment?.source !== 'slash_screenshot');
@@ -12662,10 +13268,16 @@ async function removePersistedStagedAttachments(tabId, attachments) {
   await removeStagedScreenshots(browser.storage.local, numericTabId, attachments).catch(() => {});
 }
 
-async function reconcilePersistedStagedScreenshots(tabId, requestId, deliveryState) {
+async function reconcilePersistedStagedScreenshots(tabId, requestId, deliveryState, {
+  shouldContinue = () => true,
+} = {}) {
   const numericTabId = normalizeAttachmentTabId(tabId);
-  if (numericTabId == null || !['included', 'not-sent', 'unknown'].includes(deliveryState)) return;
+  if (numericTabId == null
+      || !['included', 'not-sent', 'unknown'].includes(deliveryState)
+      || !shouldContinue()) return;
+  const attachmentGeneration = getAttachmentGeneration(numericTabId);
   const stored = await loadStagedScreenshots(browser.storage.local, numericTabId).catch(() => []);
+  if (!shouldContinue()) return;
   const matching = stored.filter(attachment => (
     attachment.deliveryState === 'sending'
     && String(attachment.requestId || '') === String(requestId || '')
@@ -12681,7 +13293,10 @@ async function reconcilePersistedStagedScreenshots(tabId, requestId, deliverySta
   if (deliveryState === 'included') {
     await removePersistedStagedAttachments(numericTabId, matching);
   } else {
-    await restorePendingAttachmentsForTab(numericTabId, matching);
+    await restorePendingAttachmentsForTab(numericTabId, matching, {
+      shouldContinue,
+      attachmentGeneration,
+    });
   }
 }
 
@@ -13078,6 +13693,26 @@ inputEl.addEventListener('paste', (event) => {
 
 // --- Event Listeners ---
 
+if (selectionAskActionEl) {
+  selectionAskActionEl.addEventListener('mousedown', (event) => event.preventDefault());
+  selectionAskActionEl.addEventListener('click', (event) => {
+    event.stopPropagation();
+    askAboutSelectedAnswer();
+  });
+  document.addEventListener('selectionchange', scheduleSelectionAskActionRefresh);
+  document.addEventListener('pointerdown', handleSelectionAskPointerDown);
+  document.addEventListener('pointerup', handleSelectionAskPointerUp);
+  document.addEventListener('pointercancel', handleSelectionAskPointerUp);
+  document.addEventListener('keyup', scheduleSelectionAskActionRefresh);
+  chatContainerEl?.addEventListener('scroll', dismissSelectionAskAction, { passive: true });
+  window.addEventListener('resize', dismissSelectionAskAction);
+  document.addEventListener('wb-locale-changed', () => {
+    selectionAskActionLocale = '';
+    applySelectionAskActionLabel();
+    scheduleSelectionAskActionRefresh();
+  });
+}
+
 sendBtn.addEventListener('click', sendMessage);
 
 document.addEventListener('keydown', handleGlobalKeydown, true);
@@ -13136,18 +13771,42 @@ async function startNewConversationForTab(tabId) {
   if (isConversationClearInProgress(tabId) || newConversationConfirmationState) return false;
   if (!await requestNewConversationConfirmation(tabId)) return false;
   if (!sameTabId(currentTabId, tabId)) return false;
+  const clearingRequestId = localRunRequestIdForTab(tabId);
+  let backgroundClearSucceeded = false;
+  let shouldRecoverActiveRun = false;
   setConversationClearInProgress(tabId, true);
   try {
-    suppressRunUpdatesForClearedConversation(tabId);
+    if (isTabProcessing(tabId)) await abortRunForConversationClear(tabId, clearingRequestId);
+    const clearResult = await sendToBackground('clear_conversation', { tabId, clearContextMenuPrompt: true });
+    backgroundClearSucceeded = true;
+    if (failedConversationClearRecoveryTabs.has(Number(tabId))) {
+      finishFailedConversationClearRecovery(tabId, { processing: false });
+    }
+    suppressRunUpdatesForClearedConversation(tabId, clearingRequestId);
     clearQueuedComposerMessagesForTab(tabId);
-    clearQueuedForTab(tabId);
-    await sendToBackground('clear_context_menu_prompt', { tabId }).catch(() => {});
-    if (isTabProcessing(tabId)) await abortRun(tabId);
-    await sendToBackground('clear_conversation', { tabId });
+    if (clearResult?.clearedContextMenuPromptId) {
+      clearQueuedForTab(tabId, { promptId: clearResult.clearedContextMenuPromptId });
+    }
     await renderClearedConversationForTab(tabId);
     return true;
+  } catch (error) {
+    if (backgroundClearSucceeded) {
+      try {
+        await renderClearedConversationForTab(tabId, { allowCacheClearFailure: true });
+        return true;
+      } catch (localError) {
+        showComposerToast(localError?.message || 'Unable to finish clearing the conversation.', { duration: 7000 });
+        return false;
+      }
+    }
+    shouldRecoverActiveRun = true;
+    holdFailedConversationClearRecovery(tabId);
+    showComposerToast(error?.message || 'Unable to clear the conversation.', { duration: 7000 });
+    return false;
   } finally {
     setConversationClearInProgress(tabId, false);
+    if (shouldRecoverActiveRun) await recoverActiveRunAfterFailedConversationClear(tabId);
+    else if (backgroundClearSucceeded) await drainQueuedPromptsAfterRunSettles(tabId);
   }
 }
 
@@ -13157,6 +13816,23 @@ clearBtn.addEventListener('click', async () => {
 
 selectionScopeNewConversationBtn?.addEventListener('click', async () => {
   await startNewConversationForTab(currentTabId);
+});
+
+selectionScopeRestoreBtn?.addEventListener('click', async () => {
+  const tabId = currentTabId;
+  if (!isSelectionGroundedForTab(tabId) || isTabProcessing(tabId)) return;
+  const confirmed = typeof globalThis.confirm === 'function'
+    ? globalThis.confirm(`${t('sp.selection_scope.restore')}\n\n${t('sp.selection_scope.restore_description')}`)
+    : true;
+  if (!confirmed) return;
+  try {
+    const state = await sendToBackground('restore_selection_scope', { tabId });
+    if (state?.ok !== true) throw new Error(state?.error || 'Unable to restore the broader conversation.');
+    applyConversationScopeState(tabId, state);
+    showComposerToast(t('sp.selection_scope.restore'), { duration: 4000 });
+  } catch (error) {
+    showComposerToast(error?.message || t('sp.selection_scope.description'), { duration: 6000 });
+  }
 });
 
 providerSelect.addEventListener('change', async () => {

@@ -1,4 +1,4 @@
-function formatSentTime(createdAt, locale) {
+function formatExactSentTime(createdAt, locale) {
   const value = Number(createdAt);
   if (!Number.isFinite(value) || value <= 0) return '';
   const date = new Date(value);
@@ -9,6 +9,7 @@ function formatSentTime(createdAt, locale) {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false,
       timeZoneName: 'short',
     }).format(date);
@@ -18,7 +19,39 @@ function formatSentTime(createdAt, locale) {
     const offset = offsetMinutes === 0
       ? 'UTC'
       : `UTC${offsetMinutes > 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offsetMinutes) / 60))}:${pad(Math.abs(offsetMinutes) % 60)}`;
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}, ${pad(date.getHours())}:${pad(date.getMinutes())} ${offset}`;
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}, ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${offset}`;
+  }
+}
+
+function formatRelativeSentTime(createdAt, locale, now = Date.now()) {
+  const value = Number(createdAt);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const units = [
+    { name: 'second', milliseconds: 1000 },
+    { name: 'minute', milliseconds: 60 * 1000 },
+    { name: 'hour', milliseconds: 60 * 60 * 1000 },
+    { name: 'day', milliseconds: 24 * 60 * 60 * 1000 },
+  ];
+  const current = Number(now);
+  const elapsedMs = Number.isFinite(current) ? Math.max(0, current - value) : 0;
+  const lastUnit = units[units.length - 1];
+  let unit = lastUnit;
+  for (let index = 0; index < units.length - 1; index += 1) {
+    if (elapsedMs < units[index + 1].milliseconds) {
+      unit = units[index];
+      break;
+    }
+  }
+  const amount = Math.floor(elapsedMs / unit.milliseconds);
+  try {
+    return new Intl.RelativeTimeFormat(locale || undefined, {
+      numeric: amount === 0 ? 'auto' : 'always',
+      style: 'long',
+    }).format(-amount, unit.name);
+  } catch {
+    // Keep timestamps usable when a browser lacks ICU data for the selected locale.
+    if (amount === 0) return 'now';
+    return `${amount} ${unit.name}${amount === 1 ? '' : 's'} ago`;
   }
 }
 
@@ -80,13 +113,14 @@ export function aggregateMessageCompletion(current, result, durationMs) {
   };
 }
 
-export function buildMessageInfoPills({ createdAt, completion = {}, verbose = false, locale } = {}) {
-  const time = formatSentTime(createdAt, locale);
+export function buildMessageInfoPills({ createdAt, completion = {}, verbose = false, locale, now = Date.now() } = {}) {
+  const time = formatRelativeSentTime(createdAt, locale, now);
   if (!time) return [];
   const pills = [{
     kind: 'sent',
     key: 'sp.message_info.sent',
     params: { time },
+    title: formatExactSentTime(createdAt, locale),
   }];
   if (!verbose) return pills;
   const outputTokens = firstPositiveInteger(completion.outputTokens);

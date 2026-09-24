@@ -277,12 +277,13 @@ export function inferContextWindow(config = {}) {
   if (!model) return DEFAULT_CLOUD_CONTEXT_WINDOW;
 
   // OpenAI
+  if (/(?:^|\/)gpt-6-(?:luna-pro|sol|astra)(?:[.\-:]|$)/.test(model)) return 1050000;
   if (/^gpt-5\.6(?:[.\-]|$)/.test(model) || model.includes('/gpt-5.6')) return 1050000;
   if (model.includes('gpt-5.5-pro')) return 1050000;
   if (/^gpt-5(?:[.\-]|$)/.test(model) || model.includes('/gpt-5')) return 400000;
 
   // Anthropic Claude
-  if (/claude-(?:fable-5|mythos-5|mythos|opus-4-[6-8]|sonnet-4-6)/.test(model)) return M1;
+  if (/claude-(?:fable-5|mythos-5|mythos|opus-5|sonnet-5|opus-4-[6-8]|sonnet-4-6)/.test(model)) return M1;
   if (model.includes('claude-')) return 200000;
 
   // Google Gemini
@@ -298,14 +299,15 @@ export function inferContextWindow(config = {}) {
   if (model.includes('deepseek-v4')) return M1;
 
   // xAI
-  if (model.includes('grok-4.3')) return M1;
+  if (/grok-4\.[56](?:$|[^0-9])/.test(model)) return 500000;
+  if (/grok-4\.(?:3|20)/.test(model)) return M1;
 
   // Groq-hosted common models and OpenAI open-weight GPT-OSS models.
   if (model.includes('gpt-oss')) return K128;
-  if (provider === 'groq' && /(?:llama-3\.[13]|compound)/.test(model)) return K128;
+  if (provider === 'groq' && /(?:llama-3\.[13]|compound|qwen3\.6)/.test(model)) return K128;
 
   // NVIDIA NIM defaults in WebBrain.
-  if (/(?:nemotron.*49b|llama-3[._-]3-nemotron|llama-3\.1-8b)/.test(model)) return K128;
+  if (/(?:nemotron.*49b|llama-3[._-]3-nemotron|llama-3\.1-8b|nemotron-3)/.test(model)) return K128;
 
   // MiniMax direct and OpenRouter slugs.
   if (/minimax.*m3/.test(model)) return M1;
@@ -317,13 +319,68 @@ export function inferContextWindow(config = {}) {
   if (/kimi-k-?3(?:-|$|\/|\.)/.test(model)) return M1;
   if (/kimi-k2\.(?:5|6|7)(?:-|$|\/|\.)/.test(model)) return K256;
 
+  // Z.AI / Zhipu GLM, including Fireworks `glm-5p2` slugs.
+  if (/glm-5(?:\.(?:3|2)|p(?:3|2))(?:$|[^0-9])/.test(model)) return M1;
+
   // Alibaba / Qwen direct models and OpenRouter Qwen slugs.
-  if (model.includes('qwen3.7-plus')) return M1;
-  if (model.includes('qwen3.7-max')) return K256;
+  if (/qwen3p8-27b/.test(model) || /qwen3\.8-27b/.test(model)) return K256;
+  if (/qwen3p8/.test(model) || /qwen3\.[78]/.test(model)) return M1;
+  if (/qwen3\.6-27b/.test(model)) return K256;
+  if (/qwen3\.6-(?:plus|flash)/.test(model)) return M1;
   if (model.includes('qwen3-max')) return K256;
   if (/qwen(?:3\.5)?-(?:plus|turbo)/.test(model)) return M1;
-  if (model.includes('qwen-max')) return 32768;
+  if (model.includes('qwen-max')) return K128;
   if (/qwen3-(?:235b|30b|32b|next)/.test(model)) return K128;
 
   return DEFAULT_CLOUD_CONTEXT_WINDOW;
+}
+
+export const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+
+/**
+ * Known per-model generation ceiling. Used to clamp a card-wide Settings
+ * budget (for example Anthropic's shipped 128k) so a selected model with a
+ * lower output limit does not receive a request the API will reject.
+ * Returns null when the model is unknown — do not invent a cap.
+ */
+export function inferMaxOutputTokens(config = {}) {
+  const model = clean(config.model);
+  if (!model) return null;
+
+  // OpenAI and router slugs
+  if (/^gpt-5(?:[.\-]|$)/.test(model) || model.includes('/gpt-5')) return 128000;
+  if (/(?:^|\/)o[1-4](?:[.\-]|$)/.test(model)) return 100000;
+  if (model.includes('gpt-4.1')) return 32768;
+  if (model.includes('gpt-4o')) return 16384;
+
+  // Anthropic Claude (direct, Bedrock, Vertex, and router slugs)
+  if (/claude-(?:fable-5|mythos-5|mythos|opus-5|sonnet-5|opus-4-[6-8]|sonnet-4-6)/.test(model)) {
+    return 128000;
+  }
+  if (/claude-haiku-4-5/.test(model)) return 64000;
+  if (/claude-(?:opus|sonnet|haiku)-4/.test(model)) return 64000;
+  if (/claude-3-7/.test(model)) return 64000;
+  if (/claude-3-5/.test(model)) return 8192;
+  if (/claude-3/.test(model)) return 4096;
+  if (model.includes('claude-')) return 64000;
+
+  // DeepSeek
+  if (model.includes('deepseek-v4')) return 384000;
+  if (model.includes('deepseek')) return 8192;
+
+  return null;
+}
+
+/**
+ * Requested output budget: the configured Settings value (or the legacy 4k
+ * fallback), clamped to the selected model's known ceiling when we have one.
+ */
+export function resolveMaxOutputTokens(config = {}, fallback = DEFAULT_MAX_OUTPUT_TOKENS) {
+  const configured = Number(config.maxOutputTokens);
+  const budget = Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : fallback;
+  const ceiling = inferMaxOutputTokens(config);
+  if (Number.isFinite(ceiling) && ceiling > 0) return Math.min(budget, ceiling);
+  return budget;
 }

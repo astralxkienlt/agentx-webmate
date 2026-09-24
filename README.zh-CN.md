@@ -20,7 +20,7 @@
   <a href="README.fr.md">Français</a> ·
   <a href="docs/zh-CN/">文档</a> ·
   <a href="https://webbrain.one">官网</a> ·
-  <a href="LICENSE">MIT 许可证</a>
+  <a href="LICENSE">GPL-3.0-or-later</a>
 </p>
 
 ![WebBrain 阅读页面、填写表单并下载文件](assets/webbrain-demo.gif)
@@ -260,4 +260,6 @@ lms clone webbrain/web-tools
 
 ## 许可证
 
-MIT — 由 [Emre Sokullu](https://emresokullu.com) 构建
+GPL-3.0-or-later — 见 [LICENSE](LICENSE)。本仓库是 AgentX WebMate，即由
+[Emre Sokullu](https://emresokullu.com) 构建的 WebBrain 的修改版。首次发布于 WebBrain
+33.0.0 之前版本中的代码采用 MIT 许可证，该声明保留在 [LICENSE](LICENSE) 中。

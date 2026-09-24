@@ -137,7 +137,9 @@ export default {
   "sp.selection_scope.title": "Texte sélectionné uniquement",
   "sp.selection_scope.description": "Démarrez une nouvelle conversation pour accéder à la page ou à l’écran.",
   "sp.selection_scope.context_title": "Texte sélectionné + connaissances générales",
-  "sp.selection_scope.context_description": "Utilise le texte sélectionné et les connaissances du modèle. La page, les outils, les fichiers et la conversation précédente restent indisponibles.",
+  "sp.selection_scope.context_description": "Utilise le texte sélectionné, le dialogue précédent sûr et les connaissances du modèle. La page, les outils, les fichiers, les pièces jointes et le contenu brut des pages précédentes restent indisponibles.",
+  "sp.selection_scope.restore": "Utiliser la conversation complète",
+  "sp.selection_scope.restore_description": "La restauration supprime la limite au texte sélectionné. Les prochains messages pourront utiliser la page actuelle, les outils du navigateur, les fichiers, les pièces jointes et l’intégralité de la conversation précédente, y compris le contexte de la page.",
   "sp.input.selection_placeholder": "Posez une question sur le texte sélectionné…",
 
   'sp.mode.ask': 'Demander',
@@ -346,6 +348,14 @@ export default {
   'tr.conversation.label': 'Conversation',
   'tr.conversation.turn_of': 'tour {n} sur {total}',
   'tr.conversation.tooltip': 'Fait partie d\'une conversation à {n} tours ({id}). Ouvrez le run pour naviguer entre les tours.',
+  'tr.lineage.standalone': 'Exécution autonome',
+  'tr.lineage.incomplete': 'Certaines exécutions liées peuvent se trouver hors de la liste chargée.',
+  'tr.lineage.toggle': 'Développer ou réduire les exécutions enfants',
+  'tr.lineage.missing_parent': 'L\'exécution parente n\'est pas dans la liste chargée.',
+  'tr.lineage.ambiguous_parent': 'Le lien parent est ambigu ; cette exécution reste une racine.',
+  'tr.lineage.cross_session_parent': 'L\'exécution parente appartient à une autre session ; cette exécution reste une racine.',
+  'tr.lineage.duplicate_id': 'Identifiant d\'exécution dupliqué ; cette exécution reste une racine.',
+  'tr.lineage.cycle': 'Cycle détecté ; cette exécution reste une racine.',
 
   'tr.cost.label': 'Coût :',
   'tr.cost.tooltip': 'Coût total du LLM rapporté par le fournisseur (USD). Surligné en orange à partir de 0,50 $ sans réponse finale — probablement un run gaspillé.',
@@ -621,6 +631,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Confirmer les actions importantes des tâches planifiées',
   'st.display.scheduled_confirm.desc': 'Lorsque cette option est activée, les exécutions planifiées sans surveillance s\'arrêtent quand même pour demander une autorisation avant les actions importantes. Désactivez-la uniquement si vous faites confiance aux tâches planifiées pour agir sans ces confirmations.',
   'st.provider.field.context_window': 'Fenêtre de contexte (tokens)',
+  'st.provider.field.max_output_tokens': 'Sortie maximale (tokens)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Commandes slash',

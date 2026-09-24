@@ -137,7 +137,9 @@ export default {
   "sp.selection_scope.title": "Teks dipilih sahaja",
   "sp.selection_scope.description": "Mulakan perbualan baharu untuk mengakses halaman atau skrin.",
   "sp.selection_scope.context_title": "Teks dipilih + pengetahuan umum",
-  "sp.selection_scope.context_description": "Menggunakan teks dipilih dan pengetahuan model. Halaman, alat, fail dan perbualan terdahulu kekal tidak tersedia.",
+  "sp.selection_scope.context_description": "Menggunakan teks dipilih, dialog terdahulu yang selamat dan pengetahuan model. Halaman, alat, fail, lampiran dan kandungan mentah halaman terdahulu kekal tidak tersedia.",
+  "sp.selection_scope.restore": "Gunakan perbualan penuh",
+  "sp.selection_scope.restore_description": "Pemulihan mengalih keluar sempadan teks yang dipilih. Mesej seterusnya boleh menggunakan halaman semasa, alat penyemak imbas, fail, lampiran dan keseluruhan perbualan terdahulu, termasuk konteks halaman.",
   "sp.input.selection_placeholder": "Tanya tentang teks yang dipilih...",
 
   'sp.mode.ask': 'Tanya',
@@ -338,6 +340,14 @@ export default {
   'tr.conversation.label': 'Perbualan',
   'tr.conversation.turn_of': 'giliran {n} daripada {total}',
   'tr.conversation.tooltip': 'Sebahagian daripada perbualan {n} giliran ({id}). Buka larian untuk berpindah antara giliran.',
+  'tr.lineage.standalone': 'Jalankan berasingan',
+  'tr.lineage.incomplete': 'Sesetengah jalankan berkaitan mungkin berada di luar senarai yang dimuatkan.',
+  'tr.lineage.toggle': 'Kembangkan atau runtuhkan jalankan anak',
+  'tr.lineage.missing_parent': 'Jalankan induk tiada dalam senarai yang dimuatkan.',
+  'tr.lineage.ambiguous_parent': 'Pautan induk tidak jelas; jalankan ini kekal sebagai akar.',
+  'tr.lineage.cross_session_parent': 'Induk berada dalam sesi lain; jalankan ini kekal sebagai akar.',
+  'tr.lineage.duplicate_id': 'ID jalankan pendua; jalankan ini kekal sebagai akar.',
+  'tr.lineage.cycle': 'Kitaran dikesan; jalankan ini kekal sebagai akar.',
 
   'tr.cost.label': 'Kos:',
   'tr.cost.tooltip': 'Jumlah kos LLM yang dilaporkan pembekal (USD). Diserlahkan oren apabila ≥ $0.50 tanpa jawapan akhir — kemungkinan larian yang membazir.',
@@ -612,6 +622,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Sahkan tindakan penting berjadual',
   'st.display.scheduled_confirm.desc': 'Apabila dihidupkan, larian berjadual tanpa pengawasan masih berhenti untuk mendapatkan kebenaran sebelum tindakan penting. Matikan hanya jika anda mempercayai tugas berjadual untuk bertindak tanpa gesaan tersebut.',
   'st.provider.field.context_window': 'Tetingkap konteks (token)',
+  'st.provider.field.max_output_tokens': 'Output maksimum (token)',
 
   // --- Slash commands & compact feedback (added) ---
   'sp.slash.commands_label': 'Perintah slash',

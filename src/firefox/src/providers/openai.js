@@ -1,10 +1,13 @@
 import { BaseLLMProvider } from './base.js';
 import { fetchWithTimeout } from './fetch-timeout.js';
 import {
-  isNewOpenAIContractModel,
+  isNewOpenAIContractConfig,
   isOfficialOpenAIConfig,
+  isOpenCodeZenConfig,
+  requiresOpenAIDefaultTemperature,
   shouldUseOpenAIResponsesApi,
   supportsOpenAIAskStreaming,
+  applyOpenRouterRoutingVariant,
 } from './provider-compatibility.js';
 import { normalizeRuntimeTraceConfig } from '../trace/runtime-config.js';
 import { canonicalizeOllamaBaseUrl } from './context-windows.js';
@@ -28,6 +31,14 @@ const Z_AI_STREAM_TERMINAL_FINISH_REASONS = new Set([
   'network_error',
   'model_context_window_exceeded',
 ]);
+
+function sseDataPayload(line) {
+  const normalized = String(line || '').replace(/\r$/, '');
+  if (!normalized.startsWith('data:')) return null;
+  const value = normalized.slice(5);
+  const payload = value.startsWith(' ') ? value.slice(1) : value;
+  return payload.trim() ? payload : null;
+}
 
 /**
  * Provider for OpenAI-compatible APIs (ChatGPT, OpenRouter, any OpenAI-compatible endpoint).
@@ -78,7 +89,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   }
 
   get model() {
-    if (this.config.model) return this.config.model;
+    if (this.config.model) {
+      const model = String(this.config.model);
+      return isOpenCodeZenConfig(this.config) ? model.replace(/^opencode\//i, '') : model;
+    }
     if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
     // Some local servers apply their own default when no model is configured.
     // Others carry `requiresModel: true` and throw above. Treat the category as
@@ -124,14 +138,14 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     // checkpoint needed), so qwen3\.[5-9] catches those alongside the
     // older qwen*vl-suffixed lines.
     const m = (this.config.model || '').toLowerCase();
-    return /gpt-4o|gpt-4\.1|gpt-4-turbo|gpt-5|claude|gemini|kimi-k(?:-?3|2\.[5-9])|llava|qwen.*vl|qwen2.*vl|qwen3.*vl|qwen3\.[5-9]|pixtral|llama.*vision|gemma.*vision|gemma-?[34]/.test(m);
+    return /gpt-4o|gpt-4\.1|gpt-4-turbo|gpt-5|gpt-6-(?:luna-pro|sol|astra)(?:$|[-_.:/])|claude|gemini|grok|minimax-m3|kimi-k(?:-?3|2\.[5-9])|llava|qwen.*vl|qwen2.*vl|qwen3.*vl|qwen3\.[5-9]|qwen3p8-27b|pixtral|llama.*vision|gemma.*vision|gemma-?[34]|step-3/.test(m);
   }
 
   get useCompactPrompt() {
     return !!this.config.useCompactPrompt;
   }
 
-  _headers() {
+  _headers(options = {}) {
     const headers = { 'Content-Type': 'application/json' };
     const providerName = (this.config.providerName || '').toLowerCase();
     if (this.config.requiresApiKey && !String(this.config.apiKey || '').trim()) {
@@ -161,7 +175,23 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         || (String(this.model || '').trim().startsWith('@cf/') ? 'default' : '');
       if (gatewayId) headers['cf-aig-gateway-id'] = gatewayId;
     }
+    if (providerName === 'opencode-go') {
+      headers['x-opencode-session'] = this._opencodeSessionId(options);
+    }
     return headers;
+  }
+
+  // OpenCode Go rejects requests that omit x-opencode-session. Prefer the
+  // per-conversation id from the agent so routing and prompt caching stay
+  // stable within a chat; fall back to a per-provider id for calls without a
+  // conversation (for example Test connection).
+  _opencodeSessionId(options = {}) {
+    const provided = String(options.providerSessionId || '').trim();
+    if (provided) return provided;
+    if (!this._opencodeSessionFallback) {
+      this._opencodeSessionFallback = `webbrain-${crypto.randomUUID()}`;
+    }
+    return this._opencodeSessionFallback;
   }
 
   /**
@@ -172,9 +202,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
    * servers and LM Studio keep the legacy contract.
    */
   _isNewOpenAIContract() {
-    if (this.config.category === 'local') return false;
-    if (String(this.config.providerName || '').toLowerCase() === 'lmstudio') return false;
-    return isNewOpenAIContractModel(this.config.model, this.config);
+    return isNewOpenAIContractConfig(this.config);
   }
 
   _addMaxTokens(body, options) {
@@ -185,11 +213,16 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   }
 
   _addTemperature(body, options) {
-    // GPT-5 / o-series only accept the default temperature (1). Sending
-    // anything else returns 400. Provider configs can impose
+    // GPT-5, supported GPT-6, and o-series models only accept the default
+    // temperature. Provider configs can impose
     // the same omission for fixed-temperature models such as Kimi K2.5/K3.
     // In both cases, let the API apply its required default.
-    if (this._isNewOpenAIContract() || this.config.omitTemperature) return;
+    if (requiresOpenAIDefaultTemperature({
+      ...this.config,
+      providerName: this.config.providerName || this.name,
+      baseUrl: this.baseUrl,
+      model: this.model,
+    }) || this.config.omitTemperature) return;
     body.temperature = options.temperature ?? 0.7;
   }
 
@@ -390,6 +423,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       body.tool_choice = options.toolChoice || 'auto';
     }
     body = this._mergeConfiguredRequestBody(body, options);
+    body = applyOpenRouterRoutingVariant(body, this.config);
     this._addWebBrainCloudContext(body, options);
     if (stream && body.tools && this.config.supportsToolStreamOption === true) {
       body.tool_stream = true;
@@ -527,6 +561,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     // base Responses shape. Reserved keys like model/input/stream/tools are
     // filtered out by mergeProviderRequestBody.
     body = this._mergeConfiguredRequestBody(body, options);
+    body = applyOpenRouterRoutingVariant(body, this.config);
 
     // Normalize Chat Completions-style reasoning_effort if a preset emitted it.
     if (typeof body.reasoning_effort === 'string') {
@@ -718,7 +753,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     try {
       res = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: this._headers(),
+        headers: this._headers(options),
         body: JSON.stringify(this._responsesBody(messages, options, false)),
         signal: options?.signal,
       });
@@ -744,7 +779,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     try {
       res = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: this._headers(),
+        headers: this._headers(options),
         body: JSON.stringify(this._responsesBody(messages, options, true)),
         signal: options?.signal,
       });
@@ -808,10 +843,9 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const payload = trimmed.slice(6);
-        if (payload === '[DONE]') {
+        const payload = sseDataPayload(line);
+        if (payload == null) continue;
+        if (payload.trim() === '[DONE]') {
           // Responses must finish with response.completed so we can retain
           // the complete output Items used for encrypted reasoning replay.
           // A bare legacy sentinel is therefore an incomplete stream, not a
@@ -892,7 +926,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     try {
       res = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: this._headers(),
+        headers: this._headers(options),
         body: JSON.stringify(body),
         signal: options?.signal,
       });
@@ -933,7 +967,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     try {
       res = await fetchWithTimeout(streamUrl, {
         method: 'POST',
-        headers: this._headers(),
+        headers: this._headers(options),
         body: JSON.stringify(body),
         signal: options?.signal,
       });
@@ -988,10 +1022,9 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const payload = trimmed.slice(6);
-        if (payload === '[DONE]') {
+        const payload = sseDataPayload(line);
+        if (payload == null) continue;
+        if (payload.trim() === '[DONE]') {
           if (finalUsage) yield { type: 'usage', usage: finalUsage };
           yield {
             type: 'done',

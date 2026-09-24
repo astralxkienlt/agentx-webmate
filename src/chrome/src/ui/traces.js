@@ -5,10 +5,13 @@
 
 import {
   listRuns, getRun, getRunEvents, getScreenshot,
-  deleteRun, clearAllRuns, repairStaleRuns,
+  getSessionStats, deleteRun, clearAllRuns, repairStaleRuns,
 } from '../trace/recorder.js';
 import { isKnownKind, isIgnorableKind } from '../trace/event-model.js';
 import { buildTraceTrajectory } from '../trace/trajectory.js';
+import { aggregateTraceRuns } from '../trace/stats.js';
+import { buildTraceLineageGroups } from '../trace/lineage.js';
+import { buildTraceExportPayload } from '../trace/export-contract.js';
 import { sanitizeTraceExport } from '../agent/trace-export.js';
 import { t } from './i18n.js';
 import { escapeHtml, escapeAttr } from './utils.js';
@@ -32,6 +35,9 @@ let compareIds = []; // length 0..2
 let timelineObjectUrls = new Set();
 let traceRenderRequestId = 0;
 let traceRefreshRequestId = 0;
+let lineageResult = { groups: [], incomplete: false };
+const expandedSessionKeys = new Set();
+const expandedLineageKeys = new Set();
 
 // conversationId → [runs, oldest first]. Rebuilt from allRuns on every refresh.
 let conversationMap = new Map();
@@ -96,6 +102,123 @@ async function ensureRunLoaded(runId) {
   return true;
 }
 
+function lineageStateLabel(node) {
+  const labels = {
+    'missing-parent': 'tr.lineage.missing_parent',
+    'ambiguous-parent': 'tr.lineage.ambiguous_parent',
+    'cross-session-parent': 'tr.lineage.cross_session_parent',
+    'duplicate-id': 'tr.lineage.duplicate_id',
+    cycle: 'tr.lineage.cycle',
+  };
+  return t(labels[node?.lineageState] || 'tr.lineage.incomplete');
+}
+
+function renderRunItem(r, node = null) {
+  const status = r.status || 'done';
+  const statusClass = safeClassToken(status, 'done');
+  const started = new Date(r.startedAt).toLocaleString();
+  const dur = r.durationMs ? `${(r.durationMs / 1000).toFixed(1)}s` : '—';
+  const steps = r.stepCount || 0;
+  const tokens = (r.totalInputTokens || 0) + (r.totalOutputTokens || 0);
+  const costStr = formatCost(r.totalCost);
+  const cls = [
+    'run-item',
+    selectedRunId === r.runId ? 'selected' : '',
+    compareIds.includes(r.runId) ? 'compare' : '',
+  ].filter(Boolean).join(' ');
+  const title = r.userMessage || t('tr.no_task');
+  const losslessBadge = r.lossless === true
+    ? `<span class="lossless-badge" title="${escapeAttr(t('tr.lossless.warning'))}">${escapeHtml(t('tr.lossless.badge'))}</span>`
+    : '';
+  const siblings = siblingsOf(r);
+  const convChip = siblings.length > 1
+    ? `<span class="conv-chip" title="${escapeAttr(t('tr.conversation.tooltip', { n: siblings.length, id: r.conversationId }))}">🧵 ${siblings.length}</span>`
+    : '';
+  const lineageState = node?.lineageState || 'root';
+  const lineageBadge = lineageState !== 'root' && lineageState !== 'attached'
+    ? `<span class="lineage-badge ${safeClassToken(lineageState)}" title="${escapeAttr(lineageStateLabel(node))}">${lineageState === 'cross-session-parent' ? '↗' : '⚠'}</span>`
+    : '';
+  const parentReference = node?.parentRunId
+    ? `<span class="lineage-parent-ref" title="${escapeAttr(lineageStateLabel(node))}">↳ ${escapeHtml(node.parentRunId.slice(0, 16))}</span>`
+    : '';
+  // Highlight costly-but-empty runs (≥$0.50 spent with no final text) so
+  // users can spot expensive failures at a glance.
+  const isCostlyFailure = (r.totalCost || 0) >= 0.5 && (!r.finalContent || !r.finalContent.trim());
+  const costClass = isCostlyFailure ? 'cost-warn' : '';
+  return `
+    <div class="${cls}" data-run-id="${escapeAttr(r.runId || '')}" data-lineage-key="${escapeAttr(node?.key || '')}">
+      <div class="run-title"><span class="status-dot ${statusClass}"></span>${escapeHtml(title.slice(0, 120))}${losslessBadge}${convChip}${lineageBadge}${parentReference}</div>
+      <div class="run-meta">
+        <span class="run-model">${escapeHtml(r.model || '?')}</span>
+        <span>${escapeHtml(r.providerId || '')}</span>
+        <span>${escapeHtml(t(steps === 1 ? 'tr.step' : 'tr.steps_plural', { n: steps }))}</span>
+        <span>${dur}</span>
+        ${tokens ? `<span>${escapeHtml(t('tr.tokens_short', { n: tokens.toLocaleString() }))}</span>` : ''}
+        ${costStr ? `<span class="${costClass}" title="${escapeAttr(t('tr.cost.tooltip'))}">${escapeHtml(costStr)}</span>` : ''}
+      </div>
+      <div class="run-meta" style="margin-top:3px;"><span>${started}</span></div>
+    </div>
+  `;
+}
+
+function renderLineageNode(node) {
+  const expanded = expandedLineageKeys.has(node.key);
+  const toggle = node.children.length
+    ? `<button type="button" class="lineage-toggle" data-lineage-toggle="${escapeAttr(node.key)}" aria-expanded="${expanded}" aria-label="${escapeAttr(t('tr.lineage.toggle'))}">${expanded ? '▾' : '▸'}</button>`
+    : '<span class="lineage-toggle-spacer" aria-hidden="true"></span>';
+  const children = expanded
+    ? node.children.map(child => renderLineageNode(child)).join('')
+    : '';
+  return `
+    <div class="lineage-node ${node.lineageState !== 'root' && node.lineageState !== 'attached' ? 'lineage-node-issue' : ''}">
+      <div class="lineage-row">
+        ${toggle}
+        ${renderRunItem(node.run, node)}
+      </div>
+      ${children}
+    </div>
+  `;
+}
+
+function renderLineageGroup(group) {
+  const expanded = expandedSessionKeys.has(group.key);
+  const stats = aggregateTraceRuns(group.nodes.map(node => node.run));
+  const totalTokens = stats.totalInputTokens + stats.totalOutputTokens;
+  const summary = [
+    t(group.sessionId ? 'tr.conversation.label' : 'tr.lineage.standalone'),
+    t(group.runCount === 1 ? 'tr.run' : 'tr.runs', { n: group.runCount }),
+    totalTokens ? t('tr.tokens_short', { n: totalTokens.toLocaleString() }) : '',
+    formatCost(stats.totalCost) ? formatCost(stats.totalCost) : '',
+  ].filter(Boolean).join(' · ');
+  return `
+    <section class="lineage-group ${expanded ? 'expanded' : ''}">
+      <button type="button" class="lineage-group-toggle" data-lineage-group-key="${escapeAttr(group.key)}" aria-expanded="${expanded}">
+        <span class="lineage-group-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+        <span class="lineage-group-title">${escapeHtml(t(group.sessionId ? 'tr.conversation.label' : 'tr.lineage.standalone'))}</span>
+        <span class="lineage-group-summary">${escapeHtml(summary)}</span>
+      </button>
+      ${expanded ? `<div class="lineage-group-runs">${group.roots.map(root => renderLineageNode(root)).join('')}</div>` : ''}
+    </section>
+  `;
+}
+
+function expandLineageForRun(runId) {
+  if (!runId) return;
+  const node = lineageResult.groups
+    .flatMap(group => group.nodes)
+    .find(candidate => candidate.runId === runId);
+  if (!node) return;
+  expandedSessionKeys.add(node.sessionKey);
+  const nodesByKey = new Map(lineageResult.groups
+    .flatMap(group => group.nodes)
+    .map(candidate => [candidate.key, candidate]));
+  let parentKey = node.parentKey;
+  while (parentKey) {
+    expandedLineageKeys.add(parentKey);
+    parentKey = nodesByKey.get(parentKey)?.parentKey || null;
+  }
+}
+
 function renderList() {
   const needle = filterText.value.trim().toLowerCase();
   const modelFilter = filterModel.value;
@@ -106,51 +229,40 @@ function renderList() {
       .some(v => (v || '').toLowerCase().includes(needle));
   });
   if (filtered.length === 0) {
+    lineageResult = { groups: [], incomplete: false };
     listEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;">${escapeHtml(t('tr.no_match'))}</div>`;
     return;
   }
-  listEl.innerHTML = filtered.map(r => {
-    const status = r.status || 'done';
-    const statusClass = safeClassToken(status, 'done');
-    const started = new Date(r.startedAt).toLocaleString();
-    const dur = r.durationMs ? `${(r.durationMs / 1000).toFixed(1)}s` : '—';
-    const steps = r.stepCount || 0;
-    const tokens = (r.totalInputTokens || 0) + (r.totalOutputTokens || 0);
-    const costStr = formatCost(r.totalCost);
-    const cls = [
-      'run-item',
-      selectedRunId === r.runId ? 'selected' : '',
-      compareIds.includes(r.runId) ? 'compare' : '',
-    ].filter(Boolean).join(' ');
-    const title = r.userMessage || t('tr.no_task');
-    const losslessBadge = r.lossless === true
-      ? `<span class="lossless-badge" title="${escapeAttr(t('tr.lossless.warning'))}">${escapeHtml(t('tr.lossless.badge'))}</span>`
-      : '';
-    const siblings = siblingsOf(r);
-    const convChip = siblings.length > 1
-      ? `<span class="conv-chip" title="${escapeAttr(t('tr.conversation.tooltip', { n: siblings.length, id: r.conversationId }))}">🧵 ${siblings.length}</span>`
-      : '';
-    // Highlight costly-but-empty runs (≥$0.50 spent with no final text) so
-    // users can spot expensive failures at a glance.
-    const isCostlyFailure = (r.totalCost || 0) >= 0.5 && (!r.finalContent || !r.finalContent.trim());
-    const costClass = isCostlyFailure ? 'cost-warn' : '';
-    return `
-      <div class="${cls}" data-run-id="${escapeAttr(r.runId)}">
-        <div class="run-title"><span class="status-dot ${statusClass}"></span>${escapeHtml(title.slice(0, 120))}${losslessBadge}${convChip}</div>
-        <div class="run-meta">
-          <span class="run-model">${escapeHtml(r.model || '?')}</span>
-          <span>${escapeHtml(r.providerId || '')}</span>
-          <span>${escapeHtml(t(steps === 1 ? 'tr.step' : 'tr.steps_plural', { n: steps }))}</span>
-          <span>${dur}</span>
-          ${tokens ? `<span>${escapeHtml(t('tr.tokens_short', { n: tokens.toLocaleString() }))}</span>` : ''}
-          ${costStr ? `<span class="${costClass}" title="${escapeAttr(t('tr.cost.tooltip'))}">${escapeHtml(costStr)}</span>` : ''}
-        </div>
-        <div class="run-meta" style="margin-top:3px;"><span>${started}</span></div>
-      </div>
-    `;
-  }).join('');
+  const queryBounded = allRuns.length >= 500 || Boolean(needle || modelFilter);
+  lineageResult = buildTraceLineageGroups(filtered, { bounded: queryBounded });
+  const groupsByKey = new Map(lineageResult.groups.map(group => [group.key, group]));
+  for (const key of expandedSessionKeys) {
+    if (!groupsByKey.has(key)) expandedSessionKeys.delete(key);
+  }
+  const incompleteNotice = lineageResult.incomplete
+    ? `<div class="lineage-incomplete" role="status">⚠ ${escapeHtml(t('tr.lineage.incomplete'))}</div>`
+    : '';
+  listEl.innerHTML = `${incompleteNotice}${lineageResult.groups.map(renderLineageGroup).join('')}`;
+  listEl.querySelectorAll('[data-lineage-group-key]').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.lineageGroupKey;
+      if (expandedSessionKeys.has(key)) expandedSessionKeys.delete(key);
+      else expandedSessionKeys.add(key);
+      renderList();
+    });
+  });
+  listEl.querySelectorAll('[data-lineage-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.lineageToggle;
+      if (expandedLineageKeys.has(key)) expandedLineageKeys.delete(key);
+      else expandedLineageKeys.add(key);
+      renderList();
+    });
+  });
   listEl.querySelectorAll('.run-item').forEach(el => {
-    el.addEventListener('click', () => handleRunClick(el.dataset.runId));
+    el.addEventListener('click', () => {
+      if (el.dataset.runId) handleRunClick(el.dataset.runId);
+    });
   });
 }
 
@@ -169,6 +281,7 @@ function handleRunClick(runId) {
     }
   } else {
     selectedRunId = runId;
+    expandLineageForRun(runId);
     renderList();
     renderRun(runId);
   }
@@ -196,6 +309,13 @@ async function renderRun(runId) {
     replaceTimelineObjectUrls(new Set());
     return;
   }
+  const exportButton = document.getElementById('btn-export');
+  const exportSessionId = typeof run.conversationId === 'string'
+    ? run.conversationId.trim()
+    : '';
+  exportButton.title = exportSessionId
+    ? `${t('tr.btn.export')} · ${t('tr.conversation.label')}`
+    : t('tr.btn.export.title');
   const events = await getRunEvents(runId).catch(() => []);
   if (!isCurrentRunRender(requestId, runId)) return;
   const objectUrls = new Set();
@@ -240,10 +360,19 @@ async function renderCompare(aId, bId) {
  * chat) so users can jump between them. Hidden in compare mode (panes are
  * already two-up) and when there's only one run in the conversation.
  */
-function renderConversationPanel(run, compact) {
+function renderConversationPanel(run, compact, sessionStats = null) {
   if (compact) return '';
   const siblings = siblingsOf(run);
   if (siblings.length < 2) return '';
+  const stats = sessionStats || aggregateTraceRuns(siblings);
+  const totalTokens = stats.totalInputTokens + stats.totalOutputTokens;
+  const summary = [
+    t(stats.runCount === 1 ? 'tr.run' : 'tr.runs', { n: stats.runCount }),
+    t(stats.stepCount === 1 ? 'tr.step' : 'tr.steps_plural', { n: stats.stepCount }),
+    totalTokens ? t('tr.tokens_short', { n: totalTokens.toLocaleString() }) : '',
+    formatCost(stats.totalCost) ? `${t('tr.cost.label')}: ${formatCost(stats.totalCost)}` : '',
+    stats.errorCount ? `${t('tr.event.error_kind')} ×${stats.errorCount}` : '',
+  ].filter(Boolean).join(' · ');
   const turnNumber = siblings.findIndex(r => r.runId === run.runId) + 1;
   const items = siblings.map((r, i) => {
     const isCurrent = r.runId === run.runId;
@@ -257,6 +386,7 @@ function renderConversationPanel(run, compact) {
   return `
     <div class="conv-panel">
       <div class="conv-panel-label">${escapeHtml(t('tr.conversation.label'))} · ${escapeHtml(t('tr.conversation.turn_of', { n: turnNumber, total: siblings.length }))}</div>
+      <div class="conv-summary">${escapeHtml(summary)}</div>
       <div class="conv-turns">${items}</div>
     </div>
   `;
@@ -337,6 +467,9 @@ function renderStepTrajectory(events, compact) {
 }
 
 async function buildRunView(run, events, compact, objectUrls = new Set()) {
+  const sessionStats = !compact && run.conversationId
+    ? await getSessionStats(run.conversationId).catch(() => null)
+    : null;
   const header = `
     <div class="run-header">
       <h2>${escapeHtml(run.model || t('tr.unknown_model'))}</h2>
@@ -351,7 +484,7 @@ async function buildRunView(run, events, compact, objectUrls = new Set()) {
       ${formatCost(run.totalCost) ? `<span class="stat">${escapeHtml(t('tr.cost.label'))} <b>${escapeHtml(formatCost(run.totalCost))}</b></span>` : ''}
     </div>
     ${run.lossless === true ? `<div class="lossless-warning" role="alert">${escapeHtml(t('tr.lossless.warning'))}</div>` : ''}
-    ${renderConversationPanel(run, compact)}
+    ${renderConversationPanel(run, compact, sessionStats)}
     <div class="run-task">${escapeHtml(run.userMessage || '')}</div>
     ${run.finalContent ? `<div class="run-task" style="border-left-color:var(--success);"><b style="color:var(--success);">${escapeHtml(t('tr.final_label'))}</b> ${escapeHtml(run.finalContent)}</div>` : ''}
   `;
@@ -556,6 +689,7 @@ function wireTimelineImages(root) {
       const id = btn.dataset.jumpRunId;
       if (!id || id === selectedRunId) return;
       selectedRunId = id;
+      expandLineageForRun(id);
       renderList();
       renderRun(id);
     });
@@ -595,42 +729,87 @@ document.getElementById('btn-compare').addEventListener('click', () => {
   renderList();
 });
 
-document.getElementById('btn-export').addEventListener('click', async () => {
-  if (!selectedRunId) return alert(t('tr.select_first'));
-  const runId = selectedRunId;
-  const run = await getRun(runId);
-  if (!run) return alert(t('tr.select_first'));
-  const events = await getRunEvents(runId).catch(() => []);
+async function loadTraceExportEntry(run) {
+  const events = await getRunEvents(run.runId);
   // Resolve screenshot blobs to base64 for portability.
   for (const ev of events) {
     if (ev.kind === 'screenshot') {
-      const shot = await getScreenshot(runId, ev.seq);
+      const shot = await getScreenshot(run.runId, ev.seq);
       if (shot?.blob) {
         ev.data = ev.data || {};
         ev.data.screenshot_base64 = await blobToBase64(shot.blob);
       } else if (shot?.dataUrl) {
+        ev.data = ev.data || {};
         ev.data.screenshot_dataUrl = shot.dataUrl;
       }
     }
   }
-  const payload = {
-    run,
-    events,
-    exportedAt: Date.now(),
-    exportedByWebBrainVersion: chrome.runtime.getManifest().version || '',
-    schema: 'webbrain-trace/1',
-  };
-  const blob = new Blob([JSON.stringify(sanitizeTraceExport(payload), null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `webbrain-trace-${run.model || 'unknown'}-${run.runId}.json`;
-  document.body.appendChild(a);
+  return { run, events };
+}
+
+function traceExportConfirmation(exportRuns) {
+  const sensitiveRunCount = exportRuns.filter(run => run?.lossless === true).length;
+  const lines = [
+    t('tr.btn.export'),
+    `${t('tr.conversation.label')} · ${t(exportRuns.length === 1 ? 'tr.run' : 'tr.runs', { n: exportRuns.length })}`,
+  ];
+  if (sensitiveRunCount > 0) {
+    lines.push(
+      '',
+      `${t('tr.lossless.badge')} · ${t(sensitiveRunCount === 1 ? 'tr.run' : 'tr.runs', { n: sensitiveRunCount })}`,
+      t('tr.lossless.warning'),
+    );
+  }
+  return lines.join('\n');
+}
+
+document.getElementById('btn-export').addEventListener('click', async () => {
+  if (!selectedRunId) return alert(t('tr.select_first'));
+  const runId = selectedRunId;
   try {
-    a.click();
-  } finally {
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 7000);
+    const run = await getRun(runId);
+    if (!run) return alert(t('tr.select_first'));
+    const sessionId = typeof run.conversationId === 'string' ? run.conversationId.trim() : '';
+    const sessionRuns = sessionId
+      ? await listRuns({ limit: Number.MAX_SAFE_INTEGER, conversationId: sessionId })
+      : [];
+    const exportRuns = [];
+    const seenRunIds = new Set();
+    for (const candidate of [...sessionRuns, run]) {
+      if (!candidate?.runId || seenRunIds.has(candidate.runId)) continue;
+      seenRunIds.add(candidate.runId);
+      exportRuns.push(candidate);
+    }
+    exportRuns.sort((left, right) => (
+      ((left.startedAt || 0) - (right.startedAt || 0))
+      || String(left.runId).localeCompare(String(right.runId))
+    ));
+    const isSession = Boolean(sessionId);
+    if (isSession && !confirm(traceExportConfirmation(exportRuns))) return;
+    const entries = [];
+    for (const exportRun of exportRuns) entries.push(await loadTraceExportEntry(exportRun));
+    const payload = buildTraceExportPayload(entries, {
+      sessionId,
+      exportedAt: Date.now(),
+      exportedByWebBrainVersion: chrome.runtime.getManifest().version || '',
+    });
+    const blob = new Blob([JSON.stringify(sanitizeTraceExport(payload), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = isSession
+      ? `webbrain-session-${safeFilenamePart(sessionId, 'session')}.json`
+      : `webbrain-trace-${run.model || 'unknown'}-${run.runId}.json`;
+    document.body.appendChild(a);
+    try {
+      a.click();
+    } finally {
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 7000);
+    }
+  } catch (error) {
+    console.error('[traces] export failed:', error);
+    alert(`${t('tr.btn.export')}: ${error?.message || error}`);
   }
 });
 
@@ -688,6 +867,14 @@ filterModel.addEventListener('change', renderList);
 function safeClassToken(value, fallback = 'unknown') {
   const token = String(value == null ? '' : value).trim();
   return /^[A-Za-z0-9_-]+$/.test(token) ? token : fallback;
+}
+function safeFilenamePart(value, fallback = 'unknown') {
+  const token = String(value == null ? '' : value)
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .slice(0, 80)
+    .replace(/^[.-]+|[.-]+$/g, '');
+  return token || fallback;
 }
 function blobToBase64(blob) {
   return new Promise((resolve) => {
@@ -754,6 +941,8 @@ async function repairStaleRunsForPage({ timeoutMs = 5_000 } = {}) {
   await refresh();
   if (initialRunId && await ensureRunLoaded(initialRunId)) {
     selectedRunId = initialRunId;
+    renderList();
+    expandLineageForRun(initialRunId);
     renderList();
     await renderRun(initialRunId);
   }

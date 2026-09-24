@@ -1514,7 +1514,10 @@ body {
   min-width: 0;
   margin: 0;
   padding: 0 4px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   white-space: nowrap;
   color: var(--text-secondary);
   font-size: 10px;
@@ -1522,8 +1525,12 @@ body {
   line-height: 1.35;
 }
 
+.message-info::-webkit-scrollbar {
+  display: none;
+}
+
 .message.user .message-info {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .message-info[hidden] {
@@ -2251,7 +2258,7 @@ body {
 
 .selection-scope-banner {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -2297,16 +2304,47 @@ body {
   font-size: 10px;
   font-weight: 700;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.selection-scope-banner button:hover {
+.selection-scope-banner button:not(:disabled):hover {
   border-color: var(--warning);
+}
+
+.selection-scope-banner button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .selection-scope-banner button:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--warning) 34%, transparent);
   outline-offset: 2px;
+}
+
+.selection-scope-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.selection-scope-divider::before,
+.selection-scope-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: color-mix(in srgb, var(--warning) 34%, var(--border));
+}
+
+.selection-scope-divider-label {
+  white-space: nowrap;
 }
 
 @media (max-width: 340px) {
@@ -2322,6 +2360,39 @@ body {
 
 .mode-btn.selection-scope-unavailable {
   opacity: 0.48;
+}
+
+.selection-ask-action {
+  position: fixed;
+  z-index: 30;
+  max-width: calc(100vw - 16px);
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.selection-ask-action.hidden {
+  display: none;
+}
+
+.selection-ask-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.selection-ask-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 2px;
 }
 
 
@@ -4667,6 +4738,40 @@ html[data-standalone="true"] #composer-footer {
   margin: 6px 0;
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.planner-fallback-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 4px;
+  padding: 5px 7px;
+  border-inline-start: 2px solid var(--warning);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.planner-fallback-note-icon {
+  display: grid;
+  flex: 0 0 14px;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.planner-fallback-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .plan-review-note {

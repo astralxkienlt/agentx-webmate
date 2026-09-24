@@ -2,6 +2,9 @@ const COMPATIBILITY_PRESETS = new Set(['auto', 'openai', 'qwen', 'deepseek', 'op
 const REASONING_EFFORTS = new Set(['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const SYSTEM_PROMPT_ROLES = new Set(['auto', 'system', 'developer']);
 const MAX_TOKEN_FIELDS = new Set(['auto', 'max_tokens', 'max_completion_tokens']);
+const OPENROUTER_ROUTING_VARIANT_VALUES = new Set(['standard', 'nitro', 'exacto']);
+const OPENROUTER_MODEL_VARIANT_SUFFIXES = /(?::(?:free|extended|thinking|online|nitro|floor|exacto))+$/i;
+export const OPENROUTER_ROUTING_VARIANTS = Object.freeze(['standard', 'nitro', 'exacto']);
 const STRUCTURED_OUTPUT_PROVIDER_NAMES = new Set([
   'azure-openai',
   'llamacpp',
@@ -39,6 +42,46 @@ const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function clean(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+export function openRouterRoutingVariant(config = {}) {
+  const configured = clean(config.routingVariant);
+  if (OPENROUTER_ROUTING_VARIANT_VALUES.has(configured)) return configured;
+  const suffix = String(config.model || '').trim().match(/:(nitro|exacto)$/i);
+  return suffix ? suffix[1].toLowerCase() : 'standard';
+}
+
+export function applyOpenRouterRoutingVariant(body, config = {}) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  if (clean(config.providerName) !== 'openrouter' || !Object.hasOwn(config, 'routingVariant')) return body;
+  const variant = clean(config.routingVariant);
+  if (!OPENROUTER_ROUTING_VARIANT_VALUES.has(variant)) return body;
+
+  const next = { ...body };
+  if (typeof next.model === 'string') {
+    next.model = variant === 'exacto'
+      ? `${next.model.replace(OPENROUTER_MODEL_VARIANT_SUFFIXES, '')}:exacto`
+      : next.model.replace(/:(?:nitro|exacto)$/i, '');
+  }
+
+  const hasProviderPreferences = next.provider
+    && typeof next.provider === 'object'
+    && !Array.isArray(next.provider);
+  if (variant !== 'nitro') {
+    if (hasProviderPreferences && Object.hasOwn(next.provider, 'sort')) {
+      const provider = { ...next.provider };
+      delete provider.sort;
+      if (Object.keys(provider).length) next.provider = provider;
+      else delete next.provider;
+    }
+    return next;
+  }
+
+  next.provider = {
+    ...(hasProviderPreferences ? next.provider : {}),
+    sort: 'throughput',
+  };
+  return next;
 }
 
 /**
@@ -134,10 +177,28 @@ export function isOfficialOpenAIConfig(config = {}) {
   }
 }
 
+export function isOpenCodeZenConfig(config = {}) {
+  try {
+    const url = new URL(config.baseUrl || '');
+    return url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'opencode.ai'
+      && url.pathname.replace(/\/+$/, '') === '/zen/v1';
+  } catch {
+    return false;
+  }
+}
+
 export function shouldUseOpenAIResponsesApi(config = {}) {
   if (config.apiFormat === 'responses') return true;
+  if (config.apiFormat === 'chat') return false;
+  // OpenCode Zen: https://opencode.ai/zen/v1/responses for muse-spark, gpt-5.x, claude, gemini, grok
+  // WebBrain's OpenCode Zen provider previously forced Chat Completions for all Zen models (404 for Responses models).
+  const rawModel = String(config.model || '');
+  const model = rawModel.replace(/^opencode\//i, '').trim().toLowerCase();
+  if (isOpenCodeZenConfig(config)) {
+    return /^(muse-spark|gpt-5|claude|gemini|grok)(?:$|[-_.\/])/.test(model);
+  }
   if (!isOfficialOpenAIConfig(config)) return false;
-  const model = String(config.model || '').trim().toLowerCase();
   // GPT-5.6 needs Responses for reliable reasoning/tool replay. GPT-5 Pro,
   // GPT-5.2 Pro, GPT-5.4 Pro, and GPT-5.5 Pro are Responses-only. Proxies and
   // compatible providers keep their existing Chat Completions wire format even
@@ -180,6 +241,21 @@ export function isNewOpenAIContractConfig(config = {}) {
   return isNewOpenAIContractModel(config.model, config);
 }
 
+/**
+ * Supported GPT-6 models use Chat Completions with `max_tokens`, but reject an
+ * explicit temperature. Keep this separate from the GPT-5/o-series contract,
+ * whose token-field migration is different.
+ */
+export function requiresOpenAIDefaultTemperature(config = {}) {
+  if (isNewOpenAIContractConfig(config)) return true;
+  const providerName = clean(config.providerName);
+  const model = clean(config.model);
+  if (providerName === 'openrouter') {
+    return /(?:^|\/)openai\/gpt-6-(?:luna-pro|sol|astra)(?:$|[-_.\/:])/.test(model);
+  }
+  return isOfficialOpenAIConfig(config) && /^gpt-6-(?:luna-pro|sol|astra)(?:$|[-_.:])/.test(model);
+}
+
 export function supportsOpenAIAskStreaming(config = {}) {
   if (!isOfficialOpenAIConfig(config)) return false;
 
@@ -190,6 +266,7 @@ export function supportsOpenAIAskStreaming(config = {}) {
   if (shouldUseOpenAIResponsesApi(config)) return true;
 
   return [
+    /^gpt-6-luna-pro(?:$|[-_.:])/,
     /^gpt-5\.5(?:$|-\d{4}-\d{2}-\d{2}$)/,
     /^gpt-5\.4(?:$|-\d{4}-\d{2}-\d{2}$|-(?:mini|nano)(?:$|-\d{4}-\d{2}-\d{2}$))/,
     /^gpt-5\.(?:1|2)(?:$|-\d{4}-\d{2}-\d{2}$)/,

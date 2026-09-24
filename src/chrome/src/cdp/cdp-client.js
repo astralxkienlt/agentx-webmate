@@ -74,11 +74,46 @@ const WEBMCP_CONTEXT_DISCOVERY_EXPRESSION = `
 export class CDPClient {
   constructor() {
     this.sessions = new Map(); // tabId -> debugger session
+    this.attachPromises = new Map(); // tabId -> in-flight debugger attach
     this.eventHandlers = new Map(); // tabId -> { eventName -> [handlers] }
     this.devDiagnostics = new Map(); // tabId -> bounded console/network buffers
     this.webMcpSessions = new Map(); // tabId -> WebMCP tools + pending invocations
     this.runtimeContexts = new Map(); // tabId -> session/context key -> default context
     this.fileChooserGuards = new Map(); // tabId -> temporary protocol interception
+    this._debuggerListenersRegistered = false;
+    this._onDebuggerEvent = (source, method, params) => {
+      const tabId = source?.tabId;
+      if (tabId == null) return;
+      this._trackRuntimeContextEvent(tabId, source, method, params);
+      const handlers = this.eventHandlers.get(tabId)?.[method];
+      if (handlers) {
+        handlers.forEach(h => h(params, source));
+      }
+    };
+    this._onDebuggerDetach = (source, reason) => {
+      const tabId = source?.tabId;
+      if (tabId == null) return;
+      this._dropWebMCPSession(tabId, `Debugger detached: ${reason || 'unknown reason'}`);
+      this.sessions.delete(tabId);
+      this.eventHandlers.delete(tabId);
+      this.devDiagnostics.delete(tabId);
+      this.runtimeContexts.delete(tabId);
+      const fileChooserGuard = this.fileChooserGuards.get(tabId);
+      if (fileChooserGuard?.timer) clearTimeout(fileChooserGuard.timer);
+      this.fileChooserGuards.delete(tabId);
+    };
+  }
+
+  _ensureDebuggerListeners() {
+    if (this._debuggerListenersRegistered) return;
+    chrome.debugger.onEvent.addListener(this._onDebuggerEvent);
+    try {
+      chrome.debugger.onDetach.addListener(this._onDebuggerDetach);
+    } catch (error) {
+      chrome.debugger.onEvent.removeListener(this._onDebuggerEvent);
+      throw error;
+    }
+    this._debuggerListenersRegistered = true;
   }
 
   /**
@@ -123,8 +158,13 @@ export class CDPClient {
     if (this.sessions.has(tabId)) {
       return this.sessions.get(tabId);
     }
+    if (this.attachPromises.has(tabId)) {
+      return this.attachPromises.get(tabId);
+    }
 
-    return new Promise((resolve, reject) => {
+    this._ensureDebuggerListeners();
+
+    const attachPromise = new Promise((resolve, reject) => {
       chrome.debugger.attach({ tabId }, '1.3', async () => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
@@ -133,39 +173,32 @@ export class CDPClient {
 
         const session = { tabId, attached: true };
         this.sessions.set(tabId, session);
-
-        chrome.debugger.onEvent.addListener((source, method, params) => {
-          if (source.tabId !== tabId) return;
-          this._trackRuntimeContextEvent(tabId, source, method, params);
-          const handlers = this.eventHandlers.get(tabId)?.[method];
-          if (handlers) {
-            handlers.forEach(h => h(params, source));
-          }
-        });
-
-        chrome.debugger.onDetach.addListener((source, reason) => {
-          if (source.tabId === tabId) {
-            this._dropWebMCPSession(tabId, `Debugger detached: ${reason || 'unknown reason'}`);
-            this.sessions.delete(tabId);
-            this.eventHandlers.delete(tabId);
-            this.devDiagnostics.delete(tabId);
-            this.runtimeContexts.delete(tabId);
-            const fileChooserGuard = this.fileChooserGuards.get(tabId);
-            if (fileChooserGuard?.timer) clearTimeout(fileChooserGuard.timer);
-            this.fileChooserGuards.delete(tabId);
-          }
-        });
-
         resolve(session);
       });
     });
+    this.attachPromises.set(tabId, attachPromise);
+    try {
+      return await attachPromise;
+    } finally {
+      if (this.attachPromises.get(tabId) === attachPromise) {
+        this.attachPromises.delete(tabId);
+      }
+    }
   }
 
   /**
    * Detach debugger from a tab.
    */
   async detach(tabId) {
-    if (!this.sessions.has(tabId)) return;
+    if (!this.sessions.has(tabId)) {
+      const pendingAttach = this.attachPromises.get(tabId);
+      if (!pendingAttach) return;
+      try {
+        await pendingAttach;
+      } catch {
+        return;
+      }
+    }
     await this._disarmProtocolFileChooserGuard(tabId);
 
     return new Promise((resolve) => {
@@ -179,6 +212,34 @@ export class CDPClient {
         resolve();
       });
     });
+  }
+
+  /**
+   * Release run-scoped CDP state while preserving a Dev-diagnostics owner.
+   *
+   * Dev diagnostics intentionally span turns so console and network activity
+   * produced between Dev requests remains available. WebMCP, by contrast, is
+   * run-scoped and must be closed before a later turn can discover a fresh
+   * page-owned catalog.
+   */
+  async cleanupRun(tabId) {
+    try { await this.disableWebMCP(tabId); } catch {}
+    if (!this.devDiagnostics.has(tabId)) await this.detach(tabId);
+  }
+
+  /**
+   * Release all CDP state owned by a tab or conversation.
+   *
+   * Unlike run cleanup, this drains mode-scoped diagnostics as well. The
+   * operation is intentionally tab-scoped: cleaning up one page must not
+   * detach another page's debugger session.
+   */
+  async cleanupTab(tabId) {
+    // A tab can disappear between these steps. Keep going so a failed protocol
+    // shutdown cannot prevent the final debugger detach.
+    try { await this.disableDevDiagnostics(tabId); } catch {}
+    try { await this.disableWebMCP(tabId); } catch {}
+    await this.detach(tabId);
   }
 
   /**
@@ -317,11 +378,16 @@ export class CDPClient {
   }
 
   _newWebMCPSession(tabId) {
+    // Conversation history can retain an opaque tool ID after this registry is
+    // torn down. Give every registry generation its own random namespace so a
+    // stale ID can never alias whichever page tool registers first next time.
+    const toolIdPrefix = globalThis.crypto.randomUUID().replace(/-/g, '');
     return {
       tabId,
       closed: false,
       enabled: false,
       enablingPromise: null,
+      toolIdPrefix,
       nextToolId: 1,
       toolsById: new Map(),
       idsByKey: new Map(),
@@ -524,7 +590,7 @@ export class CDPClient {
       let toolId = state.idsByKey.get(key);
       if (!toolId) {
         if (state.toolsById.size >= WEBMCP_MAX_REGISTERED_TOOLS) continue;
-        toolId = `wmcp_${state.nextToolId.toString(36)}`;
+        toolId = `wmcp_${state.toolIdPrefix}${state.nextToolId.toString(36)}`;
         state.nextToolId++;
         state.idsByKey.set(key, toolId);
       }
