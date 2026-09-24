@@ -106,7 +106,14 @@ Sửa header trong file `.patch` cho đúng đường dẫn tương đối (`src
 
 ## Đồng bộ upstream
 
-`.github/workflows/agentx-sync-upstream.yml` chạy 01:00 giờ VN mỗi ngày:
+Từ 2026-09-24 upstream được đồng bộ **có chọn lọc, làm tay**: cherry-pick từng commit, hoặc cả PR
+bằng `git cherry-pick -m 1 <merge>` khi PR có nhánh con song song; chỉ lấy những gì áp sạch hoặc
+conflict đơn giản, rồi chạy `npm test` (có `brand:build`) trước khi merge vào `main`. Lý do: từ bản
+33.0.0 upstream theo GPL-3.0-or-later, và `main` đã tách xa upstream — merge nguyên khối cho ~279 file
+conflict, nên merge tự động hằng ngày chỉ sinh PR conflict.
+
+Vì vậy `.github/workflows/agentx-sync-upstream.yml` **không còn chạy theo lịch**, chỉ chạy tay
+(tab **Actions** → *Sync upstream (webbrain)* → *Run workflow*). Khi chạy tay nó vẫn:
 
 - Cập nhật nhánh `upstream-sync` = bản sao y hệt upstream/main (không bao giờ conflict, dùng để đối chiếu).
 - Thử merge vào `main`:
@@ -114,7 +121,8 @@ Sửa header trong file `.patch` cho đúng đường dẫn tương đối (`src
   - **sạch nhưng build fail** → mở PR (thường là patch drift).
   - **conflict** → mở PR để bạn xử lý tay.
 
-Chạy tay: tab **Actions** → *Sync upstream (webbrain)* → *Run workflow*.
+Với độ lệch hiện tại, lần chạy tay gần như chắc chắn ra PR conflict — dùng nó để làm mới nhánh gương
+`upstream-sync`, không phải để đồng bộ.
 
 ### Secret `MIRROR_TOKEN` — đừng để hết hạn
 

@@ -1,16 +1,17 @@
 name: Sync upstream (webbrain)
 
-# Chiến lược:
+# Chỉ chạy tay. Lịch 01:00 hằng ngày đã tắt từ 2026-09-24: từ bản 33.0.0 upstream
+# theo GPL-3.0-or-later, và main đã tách xa upstream (merge nguyên khối cho ~279 file
+# conflict), nên upstream được đồng bộ có chọn lọc bằng cherry-pick — xem mục
+# "Đồng bộ upstream" trong brand/README.md.
+#
+# Khi chạy tay:
 #   1. Luôn cập nhật nhánh `upstream-sync` = bản sao y hệt upstream/main (không bao giờ conflict).
 #   2. Thử merge upstream/main vào main trên nhánh tạm:
 #        - Sạch + brand:build pass -> merge thẳng vào main.
 #        - Conflict                -> mở/cập nhật PR để bạn tự xử lý, kèm danh sách file conflict.
-#
-# Thay đổi branding KHÔNG nằm trong src/ (xem brand/README.md), nên conflict là hiếm.
 
 on:
-  schedule:
-    - cron: '0 18 * * *' # 01:00 giờ VN mỗi ngày
   workflow_dispatch:
 
 permissions:
