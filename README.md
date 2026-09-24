@@ -22,7 +22,7 @@
   <a href="https://webbrain.one">Website</a> ·
   <a href="https://discord.gg/cgC325ssfw">Discord</a> ·
   <a href="https://www.producthunt.com/products/webbrain">Product Hunt</a> ·
-  <a href="LICENSE">MIT License</a>
+  <a href="LICENSE">GPL-3.0-or-later</a>
 </p>
 
 ![WebBrain reading a page, filling in a form, and fetching a file](assets/webbrain-demo.gif)
@@ -377,4 +377,7 @@ Source: [`lmstudio-plugin/`](lmstudio-plugin/).
 
 ## License
 
-MIT — built by [Emre Sokullu](https://emresokullu.com)
+GPL-3.0-or-later — see [LICENSE](LICENSE). This repository is AgentX WebMate, a modified
+version of WebBrain built by [Emre Sokullu](https://emresokullu.com). Code first
+published in WebBrain releases before 33.0.0 was MIT-licensed; that notice is
+kept in [LICENSE](LICENSE).

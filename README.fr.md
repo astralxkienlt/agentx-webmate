@@ -20,7 +20,7 @@
   <a href="README.fr.md">Français</a> ·
   <a href="docs/fr/">Documentation</a> ·
   <a href="https://webbrain.one">Site web</a> ·
-  <a href="LICENSE">Licence MIT</a>
+  <a href="LICENSE">GPL-3.0-or-later</a>
 </p>
 
 ![WebBrain lit une page, remplit un formulaire et télécharge un fichier](assets/webbrain-demo.gif)
@@ -294,4 +294,7 @@ Source : [`lmstudio-plugin/`](lmstudio-plugin/).
 
 ## Licence
 
-MIT — créé par [Emre Sokullu](https://emresokullu.com)
+GPL-3.0-or-later — voir [LICENSE](LICENSE). Ce dépôt est AgentX WebMate, une version
+modifiée de WebBrain créé par [Emre Sokullu](https://emresokullu.com). Le code publié
+d'abord dans les versions de WebBrain antérieures à 33.0.0 était sous licence MIT ;
+cet avis figure dans [LICENSE](LICENSE).

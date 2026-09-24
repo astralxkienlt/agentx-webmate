@@ -1,6 +1,6 @@
 # AgentX WebMate — lớp thương hiệu
 
-Sản phẩm này là bản tuỳ biến của [webbrain-one/webbrain](https://github.com/webbrain-one/webbrain) (MIT).
+Sản phẩm này là bản tuỳ biến của [webbrain-one/webbrain](https://github.com/webbrain-one/webbrain) (GPL-3.0-or-later từ bản 33.0.0; các bản trước đó là MIT).
 Mục tiêu của thư mục `brand/`: **giữ nguyên vẹn toàn bộ upstream để merge tính năng mới mỗi ngày gần như không conflict.**
 
 ## Nguyên tắc số một
@@ -155,9 +155,15 @@ Build hiện dùng giá trị tạm. Những mục dưới đây **phải** xử
 
 ## Giấy phép
 
-Upstream là **MIT**. Bạn được phép làm sản phẩm thương mại và không phải mở mã phần của mình,
-nhưng **bắt buộc giữ lại thông báo bản quyền MIT** khi phân phối. Đừng xoá `LICENSE`
-hay `src/chrome/LICENSE` — chúng được copy sang bản build và đó chính là thứ giữ bạn đúng luật.
+Từ bản 33.0.0, upstream WebBrain chuyển sang **GPL-3.0-or-later** (các bản trước đó là MIT).
+AgentX WebMate dùng code upstream từ 33.0.0 trở đi, nên **toàn bộ extension khi phân phối phải
+theo GPL-3.0-or-later**: người nhận bản build có quyền nhận mã nguồn tương ứng (repo này đang
+public), được sửa và phân phối lại theo cùng giấy phép, và phần code AgentX nằm trong extension
+cũng thuộc GPL. Đừng xoá `LICENSE` hay `src/{chrome,firefox}/LICENSE` — chúng được copy sang
+bản build, chứa cả thông báo MIT của phần code cũ lẫn toàn văn GPL-3.0.
+
+`mcp-server/` và `lmstudio-plugin/` là chương trình riêng, vẫn theo MIT (mỗi thư mục có `LICENSE`
+riêng).
 
 ## Lưu ý về repo này
 
