@@ -1,12 +1,10 @@
 diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 --- a/src/agent/transcribe.js
 +++ b/src/agent/transcribe.js
-@@ -80,6 +80,18 @@
-     return { id, sourceProviderId, baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
-   }
+@@ -82,6 +82,18 @@
    return null;
-+}
-+
+ }
+ 
 +function pickProviderById(providers, providerId) {
 +  const provider = providers.get?.(providerId) ?? providers[providerId];
 +  const config = provider?.config || provider;
@@ -17,9 +15,11 @@ diff --git a/src/agent/transcribe.js b/src/agent/transcribe.js
 +    baseUrl: config.baseUrl,
 +    apiKey: config.apiKey || '',
 +  };
- }
- 
++}
++
  /**
+  * Read the user's explicit transcription override from storage if set.
+  *
 @@ -121,6 +133,8 @@
   * @param {object} opts
   * @param {string} [opts.filename='recording.webm']
@@ -78,7 +78,7 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
  
  const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
  const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
-@@ -1104,6 +1108,13 @@
+@@ -1422,6 +1426,13 @@
     * OpenAI-compatible endpoint the user configured under Multimodal.
     */
    async getVisionProvider() {
@@ -92,7 +92,7 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
      try {
        const { visionModel } = await chrome.storage.local.get('visionModel');
        if (!visionModel) return null;
-@@ -1408,12 +1419,26 @@
+@@ -1726,12 +1737,26 @@
     * while lacking a Whisper-compatible audio route entirely.
     */
    async testTranscriptionProvider() {
@@ -128,11 +128,13 @@ diff --git a/src/providers/manager.js b/src/providers/manager.js
 diff --git a/src/providers/openai.js b/src/providers/openai.js
 --- a/src/providers/openai.js
 +++ b/src/providers/openai.js
-@@ -77,7 +77,20 @@
+@@ -89,10 +89,24 @@
    }
  
    get model() {
--    if (this.config.model) return this.config.model;
+-    if (this.config.model) {
+-      const model = String(this.config.model);
+-      return isOpenCodeZenConfig(this.config) ? model.replace(/^opencode\//i, '') : model;
 +    const configuredModel = String(this.config.model || '').trim();
 +    if (this.config.agentxCloudManaged === true) {
 +      const availableModels = Array.isArray(this.config.models)
@@ -145,8 +147,12 @@ diff --git a/src/providers/openai.js b/src/providers/openai.js
 +        throw new Error(`AgentX Cloud model "${configuredModel}" is not available through this gateway key.`);
 +      }
 +      return configuredModel;
+     }
++    if (configuredModel) {
++      return isOpenCodeZenConfig(this.config)
++        ? configuredModel.replace(/^opencode\//i, '')
++        : configuredModel;
 +    }
-+    if (configuredModel) return configuredModel;
      if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
      // Some local servers apply their own default when no model is configured.
      // Others carry `requiresModel: true` and throw above. Treat the category as
@@ -161,7 +167,7 @@ diff --git a/src/recorder/host.js b/src/recorder/host.js
  import {
    RECORDING_DOWNLOAD_TIMEOUT_MS,
    resolveSavedDownload,
-@@ -569,8 +570,25 @@
+@@ -616,8 +617,25 @@
    }
  
    const ext = mimeType?.startsWith('audio/') ? 'webm' : 'webm';
