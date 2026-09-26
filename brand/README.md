@@ -211,7 +211,7 @@ Hợp đồng đầy đủ (workmate.json, pairing.json, state.json, lệnh cậ
 
 ## Lớp AgentX Skill Hub (Phase 4)
 
-Cài skill trình duyệt từ [AgentX Skill Hub](https://skills.astralx.com.vn) — chi tiết ở `docs/integration-webmate.md` của repo hub. Trong `brand/`:
+Cài skill trình duyệt từ [AgentX Skill Hub](https://agenthub.astralx.com.vn) — chi tiết ở `docs/integration-webmate.md` của repo hub. Trong `brand/`:
 
 | Chỗ | Nội dung |
 |---|---|
