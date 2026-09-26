@@ -248,10 +248,10 @@ test('a hub skill declaring ask is in the Ask-mode catalog and loads through loa
 
 test('hub base URL rules: HTTPS, loopback HTTP, no credentials; storage override wins', async () => {
   const { normalizeHubBaseUrl, readHubConfig, writeHubConfig, AGENTX_HUB_CONFIG_STORAGE_KEY } = await load('chrome', 'src/agentx/hub-client.js');
-  assert.equal(normalizeHubBaseUrl('https://skills.astralx.com.vn/'), 'https://skills.astralx.com.vn');
+  assert.equal(normalizeHubBaseUrl('https://agenthub.astralx.com.vn/'), 'https://agenthub.astralx.com.vn');
   assert.equal(normalizeHubBaseUrl('http://127.0.0.1:4173/'), 'http://127.0.0.1:4173');
   assert.equal(normalizeHubBaseUrl('http://localhost:8820'), 'http://localhost:8820');
-  for (const bad of ['http://skills.astralx.com.vn', 'https://user:pw@hub.test', 'https://hub.test/?x=1', 'https://hub.test/#f', 'not a url', '']) {
+  for (const bad of ['http://agenthub.astralx.com.vn', 'https://user:pw@hub.test', 'https://hub.test/?x=1', 'https://hub.test/#f', 'not a url', '']) {
     assert.throws(() => normalizeHubBaseUrl(bad), /HTTPS/, bad);
   }
   const fake = createApi();
@@ -778,9 +778,9 @@ test('the Settings card labels hub records, renders search results and installed
     assert.match(agentxHubEditLockedMessage('en'), /read-only/);
     // The enabled-skills list: a hub row is View · Open on the Hub · Fork · Remove, never Edit; an edited copy keeps Edit and gains Restore.
     assert.match(agentxHubEditLockedMessage('vi'), /"Mở trên Hub" rồi "Sửa"/, 'the author is sent to the hub editor, not to a fork');
-    const hubRow = agentxHubSkillRowActions({ id: 'hub_vneb-portal', name: 'VNEB <b>', sourceType: 'hub', hubSlug: 'vneb-portal', sourceUrl: 'https://skills.astralx.com.vn/skills/vneb-portal' }, 'vi', { edit: 'Sửa', remove: 'Xóa' });
+    const hubRow = agentxHubSkillRowActions({ id: 'hub_vneb-portal', name: 'VNEB <b>', sourceType: 'hub', hubSlug: 'vneb-portal', sourceUrl: 'https://agenthub.astralx.com.vn/skills/vneb-portal' }, 'vi', { edit: 'Sửa', remove: 'Xóa' });
     assert.match(hubRow, /data-agentx-hub-row-action="view"[^>]*>Xem</);
-    assert.match(hubRow, /data-agentx-hub-row-action="open"[^>]*data-hub-url="https:\/\/skills\.astralx\.com\.vn\/skills\/vneb-portal"[^>]*>Mở trên Hub</);
+    assert.match(hubRow, /data-agentx-hub-row-action="open"[^>]*data-hub-url="https:\/\/agenthub\.astralx\.com\.vn\/skills\/vneb-portal"[^>]*>Mở trên Hub</);
     assert.match(hubRow, /data-agentx-hub-row-action="fork"[^>]*>Tách bản sao để sửa</);
     // Stored data is never trusted into an attribute or a tab: no http(s), no button.
     for (const sourceUrl of ['', 'javascript:alert(1)', 'https://x" onmouseover="y']) {
@@ -914,9 +914,9 @@ test('the enabled-skills row actions go through the background: view and edit st
   await click(button('edit'));
   assert.deepEqual(notes.at(-1), ['edit', 'hub_vneb-portal']);
   const open = button('open');
-  open.dataset.hubUrl = 'https://skills.astralx.com.vn/skills/vneb-portal';
+  open.dataset.hubUrl = 'https://agenthub.astralx.com.vn/skills/vneb-portal';
   await click(open);
-  assert.deepEqual(notes.at(-1), ['open', 'https://skills.astralx.com.vn/skills/vneb-portal'], 'the hub page, where its author edits it');
+  assert.deepEqual(notes.at(-1), ['open', 'https://agenthub.astralx.com.vn/skills/vneb-portal'], 'the hub page, where its author edits it');
   open.dataset.hubUrl = 'javascript:alert(1)';
   const before = notes.length;
   await click(open);
@@ -943,12 +943,12 @@ test('the enabled-skills row actions go through the background: view and edit st
 
 test('brand build: manifest channel (Chrome only), runtime config, Settings wiring, background wiring', async () => {
   const chromeManifest = JSON.parse(await fs.readFile(DIST('chrome', 'manifest.json'), 'utf8'));
-  assert.deepEqual(chromeManifest.externally_connectable, { matches: ['https://skills.astralx.com.vn/*'] }, 'exactly the hub origin (plan §8 decision 2)');
+  assert.deepEqual(chromeManifest.externally_connectable, { matches: ['https://agenthub.astralx.com.vn/*'] }, 'exactly the hub origin (plan §8 decision 2)');
   const firefoxManifest = JSON.parse(await fs.readFile(DIST('firefox', 'manifest.json'), 'utf8'));
   assert.equal(firefoxManifest.externally_connectable, undefined, 'Firefox has no such channel');
   for (const target of ['chrome', 'firefox']) {
     const runtime = await fs.readFile(DIST(target, 'src/agentx/runtime-config.js'), 'utf8');
-    assert.match(runtime, /"skillHubBaseUrl": "https:\/\/skills\.astralx\.com\.vn"/, `${target}: runtime config carries the hub`);
+    assert.match(runtime, /"skillHubBaseUrl": "https:\/\/agenthub\.astralx\.com\.vn"/, `${target}: runtime config carries the hub`);
     const skills = await fs.readFile(DIST(target, 'src/agent/skills.js'), 'utf8');
     assert.match(skills, /export const MAX_CUSTOM_SKILLS = 40;/, `${target}: limit raised`);
     assert.match(skills, /normalizeHubProvenance/, `${target}: patch 080 applied`);
